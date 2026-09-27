@@ -170,8 +170,16 @@ def _response_has_provider_identity_leak(response_text: str) -> bool:
 
 
 def sanitize_llm_identity_hallucinations(response_text: str, user_message: str = "") -> str:
-    """Reject provider identity leakage and replace it with the canonical AI Scientist profile."""
+    """Reject provider identity leakage only for an AI Scientist identity question.
+
+    Provider names can occur legitimately in an answer about a third party or a
+    technical topic.  Replacing such an answer with the creator profile would
+    turn unrelated questions into a stale identity response.
+    """
     if CHATGPT_OPENAI_RE.search(user_message):
+        return response_text
+
+    if not is_identity_intent(user_message):
         return response_text
 
     if _response_has_provider_identity_leak(response_text):

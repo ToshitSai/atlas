@@ -1,7 +1,11 @@
 """Application identity must override an underlying model's self-description."""
 import pytest
 
-from backend.project_identity import classify_identity_query, handle_identity_response
+from backend.project_identity import (
+    classify_identity_query,
+    handle_identity_response,
+    sanitize_llm_identity_hallucinations,
+)
 from backend.intent_router import handle_intent_message
 
 
@@ -44,3 +48,8 @@ def test_router_intercepts_creator_before_any_llm(isolate_store, monkeypatch):
     result = handle_intent_message("who is the founder of you", session_id="identity-regression")
     assert result["intent"] == "PROJECT_IDENTITY"
     assert "Toshit Sai Galam" in result["response"]
+
+
+def test_identity_sanitizer_does_not_replace_an_unrelated_entity_answer():
+    answer = "Mahesh Babu is an actor; Mistral is unrelated to this answer."
+    assert sanitize_llm_identity_hallucinations(answer, "Who is Mahesh Babu?") == answer
