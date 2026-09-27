@@ -10,9 +10,11 @@ from backend.llm import (
 from backend.calculator import try_evaluate
 from database.store import store
 import backend.config
+from backend.project_identity import identity_system_instruction
 
 INTENT_CATEGORIES = [
     "CONFIRM_PENDING_ACTION",
+    "PROJECT_IDENTITY",
     "RESEARCH_FOLLOWUP",
     "RESEARCH_CONTROL",
     "EXPLANATION",
@@ -52,14 +54,14 @@ GENERAL_ASSISTANT_SYSTEM_PROMPT = (
     "politely correct that premise FIRST, then answer the underlying question as "
     "far as it is useful. Apply this generically from your own knowledge — do not "
     "invent corrections you are not confident about either. "
-    "Be concise but complete."
+    "Be concise but complete.\n\n" + identity_system_instruction()
 )
 
 CODING_SYSTEM_PROMPT = (
     "You are an expert programmer. Provide correct, clean, runnable code that "
     "directly solves the user's request, followed by a brief explanation of how "
     "it works. Do NOT mention datasets, model training, or research unless the "
-    "user asks. Never invent library behaviour you are unsure about."
+    "user asks. Never invent library behaviour you are unsure about.\n\n" + identity_system_instruction()
 )
 
 # --------------------------------------------------------------------------- #
@@ -622,6 +624,11 @@ def classify_intent(
     if confirm_exact or confirm_pattern:
         return "CONFIRM_PENDING_ACTION"
 
+    # Application identity must win before generic Q&A or model knowledge.
+    from backend.project_identity import is_identity_intent
+    if is_identity_intent(message):
+        return "PROJECT_IDENTITY"
+
     # 1b. Explicit Hugging Face reference (URL or owner/name) => research start.
     if "huggingface.co/datasets" in msg_clean or "hf.co/datasets" in msg_clean:
         return "RESEARCH_START"
@@ -1112,6 +1119,22 @@ def _handle_intent_message_impl(
             "projectId": active_project_id,
             "pendingAction": None,
             "lastTopic": sess.get("last_topic")
+        }
+
+    elif intent == "PROJECT_IDENTITY":
+        # This path never delegates creator/application identity to an LLM.
+        from backend.project_identity import handle_identity_response
+        identity = handle_identity_response(message, sess.get("last_topic"))
+        response = identity["response"]
+        store.clear_pending_action(sid)
+        store.update_session(sid, {
+            "last_assistant_message": response,
+            "last_topic": "ai scientist identity",
+        })
+        return {
+            "intent": "PROJECT_IDENTITY", "taskType": "identity", "response": response,
+            "action": "NONE", "projectId": active_project_id, "pendingAction": None,
+            "lastTopic": "ai scientist identity",
         }
 
     # 2. EXPLANATION (general Q&A) — answer the question, nothing else.
