@@ -91,6 +91,10 @@ _CURRENT_FACT_RE = re.compile(
     r"|\bwho\s+(?:was|were|is|are)\s+(?:the\s+)?runners?[-\s]?up\b"
     r"|\bwhat(?:'s|\s+is|\s+was)\s+the\s+(?:current|latest|newest|new|reigning)\s+"
     r"(?!news\b|about\b|developments\b|updates\b|research\b)[a-z0-9][a-z0-9 \-]{1,40}$"
+    # Possessive current-fact form: "What is Ada's latest book/film?".
+    # This is a single changing fact, unlike a request for news/developments.
+    r"|\bwhat(?:'s|\s+is|\s+was)\s+[a-z0-9 .\-]{1,50}'s\s+(?:current|latest|newest|new)\s+"
+    r"(?!news\b|about\b|developments\b|updates\b|research\b)[a-z0-9][a-z0-9 \-]{1,40}$"
     r"|\b(?:current|latest|live|today's|todays|now)\s+(?:[a-z0-9]+\s+){0,3}?"
     r"(?:price|stock\s+price|share\s+price|score|version|weather|temperature|"
     r"forecast)\b",
