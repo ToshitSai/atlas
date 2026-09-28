@@ -66,6 +66,18 @@ def ambiguity_clarification(message: str) -> Optional[str]:
     entity = extract_entity_candidate(text)
     if entity and entity.casefold() in _AMBIGUOUS_PERSON_NAMES:
         return f"There are several notable people named {entity}. Which one do you mean?"
+    # A short noun phrase such as "Fraud detection." has no requested
+    # capability. Ask once instead of silently assuming the ML workflow.
+    bare_topic = re.fullmatch(r"[A-Za-z][A-Za-z\s-]{1,60}[.!?]?", text)
+    if (bare_topic
+            and not re.match(r"^(?:what|who|why|how|when|where|which|explain|define|tell)\b", text, re.I)
+            and not re.match(r"^(?:yes|no|ok|okay|sure|go|proceed|stop|pause|resume|continue|help|hi|hello|hey|greetings|research|investigate|improve|optimi[sz]e|train|predict|forecast|detect|classify|find|search|recommend|suggest|show|look)\b", text, re.I)
+            and re.search(r"\b(?:detection|classification|prediction|forecasting|regression)\b", text, re.I)
+            and len(text.rstrip(".!?").split()) <= 4):
+        return (
+            f"What would you like to do with {text.rstrip('.!?')}—get an explanation, "
+            "research the topic, or run an ML experiment?"
+        )
     return None
 
 
@@ -80,7 +92,7 @@ def estimate_difficulty(message: str, intent: str) -> str:
         score += 1
     if len(requirements) >= 4 or _CONSTRAINT.search(text):
         score += 1
-    if intent in {"CODING", "DEEP_RESEARCH", "DATA_ANALYSIS", "RESEARCH_START"}:
+    if intent in {"CODING", "DEEP_RESEARCH", "DATA_ANALYSIS", "RESEARCH_START", "DATASET_RESEARCH"}:
         score += 2
     elif intent in {"MATHEMATICS", "CALCULATION", "CURRENT_INFORMATION", "WEB_SEARCH", "REASONING"}:
         score += 1
@@ -101,7 +113,7 @@ def _tools_for(intent: str, task_type: str) -> List[str]:
         return ["code_generator", "sandbox"]
     if key in {"data_analysis", "document_analysis"}:
         return ["file_parser", "retrieval"]
-    if intent in {"RESEARCH_START", "RESEARCH_FOLLOWUP", "RESEARCH_CONTROL"}:
+    if intent in {"RESEARCH_START", "DATASET_RESEARCH", "RESEARCH_FOLLOWUP", "RESEARCH_CONTROL"}:
         return ["dataset_discovery", "research_orchestrator"]
     if key in {"complex_reasoning", "multi_part", "reasoning"}:
         return ["requirement_tracker", "reasoning_model"]

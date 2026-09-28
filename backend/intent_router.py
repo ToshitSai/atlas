@@ -28,6 +28,7 @@ INTENT_CATEGORIES = [
     "REASONING",
     "WRITING",
     "DEEP_RESEARCH",
+    "DATASET_RESEARCH",
     "DATA_ANALYSIS",
     "DOCUMENT_ANALYSIS",
     "RESEARCH_START",
@@ -303,6 +304,33 @@ _ML_SIGNALS = (
     "classify", "classification", "regression", "accuracy", "machine learning",
     " ml", "tabular", "feature", "label", "anomaly", "forecast",
 )
+
+# ML research is an *action*, not a topic.  These patterns deliberately require
+# a user to ask us to optimise/train/evaluate an ML task.  Merely mentioning
+# fraud, models, data, or machine learning must stay in general Q&A.
+_ML_EXPERIMENT_REQUEST_RE = re.compile(
+    r"^(?:please\s+|can you\s+|could you\s+|help me\s+|i want to\s+)?"
+    r"(?:improve|optimi[sz]e|train|predict|forecast|classify|detect|tune|"
+    r"experiment with|test|evaluate|build)\b",
+    re.IGNORECASE,
+)
+_DATASET_REQUEST_RE = re.compile(
+    r"\b(?:find|search(?:\s+for)?|recommend|suggest|show(?:\s+me)?|look\s+for)\b"
+    r"[^.?!]{0,80}\b(?:datasets?|data\s+sets?)\b|"
+    r"\b(?:datasets?|data\s+sets?)\b[^.?!]{0,80}\b(?:for|about)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_explicit_ml_experiment_request(msg_clean: str) -> bool:
+    """Whether text requests an ML experiment, rather than discusses ML.
+
+    The imperative/action requirement prevents subject-only phrases such as
+    ``fraud detection`` and explanatory questions from launching a workflow.
+    """
+    if not _ML_EXPERIMENT_REQUEST_RE.search(msg_clean):
+        return False
+    return any(signal in msg_clean for signal in _ML_SIGNALS)
 
 _CODING_PATTERNS = [
     r"\b(write|create|make|give me|generate)\b[^.]*\b(program|code|function|script|class|app|application|snippet)\b",
@@ -695,13 +723,14 @@ def classify_intent(
             and not (active_project_id and project_ref)):
         return "WEB_SEARCH"
 
-    # 3. Explicit research request. ML/prediction goals use the real dataset
-    #    workflow (RESEARCH_START); general web/literature research is its own
-    #    intent so it is handled honestly instead of launching a dataset search.
+    # 3. Explicit research requests are literature/deep research by default.
+    #    A research verb plus an ML *subject* is still not an instruction to
+    #    train or optimise a model ("Research fraud detection" is not
+    #    "Improve fraud detection").
     #    NOTE: comparison triggers like "compare the two" deliberately live in
     #    REASONING, not here — a pronoun comparison is not a research request.
     if any(t in msg_clean for t in _RESEARCH_TRIGGERS):
-        if any(s in msg_clean for s in _ML_SIGNALS):
+        if _is_explicit_ml_experiment_request(msg_clean):
             return "RESEARCH_START"
         return "DEEP_RESEARCH"
 
@@ -709,13 +738,12 @@ def classify_intent(
     # explicit current-information and deep-research triggers have won.
     from backend.intelligence import extract_entity_candidate
     entity_candidate = extract_entity_candidate(message)
+    # "Who is Mahesh Babu?" is an entity lookup; "What is fraud detection?"
+    # is a concept question.  Do not infer a person/entity workflow merely
+    # from a multi-word lowercase subject.
     general_entity_question = bool(re.match(
         r"\s*(?:who\s+(?:is|was|are|were)|tell\s+me\s+about)\b", msg_clean
-    )) or bool(
-        entity_candidate and definitional and not concept
-        and len(entity_candidate.split()) >= 2
-        and not re.search(r"\b(?:why|how|because|useful|important)\b", msg_clean)
-    )
+    ))
     if entity_candidate and general_entity_question:
         return "ENTITY_INFORMATION"
 
@@ -723,15 +751,15 @@ def classify_intent(
     #     "predict churn"). This must beat EXPLANATION even when the sentence
     #     contains concept words like "model"/"dataset". Questions ("how does a
     #     model detect fraud?") stay general via the interrogative guard.
-    ml_action = any(w in msg_clean for w in [
-        "improve", "optimize", "optimise", "train", "predict", "forecast",
-        "detect", "tune", "build a model", "build me a model",
-    ])
-    if ml_action and not (definitional or interrogative) and any(
-        s in msg_clean for s in ["dataset", "model", "ml", "machine learning",
-                                 "accuracy", "fraud", "churn", "data"]
-    ):
+    if (not (definitional or interrogative)
+            and _is_explicit_ml_experiment_request(msg_clean)):
         return "RESEARCH_START"
+
+    # Dataset discovery is an explicit capability request. It is intentionally
+    # separate from general ML discussion and hands the existing dataset
+    # selection flow a well-typed intent.
+    if _DATASET_REQUEST_RE.search(msg_clean):
+        return "DATASET_RESEARCH"
 
     # 3c. Explicit web-search requests ("search the web for ...", "google ...").
     if _EXPLICIT_WEB_RE.search(msg_clean):
@@ -835,13 +863,9 @@ def classify_intent(
     if any(cmd in msg_clean for cmd in tech_cmds):
         return "TECHNICAL_DETAILS"
 
-    # 10. RESEARCH_START ("improve credit-card fraud detection", "predict churn")
-    #     Must be an IMPERATIVE request — a bare keyword inside a narrative
-    #     sentence ("a train travels 60 mph...") must not launch research.
-    if (re.match(
-            r"^(?:please\s+|can you\s+|could you\s+|help me\s+|i want to\s+)?"
-            r"(improve|optimize|optimise|train|predict|forecast|detect|classify)\b", msg_clean)
-            or "fraud" in msg_clean):
+    # 10. Last-chance explicit ML experiment request. A subject word alone is
+    #     never sufficient (e.g. "fraud detection" stays conversational).
+    if _is_explicit_ml_experiment_request(msg_clean):
         return "RESEARCH_START"
 
     # 11. CASUAL_CHAT fast-path
@@ -858,7 +882,7 @@ def classify_intent(
     try:
         system_prompt = (
             "Classify user intent into EXACTLY ONE: CONFIRM_PENDING_ACTION, "
-            "EXPLANATION, ENTITY_INFORMATION, CODING, DEEP_RESEARCH, DATA_ANALYSIS, DOCUMENT_ANALYSIS, "
+            "EXPLANATION, ENTITY_INFORMATION, CODING, DEEP_RESEARCH, DATASET_RESEARCH, DATA_ANALYSIS, DOCUMENT_ANALYSIS, "
             "RESEARCH_START, RESEARCH_FOLLOWUP, RESEARCH_CONTROL, REPORT_REQUEST, "
             "TECHNICAL_DETAILS, CASUAL_CHAT, MATHEMATICS, WEB_SEARCH, "
             "CURRENT_INFORMATION, REASONING, "
@@ -1845,8 +1869,9 @@ def _handle_intent_message_impl(
             "lastTopic": last_topic
         }
 
-    # 8. RESEARCH_START (ML/dataset research workflow)
-    elif intent == "RESEARCH_START":
+    # 8. RESEARCH_START / DATASET_RESEARCH. Both reuse the established
+    # dataset-selection flow, while preserving why the capability was selected.
+    elif intent in ("RESEARCH_START", "DATASET_RESEARCH"):
         from backend.hf_datasets import parse_hf_reference
         topic = message.strip()
         hf_ref = parse_hf_reference(message)

@@ -396,6 +396,42 @@ def test_ml_research_request_routes_to_research_start(isolate_store):
 
 
 # ---------------------------------------------------------------------------
+# Intent-first regression matrix: subject words (fraud, model, dataset) never
+# choose the workflow.  The requested capability does.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("message,expected", [
+    ("What is fraud detection?", "EXPLANATION"),
+    ("Explain fraud detection.", "EXPLANATION"),
+    ("Research fraud detection.", "DEEP_RESEARCH"),
+    ("Improve fraud detection.", "RESEARCH_START"),
+    ("Find fraud detection datasets.", "DATASET_RESEARCH"),
+    ("Find a dataset for fraud detection.", "DATASET_RESEARCH"),
+    ("What is Python?", "EXPLANATION"),
+    ("Write Python code.", "CODING"),
+    ("Solve x^2 + 5x + 6 = 0.", "MATHEMATICS"),
+    ("Who is Mahesh Babu?", "ENTITY_INFORMATION"),
+    ("Who won IPL 2026?", "CURRENT_INFORMATION"),
+])
+def test_intent_first_routing_matrix(message, expected):
+    assert classify_intent(message, session_id=f"intent-first-{message}") == expected
+
+
+def test_subject_only_prompt_requests_clarification_not_ml_workflow(isolate_store):
+    res = handle_intent_message("Fraud detection.", session_id="ambiguous-fraud")
+    assert res["action"] == "NONE"
+    assert "explanation" in res["response"].lower()
+    assert "ml experiment" in res["response"].lower()
+
+
+@pytest.mark.parametrize("message", ["What is fraud detection?", "Explain fraud detection."])
+def test_general_fraud_questions_do_not_offer_dataset_work(message, isolate_store):
+    res = handle_intent_message(message, session_id=f"general-fraud-{message}")
+    assert res["intent"] == "EXPLANATION"
+    assert res["action"] == "NONE"
+    assert "i'll look for datasets" not in res["response"].lower()
+
+
+# ---------------------------------------------------------------------------
 # §23: natural multi-turn — definition then "show me a simple example"
 # ---------------------------------------------------------------------------
 def test_followup_example_uses_topic_context(isolate_store):
