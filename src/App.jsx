@@ -32,6 +32,9 @@ export default function App() {
   const [isApproving, setIsApproving] = useState(false);
   const [dockerReady, setDockerReady] = useState(false);
   const [llmConfigured, setLlmConfigured] = useState(false);
+  // Research mode (AUTONOMOUS/GUIDED/MANUAL). Seeded from persisted app
+  // settings; per-chat switches via the chat endpoint stay server-side.
+  const [researchMode, setResearchMode] = useState('GUIDED');
   const [isInChatWorkspace, setIsInChatWorkspace] = useState(false);
   const [conversationId, setConversationId] = useState(null);
   // Mobile sidebar drawer (<1024px): overlays the chat instead of squeezing it.
@@ -68,6 +71,7 @@ export default function App() {
     const s = await fetchSettings();
     setDockerReady(s.dockerAvailable || false);
     setLlmConfigured(s.apiKeySet || false);
+    if (s.researchMode) setResearchMode(s.researchMode);
   };
 
   useEffect(() => {
@@ -107,7 +111,8 @@ export default function App() {
     try {
       const res = await sendChatMessage(userText, activeProject?.id, convId, null, null, {
         requestId,
-        messageId: userMessageId
+        messageId: userMessageId,
+        researchMode
       });
       if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
         throw new Error('The response could not be matched to the submitted message. Please retry.');
@@ -124,6 +129,8 @@ export default function App() {
         datasets: res.candidates || null,
         recommendation: res.recommendation || null,
         researchQuery: res.researchQuery || null,
+        selectionMode: res.selectionMode || null,
+        selectedDataset: res.selectedDataset || null,
         activity: res.activity || []
       };
       setChatMessages(prev => [...prev, assistantMsg]);

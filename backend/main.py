@@ -7,6 +7,7 @@ import traceback
 import csv
 import random
 import sys
+import uuid
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -212,7 +213,58 @@ async def chat_endpoint(payload: dict):
     )
 
     from backend import llm as llm_mod
+    from backend.research_modes import (
+        AUTONOMOUS as AUTONOMOUS_MODE,
+        make_activity, resolve_mode, set_session_mode,
+        mode_requested_in_message, selection_decision,
+    )
     llm_mod.begin_engine_trace()
+
+    # Research mode resolution (directive §2): explicit request field wins,
+    # then an in-chat switch ("switch to autonomous mode"), then the session
+    # choice, then the persisted app setting. Default stays GUIDED.
+    sess_for_mode = store.get_session(conversation_id)
+    requested_mode = payload.get("researchMode")
+    mode_msg_mode = mode_requested_in_message(message)
+    effective_mode = resolve_mode(
+        requested_mode,
+        sess_for_mode,
+        store.get_settings(),
+    )
+    if mode_msg_mode:
+        effective_mode = mode_msg_mode
+        set_session_mode(conversation_id, mode_msg_mode)
+    elif requested_mode:
+        set_session_mode(conversation_id, requested_mode)
+    # An explicit in-chat mode switch short-circuits everything else (no LLM
+    # call, no accidental project mutation). The response still carries the
+    # full correlation contract so the UI can match it to the request.
+    if mode_msg_mode:
+        mode_reply = (
+            f"Research mode set to {mode_msg_mode.title()}. "
+            + {
+                "AUTONOMOUS": "I'll now select datasets and run experiments on my own, pausing only when a real decision needs you.",
+                "GUIDED": "I'll check with you before important steps like choosing a dataset.",
+                "MANUAL": "You steer — I'll propose each stage and wait for your go-ahead.",
+            }[mode_msg_mode]
+        )
+        store.record_message(
+            conversation_id, "assistant", mode_reply,
+            intent="MODE_SWITCH", message_id=response_message_id,
+        )
+        return {
+            "intent": "MODE_SWITCH",
+            "response": mode_reply,
+            "action": "SET_RESEARCH_MODE",
+            "researchMode": mode_msg_mode,
+            "projectId": active_project_id,
+            "pendingAction": None,
+            "activity": [make_activity(request_id, user_message_id, "PLANNING", "completed", f"Research mode set to {mode_msg_mode}")],
+            "requestId": request_id or None,
+            "responseToMessageId": user_message_id or None,
+            "messageId": response_message_id,
+            "conversationId": conversation_id,
+        }
     res = handle_intent_message(
         message=message, 
         active_project_id=active_project_id, 
@@ -230,11 +282,15 @@ async def chat_endpoint(payload: dict):
             res["response"] = res["response"] + disclosure
 
     if action == "START_RESEARCH":
-        # Approval-gated dataset discovery. We NEVER auto-train on a randomly
-        # generated dataset during normal chat. Instead we search Hugging Face,
-        # compare real candidates, recommend one, and wait for the user to approve.
+        # Dataset discovery — mode-aware. We NEVER auto-train on a randomly
+        # generated dataset during normal chat. In AUTONOMOUS mode a
+        # clearly-best candidate is selected and the pipeline continues on its
+        # own; in GUIDED (default) the user approves. In both modes the same
+        # candidate comparison and ranking runs first.
         research_goal = res.get("researchQuery") or message
         hf_ref = res.get("hfRef") or hf.parse_hf_reference(message)
+        request_id = request_id or f"req-{uuid.uuid4().hex[:12]}"
+        job_id = f"job-{uuid.uuid4().hex[:12]}"
 
         try:
             if hf_ref.get("kind") == "specific":
@@ -244,16 +300,20 @@ async def chat_endpoint(payload: dict):
                 cand["userSelected"] = True
                 cand["score"], cand["reasons"] = hf.score_candidate(cand, research_goal)
                 cand["reasons"] = ["You linked this dataset directly, so I'll use it exactly as provided."] + cand["reasons"]
+                # A user-linked dataset IS the explicit human decision — the
+                # pipeline starts in every mode without further approval.
+                linked_project_id = _approve_dataset(repo_id, research_goal)["projectId"]
                 res.update({
-                    "action": "RECOMMEND_DATASETS",
+                    "action": "START_RESEARCH",
                     "researchQuery": research_goal,
                     "candidates": [cand],
                     "recommendation": cand,
+                    "projectId": linked_project_id,
                     "response": (
                         f"I recognized the Hugging Face dataset you linked: {repo_id}.\n\n"
                         f"It has {cand.get('featureCount') or 'several'} features, a clear "
                         f"'{cand.get('targetColumn')}' target, and a {cand.get('license') or 'declared'} license. "
-                        f"Since you chose it explicitly, I can load it directly."
+                        f"I've loaded it and started the research pipeline."
                     ),
                 })
             else:
@@ -263,46 +323,158 @@ async def chat_endpoint(payload: dict):
                 if hf_ref.get("kind") == "general":
                     research_goal = "machine learning"
                 lead = f"I'll look for datasets that could help {research_goal.lower().rstrip('.')}.\n\n"
-                cands = hf.search_datasets(research_goal, limit=6)
-                comp = hf.compare_and_recommend(cands, research_goal, top_n=4)
-                rec = comp.get("recommendation")
-                if rec:
-                    try:
-                        info = hf.inspect_dataset(rec["repoId"])
-                        rec["rowCountPreview"] = info.get("rowCount")
-                        rec["targetColumn"] = info.get("targetColumn")
-                        rec["featureCount"] = info.get("featureCount")
-                        rec["minorityClassPct"] = info.get("minorityClassPct")
-                        rec["classDistribution"] = info.get("classDistribution")
-                        rec["splits"] = [s for s in (info.get("availableSplits") or {}).keys() if s in ("train", "test", "validation")]
-                    except Exception as inspect_err:
-                        print(f"[DATASET INSPECT WARNING]: {inspect_err}")
-
-                summary = f"I found {len(comp['candidates'])} relevant datasets.\n\n"
-                if rec:
-                    reason = (rec['reasons'][0] if rec['reasons']
-                              else 'it fits the task well').lower().rstrip('.')
-                    if reason.split(' ', 1)[0] in ('matches', 'has', 'is', 'uses', 'contains'):
-                        reason = f"it {reason}"
-                    summary += (
-                        f"I recommend starting with {rec['repoId']} because "
-                        f"{reason}.\n\n"
-                        f"Choose a dataset below to continue."
-                    )
+                search_activity = []
+                search_activity.append(make_activity(request_id, job_id, "PLANNING", "completed", "Research goal understood"))
+                search_activity.append(make_activity(request_id, job_id, "DATASET_SEARCH", "running", "Finding relevant datasets"))
+                try:
+                    cands = hf.search_datasets(research_goal, limit=6)
+                except Exception as search_err:
+                    # Directive §13: say the source failed and try to continue
+                    # honestly — never silently return an unrelated result.
+                    print(f"[DATASET SEARCH ERROR]: {search_err}")
+                    search_activity.append(make_activity(request_id, job_id, "DATASET_SEARCH", "failed", "Dataset search failed — trying another approach"))
+                    res.update({
+                        "action": "NONE",
+                        "response": (
+                            "Dataset search failed. I'll try another source. "
+                            "Meanwhile, you can paste a specific dataset URL "
+                            "(https://huggingface.co/datasets/owner/name) and I'll load it directly."
+                        ),
+                        "researchQuery": research_goal,
+                        "activity": search_activity,
+                    })
                 else:
-                    summary += (
-                        "I couldn't find a match on Hugging Face for this exact goal. "
-                        "Try rephrasing with the core topic (e.g. \"customer churn\" instead of "
-                        "\"optimize churn prediction for imbalanced data\"), or paste a dataset URL "
-                        "(https://huggingface.co/datasets/owner/name) and I'll load it directly."
-                    )
-                res.update({
-                    "action": "RECOMMEND_DATASETS",
-                    "researchQuery": research_goal,
-                    "candidates": comp["candidates"],
-                    "recommendation": rec,
-                    "response": lead + summary,
-                })
+                    search_activity.append(make_activity(request_id, job_id, "DATASET_SEARCH", "completed", f"Found {len(cands)} candidate datasets"))
+                    search_activity.append(make_activity(request_id, job_id, "DATASET_EVALUATION", "running", "Comparing datasets"))
+                    comp = hf.compare_and_recommend(cands, research_goal, top_n=4)
+                    rec = comp.get("recommendation")
+                    if rec:
+                        try:
+                            info = hf.inspect_dataset(rec["repoId"])
+                            rec["rowCountPreview"] = info.get("rowCount")
+                            rec["targetColumn"] = info.get("targetColumn")
+                            rec["featureCount"] = info.get("featureCount")
+                            rec["minorityClassPct"] = info.get("minorityClassPct")
+                            rec["classDistribution"] = info.get("classDistribution")
+                            rec["splits"] = [s for s in (info.get("availableSplits") or {}).keys() if s in ("train", "test", "validation")]
+                        except Exception as inspect_err:
+                            print(f"[DATASET INSPECT WARNING]: {inspect_err}")
+                    search_activity.append(make_activity(request_id, job_id, "DATASET_EVALUATION", "completed", "Dataset comparison complete"))
+
+                    decision = selection_decision(comp, effective_mode)
+                    search_activity.append(make_activity(request_id, job_id, "DATASET_SELECTED", "running", "Selecting a dataset"))
+
+                    # A deployment without the ML runtime (e.g. the Vercel
+                    # serverless bundle) can search and compare datasets but
+                    # physically cannot train. Pausing there is a GENUINE
+                    # constraint (§11), not an unnecessary stop: selecting a
+                    # dataset and then failing to load it would be dishonest.
+                    missing_runtime = hf.ml_runtime_missing()
+                    if decision["decision"] == "AUTO_SELECT" and missing_runtime:
+                        decision = {
+                            "decision": "ASK_USER",
+                            "dataset": decision["dataset"],
+                            "reason": "the ML runtime for training is not available in this deployment",
+                        }
+                        if rec:
+                            reason = (rec['reasons'][0] if rec['reasons']
+                                      else 'it fits the task well').lower().rstrip('.')
+                            if reason.split(' ', 1)[0] in ('matches', 'has', 'is', 'uses', 'contains'):
+                                reason = f"it {reason}"
+                            summary = (
+                                f"I found {len(comp['candidates'])} relevant datasets.\n\n"
+                                f"I'd select {rec['repoId']} because {reason}. However, this deployment can't run the "
+                                "training pipeline (no ML runtime installed), so I need you to approve the dataset — "
+                                "runs execute where the full engine is available (locally or via Docker)."
+                            )
+                        else:
+                            summary = "I couldn't find a suitable dataset automatically."
+                        search_activity.append(make_activity(request_id, job_id, "WAITING_FOR_USER", "waiting", "Waiting for your dataset choice"))
+                        res.update({
+                            "action": "RECOMMEND_DATASETS",
+                            "researchQuery": research_goal,
+                            "candidates": comp["candidates"],
+                            "recommendation": rec,
+                            "selectionMode": effective_mode,
+                            "response": lead + summary,
+                        })
+
+                    elif decision["decision"] == "AUTO_SELECT":
+                        # Directive §3: clearly-best candidate -> select it and
+                        # CONTINUE. The cards stay available as information, and
+                        # the user can still override with another dataset.
+                        chosen = decision["dataset"]
+                        search_activity.append(make_activity(
+                            request_id, job_id, "DATASET_SELECTED", "completed",
+                            f"Selected {chosen.get('repoId')}"))
+                        try:
+                            approved = _approve_dataset(chosen["repoId"], research_goal)
+                            summary = (
+                                f"Found {len(comp['candidates'])} relevant datasets.\n\n"
+                                f"Selected {chosen['repoId']} because {str(decision['reason']).lower().rstrip('.')}.\n\n"
+                                "I'm analyzing the data and training the first models now — you can watch the progress below. "
+                                "If you'd rather use a different dataset, pick one of the cards and I'll continue from there."
+                            )
+                            res.update({
+                                "action": "START_RESEARCH",
+                                "researchQuery": research_goal,
+                                "candidates": comp["candidates"],
+                                "recommendation": chosen,
+                                "selectedDataset": chosen.get("repoId"),
+                                "selectionMode": "AUTONOMOUS",
+                                "projectId": approved["projectId"],
+                                "project": approved.get("project"),
+                                "response": lead + summary,
+                            })
+                        except Exception as auto_err:
+                            print(f"[AUTONOMOUS DATASET ERROR]: {auto_err}")
+                            search_activity.append(make_activity(request_id, job_id, "DATASET_SELECTED", "failed", "Could not load the selected dataset"))
+                            res.update({
+                                "action": "NONE",
+                                "researchQuery": research_goal,
+                                "candidates": comp["candidates"],
+                                "recommendation": rec,
+                                "response": (
+                                    f"I selected {chosen['repoId']} but couldn't load it ({auto_err}). "
+                                    "You can pick another dataset below and I'll continue from there."
+                                ),
+                            })
+                    else:
+                        # GUIDED/MANUAL, or a genuine near-tie/no-fit in
+                        # AUTONOMOUS mode: pause and ask (§11/§14) — the ONLY
+                        # legitimate WAITING_FOR_USER for dataset selection.
+                        if rec:
+                            reason = (rec['reasons'][0] if rec['reasons']
+                                      else 'it fits the task well').lower().rstrip('.')
+                            if reason.split(' ', 1)[0] in ('matches', 'has', 'is', 'uses', 'contains'):
+                                reason = f"it {reason}"
+                            if decision["decision"] == "ASK_USER" and effective_mode == AUTONOMOUS_MODE:
+                                summary = (
+                                    f"I found {len(comp['candidates'])} strong candidates. The choice affects the experiment.\n\n"
+                                    f"I'd start with {rec['repoId']} because {reason}, but several options are close — "
+                                    "which dataset should I use?"
+                                )
+                            else:
+                                summary = (
+                                    f"I recommend starting with {rec['repoId']} because {reason}.\n\n"
+                                    "Choose a dataset below to continue."
+                                )
+                        else:
+                            summary = (
+                                "I couldn't find a suitable dataset automatically. "
+                                "Try rephrasing with the core topic (e.g. \"customer churn\" instead of "
+                                "\"optimize churn prediction for imbalanced data\"), or paste a dataset URL "
+                                "(https://huggingface.co/datasets/owner/name) and I'll load it directly."
+                            )
+                        search_activity.append(make_activity(request_id, job_id, "WAITING_FOR_USER", "waiting", "Waiting for your dataset choice"))
+                        res.update({
+                            "action": "RECOMMEND_DATASETS",
+                            "researchQuery": research_goal,
+                            "candidates": comp["candidates"],
+                            "recommendation": rec,
+                            "response": lead + summary,
+                        })
+                    res["activity"] = search_activity
         except Exception as disc_err:
             print(f"[DATASET DISCOVERY ERROR]: {disc_err}")
             res.update({
@@ -330,17 +502,27 @@ async def chat_endpoint(payload: dict):
 
     # A safe, compact post-hoc work summary. It contains only completed,
     # observable application actions — never model reasoning, prompts, or keys.
-    activity_by_intent = {
-        "MATHEMATICS": ["Understanding the problem", "Solving with the math tool", "Checking the result", "Preparing the explanation"],
-        "CURRENT_INFORMATION": ["Checking current information", "Verifying the result", "Preparing the answer"],
-        "CODING": ["Understanding requirements", "Writing the code", "Preparing the answer"],
-        "EXPLANATION": ["Understanding your question", "Preparing the answer"],
-        "ENTITY_INFORMATION": ["Understanding your question", "Preparing the answer"],
-    }
-    labels = activity_by_intent.get(res.get("intent"), ["Understanding your question", "Preparing the answer"])
-    if res.get("action") == "RECOMMEND_DATASETS":
-        labels = ["Understanding the research objective", "Searching datasets", "Preparing dataset options"]
-    res["activity"] = [{"id": f"{request_id or 'request'}-{i}", "label": label, "status": "completed"} for i, label in enumerate(labels)]
+    # Mode-aware discovery above may have already built REAL activity events
+    # (with stage/status per the event contract); those take precedence.
+    labels = None
+    if not res.get("activity"):
+        activity_by_intent = {
+            "MATHEMATICS": ["Understanding the problem", "Solving with the math tool", "Checking the result", "Preparing the explanation"],
+            "CURRENT_INFORMATION": ["Checking current information", "Verifying the result", "Preparing the answer"],
+            "CODING": ["Understanding requirements", "Writing the code", "Preparing the answer"],
+            "EXPLANATION": ["Understanding your question", "Preparing the answer"],
+            "ENTITY_INFORMATION": ["Understanding your question", "Preparing the answer"],
+        }
+        labels = activity_by_intent.get(res.get("intent"), ["Understanding your question", "Preparing the answer"])
+        if res.get("action") == "RECOMMEND_DATASETS":
+            labels = ["Understanding the research objective", "Searching datasets", "Preparing dataset options"]
+        elif res.get("action") == "START_RESEARCH":
+            labels = ["Understanding the research goal", "Selecting the dataset", "Starting the research pipeline"]
+    if labels:
+        res["activity"] = [{"id": f"{request_id or 'request'}-{i}", "label": label, "status": "completed"} for i, label in enumerate(labels)]
+    else:
+        for i, ev in enumerate(res.get("activity") or []):
+            ev.setdefault("id", f"{request_id or 'request'}-{i}")
 
     store.record_message(
         conversation_id, "assistant", res.get("response", ""),

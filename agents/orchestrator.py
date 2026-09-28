@@ -168,6 +168,31 @@ def _orchestrate_pipeline(project_id: str, dataset_path: str, dataset_meta: Dict
         _unregister_run(project_id)
 
 
+RUN_STATES = {
+    "PLANNING", "DATASET_SEARCH", "DATASET_EVALUATION", "DATASET_SELECTED",
+    "EDA", "BASELINE", "EXPERIMENT", "EVALUATION", "ERROR_ANALYSIS",
+    "HYPOTHESIS", "NEXT_EXPERIMENT", "REPORT", "COMPLETED", "FAILED",
+    "WAITING_FOR_USER",
+}
+
+
+def _set_run_state(project_id: str, state: str, note: str = None) -> None:
+    """Explicit research state machine (directive §10).
+
+    ``runState`` is the coarse, user-visible position of the run. It never
+    stays stuck on an intermediate value: every failure path lands on FAILED,
+    every user-stop path lands on WAITING_FOR_USER, and the normal terminal
+    states are COMPLETED/FAILED. The per-stage ``stageStates`` map stays the
+    fine-grained record; this is the single current position.
+    """
+    if state not in RUN_STATES:
+        state = "FAILED"
+    update = {"runState": state}
+    if note:
+        update["runStateNote"] = note
+    store.update_project(project_id, update)
+
+
 def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[str, Any] = None, test_path: str = None):
     proj = store.get_project(project_id)
     if not proj:
@@ -186,6 +211,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
             "activeAgent": "RESEARCH_AGENT",
             "engineState": "LLM AUTONOMOUS" if any_provider_configured() else "HEURISTIC FALLBACK"
         })
+        _set_run_state(project_id, "PLANNING")
         store.add_event(project_id, "research.started", {"objective": objective})
 
         project_exp_dir = os.path.join(EXPERIMENTS_BASE_DIR, project_id)
@@ -231,6 +257,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
             store.add_agent_log(project_id, "DATASET_AGENT", "Pipeline stopped by user.", "STOPPED")
             return
 
+        _set_run_state(project_id, "EDA")
         store.update_stage_state(project_id, "dataset_eda", "RUNNING")
         store.add_event(project_id, "dataset.analysis.started")
         store.add_agent_log(project_id, "DATASET_AGENT", f"Inspecting dataset at {os.path.basename(dataset_path)}...")
@@ -271,6 +298,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
             store.add_agent_log(project_id, "BASELINE_AGENT", "Pipeline stopped by user.", "STOPPED")
             return
 
+        _set_run_state(project_id, "BASELINE")
         store.update_stage_state(project_id, "baseline_training", "RUNNING")
         store.add_event(project_id, "baseline.started")
         store.add_agent_log(project_id, "BASELINE_AGENT", "Training the first set of models (Logistic Regression, Random Forest, Hist Gradient Boosting, XGBoost)...")
@@ -349,6 +377,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
         tree_nodes = [root_node]
         store.save_tree_nodes(project_id, tree_nodes)
 
+        _set_run_state(project_id, "EVALUATION")
         store.update_stage_state(project_id, "error_diagnostics", "RUNNING")
         store.add_agent_log(project_id, "ERROR_ANALYSIS_AGENT", "Performing statistical error analysis & 95% bootstrap confidence interval estimation...")
         error_analysis = perform_error_analysis(best_model, X_test, y_test, list(X_test.columns) if hasattr(X_test, "columns") else None)
@@ -382,6 +411,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
             exp_id = f"node-exp-{exp_idx}"
 
             # Hypothesis Generation Stage
+            _set_run_state(project_id, "HYPOTHESIS")
             store.update_stage_state(project_id, "hypothesis_generation", "RUNNING")
             store.add_agent_log(project_id, "HYPOTHESIS_AGENT", f"Formulating Hypothesis #{exp_idx} informed by error diagnostics...")
             exp_hypothesis = generate_hypothesis_llm(objective, report, baselines, store.get_literature(project_id), exp_idx)
@@ -405,6 +435,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
                 store.update_stage_state(project_id, "hypothesis_generation", "FAILED")
 
             # Sandboxed Execution Stage
+            _set_run_state(project_id, "NEXT_EXPERIMENT")
             store.update_stage_state(project_id, "sandboxed_execution", "RUNNING")
             store.add_agent_log(project_id, "EXECUTION_MANAGER", f"Running sandboxed execution for Exp #{exp_idx} in isolated environment...")
             exec_env = {
@@ -535,6 +566,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
             store.add_agent_log(project_id, "REPORT_AGENT", "Pipeline stopped by user.", "STOPPED")
             return
 
+        _set_run_state(project_id, "REPORT")
         store.update_stage_state(project_id, "research_report", "RUNNING")
         store.add_agent_log(project_id, "REPORT_AGENT", "Generating scientific Markdown research report from verified results...")
         report_md = generate_research_report(proj, report, baselines, tree_nodes, latest_error_diag)
@@ -558,6 +590,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
         store.update_project(project_id, {
             "status": final_status,
             "activeAgent": "FINISHED" if final_status == "COMPLETED" else "ERROR",
+            "runState": "COMPLETED" if final_status == "COMPLETED" else "FAILED",
             "computeUsed": f"{elapsed_mins} mins / {budget_mins} mins",
             # Honest bookkeeping: when every attempted experiment failed, the
             # run is FAILED even though the report itself rendered fine.

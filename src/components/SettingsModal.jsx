@@ -8,7 +8,8 @@ export default function SettingsModal({ isOpen, onClose }) {
     sandboxMode: 'Process Sandbox (Subprocess isolation)',
     dockerAvailable: false,
     maxExperiments: 5,
-    timeBudgetMins: 60
+    timeBudgetMins: 60,
+    researchMode: 'GUIDED'
   });
 
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -78,6 +79,28 @@ export default function SettingsModal({ isOpen, onClose }) {
 
         <form onSubmit={handleSave} className="space-y-4 text-xs font-sans">
           
+          {/* Research Mode — changes how far the pipeline runs without asking */}
+          <div className="space-y-1.5">
+            <label className="text-slate-300 font-medium">Research Mode</label>
+            <select
+              value={settings.researchMode || 'GUIDED'}
+              onChange={(e) => setSettings({ ...settings, researchMode: e.target.value })}
+              className="w-full bg-[#0D111A] border border-[#212B3B] text-slate-200 rounded-lg p-2.5 font-mono focus:outline-none focus:border-cyan-500/50"
+            >
+              <option value="GUIDED">Guided — ask me before choosing a dataset</option>
+              <option value="AUTONOMOUS">Autonomous — pick the best dataset and continue</option>
+            </select>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Autonomous pauses only when several datasets are nearly equally suitable or none clearly fits. Guided always asks.
+            </p>
+            <p className="text-[10px] text-amber-400/80 leading-relaxed">
+              Autonomous mode selects and trains on a dataset automatically.
+            </p>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              {`Also switchable in chat: "switch to autonomous mode" / "switch to guided mode".`}
+            </p>
+          </div>
+
           {/* LLM Engine Provider */}
           <div className="space-y-1.5">
             <label className="text-slate-300 font-medium">LLM Engine Provider</label>

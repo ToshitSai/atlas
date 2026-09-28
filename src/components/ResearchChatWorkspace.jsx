@@ -128,8 +128,10 @@ export default function ResearchChatWorkspace({
         action: res.action,
         datasets: res.candidates || null,
         recommendation: res.recommendation || null,
-        researchQuery: res.researchQuery || null
-        ,activity: res.activity || []
+        researchQuery: res.researchQuery || null,
+        selectionMode: res.selectionMode || null,
+        selectedDataset: res.selectedDataset || null,
+        activity: res.activity || []
       };
 
       setChatMessages(prev => [...prev, assistantMsg]);
@@ -432,13 +434,15 @@ export default function ResearchChatWorkspace({
                     <ActivityPanel activities={msg.activity} />
 
                     {msg.datasets && msg.datasets.length > 0 && (
-                      <DatasetCards
-                        datasets={msg.datasets}
-                        recommendation={msg.recommendation}
-                        researchQuery={msg.researchQuery}
-                        onApprove={onApproveDataset}
-                        isApproving={isApproving}
-                      />
+                    <DatasetCards
+                      datasets={msg.datasets}
+                      recommendation={msg.recommendation}
+                      researchQuery={msg.researchQuery}
+                      selectionMode={msg.selectionMode}
+                      selectedDataset={msg.selectedDataset}
+                      onApprove={onApproveDataset}
+                      isApproving={isApproving}
+                    />
                     )}
                   </div>
                 )}
@@ -679,12 +683,19 @@ export default function ResearchChatWorkspace({
   );
 }
 
-function DatasetCards({ datasets, recommendation, researchQuery, onApprove, isApproving }) {
+function DatasetCards({ datasets, recommendation, researchQuery, selectionMode, selectedDataset, onApprove, isApproving }) {
   const recId = recommendation?.repoId;
+  const autonomous = selectionMode === 'AUTONOMOUS' && !!selectedDataset;
   const fmtRows = (n) => (typeof n === 'number' ? n.toLocaleString() : null);
 
   return (
     <div className="space-y-3 pt-1 min-w-0">
+      {autonomous && (
+        <p className="text-[11px] text-slate-400">
+          These cards are informational — the highlighted dataset was selected automatically.
+          Pick a different one any time and I'll continue the research from there.
+        </p>
+      )}
       {datasets.map((d) => {
         const isRec = d.repoId === recId;
         const rows = fmtRows(d.rowCountPreview);

@@ -840,7 +840,7 @@ def classify_intent(
     #     sentence ("a train travels 60 mph...") must not launch research.
     if (re.match(
             r"^(?:please\s+|can you\s+|could you\s+|help me\s+|i want to\s+)?"
-            r"(improve|optimize|optimise|train|predict|forecast|detect)\b", msg_clean)
+            r"(improve|optimize|optimise|train|predict|forecast|detect|classify)\b", msg_clean)
             or "fraud" in msg_clean):
         return "RESEARCH_START"
 
