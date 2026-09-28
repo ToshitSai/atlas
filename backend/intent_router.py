@@ -323,15 +323,45 @@ _DATASET_REQUEST_RE = re.compile(
 )
 
 
-def _is_explicit_ml_experiment_request(msg_clean: str) -> bool:
-    """Whether text requests an ML experiment, rather than discusses ML.
-
-    The imperative/action requirement prevents subject-only phrases such as
-    ``fraud detection`` and explanatory questions from launching a workflow.
-    """
-    if not _ML_EXPERIMENT_REQUEST_RE.search(msg_clean):
+def _is_how_what_why_explain_question(msg_clean: str) -> bool:
+    """Keep help-seeking questions out of autonomous dataset discovery."""
+    if msg_clean.startswith(("what can you", "what do you")):
         return False
-    return any(signal in msg_clean for signal in _ML_SIGNALS)
+    return bool(re.match(
+        r"^(?:please\s+)?(?:how(?:\s+do|\s+to|\s+can|\s+should)?|"
+        r"what(?:\s+is|\s+are|\s+does|\s+should)?|why|explain\b)",
+        msg_clean,
+    ))
+
+
+def _is_explicit_ml_experiment_request(msg_clean: str) -> bool:
+    """Whether text is an unambiguous request to run an ML task.
+
+    A verb alone is deliberately insufficient: ``improve fraud detection`` is
+    a request for advice, while ``train a fraud detection model`` is concrete.
+    """
+    if _is_how_what_why_explain_question(msg_clean):
+        return False
+    match = _ML_EXPERIMENT_REQUEST_RE.search(msg_clean)
+    if not match:
+        return False
+    verb = match.group(0).split()[-1]
+    has_signal = any(signal in msg_clean for signal in _ML_SIGNALS)
+    has_model_object = bool(re.search(
+        r"\b(?:model|classifier|regressor|pipeline|dataset|data\s*set|"
+        r"training|experiment|baseline)\b", msg_clean))
+    if verb in {"improve", "optimize", "optimise", "tune", "build", "train", "test", "evaluate", "experiment"}:
+        return has_model_object and has_signal
+    return has_signal and bool(re.search(r"\b(?:predict|forecast|classify|detect)\s+\S+", msg_clean))
+
+
+def _is_borderline_ml_request(msg_clean: str) -> bool:
+    """Detect an ML-looking imperative that needs confirmation, not a search."""
+    if _is_how_what_why_explain_question(msg_clean):
+        return False
+    return bool(_ML_EXPERIMENT_REQUEST_RE.search(msg_clean) and
+                any(signal in msg_clean for signal in _ML_SIGNALS) and
+                not _is_explicit_ml_experiment_request(msg_clean))
 
 _CODING_PATTERNS = [
     r"\b(write|create|make|give me|generate)\b[^.]*\b(program|code|function|script|class|app|application|snippet)\b",
@@ -728,6 +758,14 @@ def classify_intent(
             and not (active_project_id and project_ref)):
         return "WEB_SEARCH"
 
+    # Advice and explanatory questions must win before every research/dataset
+    # rule, even when their wording contains verbs such as improve or predict.
+    # Active-project result questions remain project follow-ups below.
+    if (_is_how_what_why_explain_question(msg_clean)
+            and not _COMPARISON_RE.search(msg_clean)
+            and not (active_project_id and project_ref)):
+        return "EXPLANATION"
+
     # 3. Explicit research requests are literature/deep research by default.
     #    A research verb plus an ML *subject* is still not an instruction to
     #    train or optimise a model ("Research fraud detection" is not
@@ -759,6 +797,9 @@ def classify_intent(
     if (not (definitional or interrogative)
             and _is_explicit_ml_experiment_request(msg_clean)):
         return "RESEARCH_START"
+
+    if _is_borderline_ml_request(msg_clean):
+        return "EXPLANATION"
 
     # Dataset discovery is an explicit capability request. It is intentionally
     # separate from general ML discussion and hands the existing dataset
@@ -1321,6 +1362,28 @@ def _handle_intent_message_impl(
 
     # 2. EXPLANATION (general Q&A) — answer the question, nothing else.
     elif intent == "EXPLANATION":
+        # A short ML imperative without a concrete model/dataset task is
+        # ambiguous. Give useful guidance and make dataset discovery opt-in.
+        if _is_borderline_ml_request(msg_clean):
+            subject = re.sub(
+                r"^(?:please\s+)?(?:improve|optimi[sz]e|tune|train|build|test|evaluate)\s+",
+                "", message.strip(), flags=re.IGNORECASE)
+            answer = (
+                f"A sensible first step for {subject} is to define the outcome, "
+                "check data quality and class balance, then measure a simple baseline before tuning. "
+                "Want me to search for datasets for this?"
+            )
+            store.clear_pending_action(sid)
+            store.update_session(sid, {"last_assistant_message": answer, "last_topic": subject.lower()[:80]})
+            return {
+                "intent": intent,
+                "taskType": "ml_guidance",
+                "response": answer,
+                "action": "NONE",
+                "projectId": active_project_id,
+                "pendingAction": None,
+                "lastTopic": subject.lower()[:80],
+            }
         topic = extract_topic(message)
         # Pronoun follow-ups ("why is it useful?") resolve against the recent
         # conversation topic so the answer stays about what we were discussing.

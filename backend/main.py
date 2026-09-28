@@ -351,7 +351,11 @@ async def chat_endpoint(payload: dict):
                     # Cards are shown only after best-effort real inspection so
                     # the user sees schema facts, not Hub-search placeholders.
                     cands = hf.enrich_candidates(cands, max_candidates=4)
-                    search_activity.append(make_activity(request_id, job_id, "DATASET_SEARCH", "completed", f"Found {len(cands)} candidate datasets"))
+                    search_activity.append(make_activity(
+                        request_id, job_id, "DATASET_SEARCH", "completed",
+                        (f"Found {len(cands)} candidate datasets" if cands
+                         else "No candidate datasets found; preparing broader-search guidance"),
+                    ))
                     search_activity.append(make_activity(request_id, job_id, "DATASET_EVALUATION", "running", "Comparing datasets"))
                     comp = hf.compare_and_recommend(cands, research_goal, top_n=4)
                     rec = comp.get("recommendation")
