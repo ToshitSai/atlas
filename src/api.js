@@ -80,11 +80,11 @@ export async function createResearchProject(formData) {
   });
 }
 
-export async function sendChatMessage(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}) {
+export async function sendChatMessage(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = []) {
   return safeFetchJson(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, projectId, conversationId, pendingAction, lastTopic, ...correlation })
+    body: JSON.stringify({ message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, ...correlation })
   });
 }
 

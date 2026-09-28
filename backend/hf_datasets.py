@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 HF_API = "https://huggingface.co/api/datasets"
 HF_WEB = "https://huggingface.co/datasets"
 HF_HUB_API = "https://huggingface.co/api/datasets"
+HF_DATASETS_SERVER = "https://datasets-server.huggingface.co"
 
 _USER_AGENT = "AutoML-Scientist/2.0 (research dataset discovery)"
 
@@ -159,6 +160,36 @@ def _pick_preferred_file(files: List[str]) -> Optional[str]:
     return files[0]
 
 
+def _dataset_server_preview(repo_id: str) -> Optional[Dict[str, Any]]:
+    """Read a bounded Hub preview rather than downloading an entire data file."""
+    try:
+        splits = _http_json(
+            f"{HF_DATASETS_SERVER}/splits?dataset={urllib.parse.quote(repo_id, safe='/')}", timeout=12
+        ).get("splits", [])
+        if not splits:
+            return None
+        choice = next((s for s in splits if s.get("split") == "train"), splits[0])
+        params = urllib.parse.urlencode({
+            "dataset": repo_id,
+            "config": choice.get("config", "default"),
+            "split": choice.get("split", "train"),
+            "offset": 0,
+            "length": 100,
+        })
+        payload = _http_json(f"{HF_DATASETS_SERVER}/rows?{params}", timeout=12)
+        rows = [r.get("row", {}) for r in payload.get("rows", [])]
+        if not rows:
+            return None
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return None
+        return {"dataframe": df, "split": choice.get("split", "train"),
+                "file": "Hugging Face bounded preview"}
+    except Exception:
+        return None
+
+
 # --------------------------------------------------------------------------- #
 # Public API: search + metadata
 # --------------------------------------------------------------------------- #
@@ -209,6 +240,68 @@ _GENERIC_TERMS = {
 }
 
 _MAX_QUERY_VARIANTS = 16
+_SANDBOX_SAMPLE_ROWS = 200_000
+
+
+def _sampling_plan(size_category: Optional[str]) -> Optional[str]:
+    """Return a plan only when the category indicates a large runnable dataset."""
+    size = (size_category or "").lower().replace(" ", "")
+    if "10m" in size or ">1m" in size or "1m<n" in size:
+        return f"Will train on a {_SANDBOX_SAMPLE_ROWS:,}-row sample."
+    return None
+
+
+def sandbox_sample_rows(size_category: Optional[str]) -> Optional[int]:
+    """Return the enforced download cap for a dataset too large for the sandbox."""
+    return _SANDBOX_SAMPLE_ROWS if _sampling_plan(size_category) else None
+
+
+def _candidate_fingerprint(candidate: Dict[str, Any]) -> str:
+    """Collapse obvious Hub forks/copies while preserving unrelated datasets."""
+    repo_id = str(candidate.get("repoId") or "").casefold()
+    slug = repo_id.rsplit("/", 1)[-1]
+    slug = re.sub(r"(?:[-_](?:dataset|data|copy|clone|fork|splits?|processed))+$", "", slug)
+    return slug or repo_id
+
+
+def enrich_candidates(candidates: List[Dict[str, Any]], max_candidates: int = 6) -> List[Dict[str, Any]]:
+    """Attach verified schema metadata to display candidates before ranking.
+
+    Inspection failures remain visible as unknown metadata; they are never
+    substituted with guessed feature, target, or loadability claims.
+    """
+    enriched: List[Dict[str, Any]] = []
+    seen = set()
+    for candidate in candidates:
+        repo_id = candidate.get("repoId")
+        fingerprint = _candidate_fingerprint(candidate)
+        if not repo_id or fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        item = dict(candidate)
+        if len(enriched) < max_candidates:
+            try:
+                info = inspect_dataset(repo_id)
+                item.update({
+                    "rowCountPreview": info.get("rowCount"),
+                    "targetColumn": info.get("targetColumn"),
+                    "featureCount": info.get("featureCount"),
+                    "minorityClassPct": info.get("minorityClassPct"),
+                    "classDistribution": info.get("classDistribution"),
+                    "splits": [s for s in (info.get("availableSplits") or {}) if s in ("train", "test", "validation")],
+                    "previewFile": info.get("previewFile"),
+                    "previewVerified": bool(info.get("previewFile")),
+                    "previewError": info.get("previewError"),
+                })
+                # Dataset-info metadata is more authoritative than search tags.
+                for field in ("license", "format", "sizeCategory", "taskCategories", "modality", "topics", "gated", "private"):
+                    if info.get(field) is not None:
+                        item[field] = info.get(field)
+            except Exception as exc:  # noqa: BLE001
+                item["previewError"] = str(exc)[:160]
+        item["samplingPlan"] = _sampling_plan(item.get("sizeCategory"))
+        enriched.append(item)
+    return enriched
 
 
 def _query_variants(goal: str) -> List[str]:
@@ -383,15 +476,56 @@ def inspect_dataset(repo_id: str, download_preview: bool = True) -> Dict[str, An
     if not download_preview:
         return result
 
+    # The datasets-server returns a bounded row preview and avoids accidentally
+    # pulling a multi-gigabyte parquet file during search-card rendering.
+    server_preview = _dataset_server_preview(repo_id)
+    if server_preview:
+        df = server_preview["dataframe"]
+        target = _detect_target(df)
+        feature_names = [c for c in df.columns if c != target]
+        result.update({
+            "previewSplit": server_preview["split"],
+            "previewFile": server_preview["file"],
+            "featureNames": feature_names,
+            "featureCount": len(feature_names),
+            "rowCount": int(len(df)),
+            "targetColumn": target,
+            "dtypes": {c: str(t) for c, t in df.dtypes.astype(str).items()},
+        })
+        if target is not None:
+            try:
+                vc = df[target].value_counts(dropna=True)
+                total = int(vc.sum())
+                dist = [{"label": str(k), "count": int(v),
+                         "percentage": round(float(v) / total * 100, 3)} for k, v in vc.items()]
+                result["classDistribution"] = dist
+                if len(dist) > 1:
+                    result["minorityClassPct"] = min(d["percentage"] for d in dist)
+            except Exception:
+                pass
+        return result
+
+    # Fall back to a repository file only when the Hub reports that the entire
+    # repository is small. Unknown or large sizes remain "not detected yet";
+    # search-card rendering must never fetch a multi-gigabyte artifact.
+    try:
+        storage = info.get("usedStorage")
+        safe_direct_preview = storage is not None and int(storage) <= 25 * 1024 * 1024
+    except (TypeError, ValueError):
+        safe_direct_preview = False
+    if not safe_direct_preview:
+        result["previewError"] = "Bounded preview unavailable; full-file preview was skipped."
+        return result
+
     # Load the smallest split we can (prefer test/validation, then train, then
-    # any loose data files) to read schema + class balance without pulling
-    # the whole dataset.
+    # any loose data files) to read schema + class balance without pulling a
+    # large dataset.
     for split_name in ("test", "validation", "train", "other"):
         fname = _pick_preferred_file(splits.get(split_name, []))
         if not fname:
             continue
         try:
-            data = _http_get(_resolve_url(repo_id, fname, info.get("sha") or "main"), timeout=120)
+            data = _http_get(_resolve_url(repo_id, fname, info.get("sha") or "main"), timeout=20)
             df = _read_table_bytes(fname, data)
         except Exception as exc:  # noqa: BLE001
             result["previewError"] = f"{split_name}: {exc}"
@@ -543,9 +677,14 @@ def score_candidate(cand: Dict[str, Any], goal: str) -> Tuple[float, List[str]]:
         score += 12
         reasons.append("Structured tabular data suited to classification experiments.")
 
-    if cand.get("format") in ("parquet", "csv"):
+    if cand.get("previewVerified") and cand.get("format") in ("parquet", "csv"):
         score += 6
-        reasons.append(f"Directly loadable {cand.get('format')} format.")
+        reasons.append(f"Verified preview from {cand.get('previewFile')} ({cand.get('format')} format).")
+    elif cand.get("previewVerified"):
+        score -= 10
+        reasons.append("Schema preview is verified, but the downloadable file format was not detected.")
+    elif cand.get("format") in ("parquet", "csv"):
+        reasons.append(f"Advertises {cand.get('format')} format; access has not been verified yet.")
 
     # Popularity / community trust as a weak quality signal.
     dl = cand.get("downloads") or 0
@@ -560,11 +699,11 @@ def score_candidate(cand: Dict[str, Any], goal: str) -> Tuple[float, List[str]]:
         score += min(cand["likes"], 8)
 
     # License clarity aids reproducibility.
-    if cand.get("license"):
+    if cand.get("license") and str(cand.get("license")).lower() not in {"other", "unknown", "unspecified"}:
         score += 5
         reasons.append(f"Clear license ({cand['license']}) supports reproducible use.")
     else:
-        reasons.append("License not stated — reproducibility may be limited.")
+        reasons.append("License is unclear — verify terms before using this dataset.")
 
     if cand.get("gated") or cand.get("private"):
         score -= 40
@@ -572,7 +711,13 @@ def score_candidate(cand: Dict[str, Any], goal: str) -> Tuple[float, List[str]]:
 
     # Size suitability (enough rows to learn from, not absurdly large).
     size = (cand.get("sizeCategory") or "").lower()
-    if any(s in size for s in ("100k", "1m", "10m")):
+    if cand.get("samplingPlan"):
+        score -= 18
+        reasons.append(cand["samplingPlan"])
+    elif "10m" in size:
+        score -= 35
+        reasons.append("Too large for the default sandbox budget; not recommended without sampling.")
+    elif "100k" in size or "1m" in size:
         score += 6
         reasons.append(f"Substantial data volume ({cand.get('sizeCategory')}).")
 

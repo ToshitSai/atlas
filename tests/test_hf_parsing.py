@@ -2,7 +2,8 @@
 target detection (section 12)."""
 import pytest
 
-from backend.hf_datasets import parse_hf_reference, _detect_target
+from backend import hf_datasets
+from backend.hf_datasets import parse_hf_reference, _detect_target, score_candidate
 
 
 # ---------------------------------------------------------------------------
@@ -85,3 +86,35 @@ def test_detect_target_falls_back_when_no_hint():
     import pandas as pd
     df = pd.DataFrame({"alpha": ["a", "b"], "beta": ["c", "d"]})
     assert _detect_target(df) == "beta"
+
+
+def test_enrich_candidates_adds_verified_metadata_and_dedupes_forks(monkeypatch):
+    def fake_inspect(repo_id, **_kwargs):
+        return {
+            "rowCount": 1200,
+            "targetColumn": "is_fraud",
+            "featureCount": 30,
+            "availableSplits": {"train": ["train.parquet"], "test": ["test.parquet"]},
+            "previewFile": "train.parquet",
+            "license": "mit",
+            "format": "parquet",
+            "sizeCategory": "1K<n<10K",
+        }
+
+    monkeypatch.setattr(hf_datasets, "inspect_dataset", fake_inspect)
+    cards = hf_datasets.enrich_candidates([
+        {"repoId": "team/fraud-dataset", "description": "Fraud classification"},
+        {"repoId": "fork/fraud-dataset-splits", "description": "Copied fraud classification"},
+    ])
+    assert len(cards) == 1
+    assert cards[0]["featureCount"] == 30
+    assert cards[0]["targetColumn"] == "is_fraud"
+    assert cards[0]["previewVerified"] is True
+
+
+def test_large_candidate_is_penalized_and_has_an_executable_sampling_plan():
+    score, reasons = score_candidate({"repoId": "team/fraud", "sizeCategory": "10M<n<100M",
+                                      "samplingPlan": "Will train on a 200,000-row sample."}, "improve fraud detection")
+    assert score < 0
+    assert any("200,000-row sample" in reason for reason in reasons)
+    assert hf_datasets.sandbox_sample_rows("10M<n<100M") == 200_000

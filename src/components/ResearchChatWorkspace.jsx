@@ -104,7 +104,7 @@ export default function ResearchChatWorkspace({
       const res = await sendChatMessage(userText, projectId, conversationId, pendingAction, lastTopic, {
         requestId,
         messageId: userMessageId
-      });
+      }, [...chatMessages, userMsg]);
       if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
         throw new Error('The response could not be matched to the submitted message. Please retry.');
       }
@@ -699,6 +699,11 @@ function DatasetCards({ datasets, recommendation, researchQuery, selectionMode, 
       {datasets.map((d) => {
         const isRec = d.repoId === recId;
         const rows = fmtRows(d.rowCountPreview);
+        const unknown = 'Not detected yet';
+        const rowsValue = d.sizeCategory
+          ? `${d.sizeCategory}${rows ? ` · preview ${rows}` : ''}`
+          : rows ? `Preview ${rows}` : unknown;
+        const licenseIsUnclear = !d.license || ['other', 'unknown', 'unspecified'].includes(String(d.license).toLowerCase());
         return (
           <div
             key={d.repoId}
@@ -730,13 +735,21 @@ function DatasetCards({ datasets, recommendation, researchQuery, selectionMode, 
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
-              <Meta label="Rows" value={rows || d.sizeCategory || '—'} />
-              <Meta label="Features" value={d.featureCount != null ? d.featureCount : '—'} />
-              <Meta label="Target" value={d.targetColumn || '—'} />
-              <Meta label="License" value={d.license || 'unspecified'} />
-              <Meta label="Format" value={d.format || '—'} />
-              <Meta label="Splits" value={(d.splits && d.splits.length) ? d.splits.join(', ') : '—'} />
+              <Meta label="Rows" value={rowsValue} />
+              <Meta label="Features" value={d.featureCount != null ? d.featureCount : unknown} />
+              <Meta label="Target" value={d.targetColumn || unknown} />
+              <Meta label="License" value={licenseIsUnclear ? 'Unclear — verify' : d.license} />
+              <Meta label="Format" value={d.format || unknown} />
+              <Meta label="Splits" value={(d.splits && d.splits.length) ? d.splits.join(', ') : unknown} />
             </div>
+
+            {d.samplingPlan && (
+              <div className="text-[11px] text-amber-300/90">{d.samplingPlan}</div>
+            )}
+
+            {licenseIsUnclear && (
+              <div className="text-[11px] text-amber-300/90">License terms are unclear; verify them before use.</div>
+            )}
 
             {d.minorityClassPct != null && (
               <div className="text-[11px] text-amber-300/90">

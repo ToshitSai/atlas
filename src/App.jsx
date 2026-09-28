@@ -113,7 +113,7 @@ export default function App() {
         requestId,
         messageId: userMessageId,
         researchMode
-      });
+      }, [userMsg]);
       if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
         throw new Error('The response could not be matched to the submitted message. Please retry.');
       }

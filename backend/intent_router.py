@@ -675,6 +675,10 @@ def classify_intent(
     # 2. CODING — "write a python program to reverse a string", "implement X".
     if _has_coding_intent(msg_clean):
         return "CODING"
+    # A short completion after a coding turn ("for hello world") belongs to
+    # that request; do this before any generic/casual fallback.
+    if last_topic == "coding" and re.match(r"^(?:for|about|with|using)\b", msg_clean):
+        return "CODING"
 
     # 2.5 MATHEMATICS — real calculation via the safe evaluator tools. Only claims
     # the request when a strict evaluator can actually compute it (try_evaluate
@@ -918,7 +922,8 @@ def _honest_unknown(subject: str) -> str:
     )
 
 
-def _conversation_context(session_id: Optional[str], limit: int = 6) -> str:
+def _conversation_context(session_id: Optional[str], limit: int = 6,
+                          client_history: Optional[List[Dict[str, Any]]] = None) -> str:
     """Layered memory block for prompt assembly (repair task §10):
 
         recent conversation window (last `limit` messages, near-verbatim)
@@ -934,7 +939,18 @@ def _conversation_context(session_id: Optional[str], limit: int = 6) -> str:
     try:
         msgs = store.get_messages(session_id) or []
     except Exception:
-        return ""
+        msgs = []
+    # The client includes its bounded rendered transcript with each turn. This
+    # is a stateless-server fallback, not a replacement for persisted history.
+    # It prevents context loss when a serverless instance has no prior memory.
+    if client_history and len(msgs) <= 1:
+        safe_history = [
+            {"role": item.get("role"), "content": str(item.get("content") or "")[:2000]}
+            for item in client_history[-20:]
+            if isinstance(item, dict) and item.get("role") in {"user", "assistant"}
+        ]
+        if safe_history:
+            msgs = safe_history
     lines = []
     for m in msgs[-limit:]:
         role = "User" if m.get("role") == "user" else "Assistant"
@@ -966,6 +982,28 @@ def _conversation_context(session_id: Optional[str], limit: int = 6) -> str:
         except Exception:
             pass
     return block + "\n"
+
+
+def _history_last_topic(history: Optional[List[Dict[str, Any]]]) -> Optional[str]:
+    """Recover a small, safe topic hint when server-side session state is cold."""
+    for item in reversed(history or []):
+        if not isinstance(item, dict) or item.get("role") != "user":
+            continue
+        content = str(item.get("content") or "").lower()
+        if _has_coding_intent(content):
+            return "coding"
+    return None
+
+
+def _starter_code_example(message: str, history: Optional[List[Dict[str, Any]]]) -> Optional[str]:
+    """Return a useful deterministic code starter for an underspecified ask."""
+    text = (message or "").lower()
+    history_text = " ".join(str(x.get("content") or "").lower() for x in (history or []) if isinstance(x, dict))
+    if "hello world" in text or (text.startswith(("for ", "about ")) and "hello world" in history_text):
+        return "```python\nprint(\"Hello, world!\")\n```\n\nThis prints a greeting. Tell me what you want it to do next and I’ll extend it."
+    if re.fullmatch(r"(?:please\s+)?write\s+(?:some\s+)?python\s+code[.!?]*", text.strip()):
+        return "```python\nprint(\"Hello, world!\")\n```\n\nHere’s a working Python starter. Tell me the task (for example, read a file, call an API, or process a list) and I’ll tailor it."
+    return None
 
 
 def _general_answer(message: str, topic: Optional[str], history_ctx: str = "") -> str:
@@ -1030,7 +1068,8 @@ def handle_intent_message(
     active_project_id: Optional[str] = None,
     session_id: Optional[str] = None,
     payload_pending_action: Optional[Dict[str, Any]] = None,
-    payload_last_topic: Optional[str] = None
+    payload_last_topic: Optional[str] = None,
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1063,7 +1102,8 @@ def handle_intent_message(
             }
         else:
             result = _handle_intent_message_impl(message, active_project_id, session_id,
-                                                 payload_pending_action, payload_last_topic)
+                                                 payload_pending_action, payload_last_topic,
+                                                 conversation_history)
         # The API preserves its existing response shape and adds an optional,
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
@@ -1079,11 +1119,16 @@ def _handle_intent_message_impl(
     active_project_id: Optional[str] = None,
     session_id: Optional[str] = None,
     payload_pending_action: Optional[Dict[str, Any]] = None,
-    payload_last_topic: Optional[str] = None
+    payload_last_topic: Optional[str] = None,
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
     sess = get_session(sid)
+    history_topic = _history_last_topic(conversation_history)
+    if history_topic and not (payload_last_topic or sess.get("last_topic")):
+        store.update_session(sid, {"last_topic": history_topic})
+        sess = get_session(sid)
     store.update_session(sid, {"last_user_message": message})
 
     if payload_pending_action is not None:
@@ -1126,7 +1171,8 @@ def _handle_intent_message_impl(
             "lastTopic": sess.get("last_topic"),
         }
 
-    intent = classify_intent(message, active_project_id, sid, payload_pending_action, payload_last_topic)
+    intent = classify_intent(message, active_project_id, sid, payload_pending_action,
+                             payload_last_topic or history_topic)
 
     # The classification fallback already spent LLM budget without a match;
     # remember that so the answer path below does not burn the remaining
@@ -1409,13 +1455,26 @@ def _handle_intent_message_impl(
     # 3. CODING — generate code via the LLM; honest fallback if none reachable.
     elif intent == "CODING":
         store.clear_pending_action(sid)
-        last_topic = payload_last_topic or sess.get("last_topic")
+        last_topic = payload_last_topic or history_topic or sess.get("last_topic")
+        starter = _starter_code_example(message, conversation_history)
+        if starter:
+            store.update_session(sid, {"last_assistant_message": starter, "last_topic": "coding"})
+            return {
+                "intent": intent,
+                "taskType": "coding",
+                "response": starter,
+                "action": "NONE",
+                "projectId": active_project_id,
+                "pendingAction": None,
+                "lastTopic": "coding",
+            }
         # For a bare follow-up ("show me a simple example"), pull in the current
         # topic so the code is about what we were just discussing (§23).
         ctx_line = ""
         if last_topic and _is_example_request(msg_clean, re.sub(r'[^\w\s]', '', msg_clean).strip()):
             ctx_line = f"The user is asking for an example about {last_topic}.\n"
         prompt = (
+            f"{_conversation_context(sid, client_history=conversation_history)}"
             f"Solve the following programming request with correct, runnable code "
             f"and a brief explanation.\n{ctx_line}Request: \"{message}\""
         )

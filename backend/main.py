@@ -203,6 +203,9 @@ async def chat_endpoint(payload: dict):
     )
     payload_pending_action = payload.get("pendingAction")
     payload_last_topic = payload.get("lastTopic")
+    conversation_history = payload.get("conversationHistory")
+    if not isinstance(conversation_history, list):
+        conversation_history = []
 
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
@@ -270,7 +273,8 @@ async def chat_endpoint(payload: dict):
         active_project_id=active_project_id, 
         session_id=conversation_id,
         payload_pending_action=payload_pending_action,
-        payload_last_topic=payload_last_topic
+        payload_last_topic=payload_last_topic,
+        conversation_history=conversation_history,
     )
     action = res.get("action")
 
@@ -344,21 +348,13 @@ async def chat_endpoint(payload: dict):
                         "activity": search_activity,
                     })
                 else:
+                    # Cards are shown only after best-effort real inspection so
+                    # the user sees schema facts, not Hub-search placeholders.
+                    cands = hf.enrich_candidates(cands, max_candidates=4)
                     search_activity.append(make_activity(request_id, job_id, "DATASET_SEARCH", "completed", f"Found {len(cands)} candidate datasets"))
                     search_activity.append(make_activity(request_id, job_id, "DATASET_EVALUATION", "running", "Comparing datasets"))
                     comp = hf.compare_and_recommend(cands, research_goal, top_n=4)
                     rec = comp.get("recommendation")
-                    if rec:
-                        try:
-                            info = hf.inspect_dataset(rec["repoId"])
-                            rec["rowCountPreview"] = info.get("rowCount")
-                            rec["targetColumn"] = info.get("targetColumn")
-                            rec["featureCount"] = info.get("featureCount")
-                            rec["minorityClassPct"] = info.get("minorityClassPct")
-                            rec["classDistribution"] = info.get("classDistribution")
-                            rec["splits"] = [s for s in (info.get("availableSplits") or {}).keys() if s in ("train", "test", "validation")]
-                        except Exception as inspect_err:
-                            print(f"[DATASET INSPECT WARNING]: {inspect_err}")
                     search_activity.append(make_activity(request_id, job_id, "DATASET_EVALUATION", "completed", "Dataset comparison complete"))
 
                     decision = selection_decision(comp, effective_mode)
@@ -582,7 +578,16 @@ def _approve_dataset(repo_id: str, research_goal: str, budget: int = 60, max_exp
         # ModuleNotFoundError bubble up mid-download ("No module named 'pandas'").
         raise RuntimeError(hf.ml_runtime_message(missing))
 
-    dl = hf.download_dataset(repo_id)
+    # Do not let a card's sampling warning be merely cosmetic: use the same
+    # size metadata at approval time to cap a sandbox download.
+    try:
+        dataset_info = hf.inspect_dataset(repo_id, download_preview=False)
+        sample_rows = hf.sandbox_sample_rows(dataset_info.get("sizeCategory"))
+    except Exception:
+        # Download still performs its own format/access validation and reports
+        # an honest failure if metadata cannot be read.
+        sample_rows = None
+    dl = hf.download_dataset(repo_id, max_rows=sample_rows)
     project_id = f"proj-{uuid.uuid4().hex[:6]}"
 
     meta = {
@@ -596,6 +601,8 @@ def _approve_dataset(repo_id: str, research_goal: str, budget: int = 60, max_exp
                           if dl.get("testPath") else "Stratified 80/20 train/test split (seed 42)"),
         "description": None,
     }
+    if sample_rows:
+        meta["samplingPlan"] = f"Training uses a {sample_rows:,}-row sample to fit the sandbox budget."
 
     store.create_project(
         project_id=project_id,
@@ -639,6 +646,7 @@ def datasets_search(q: str = Query(..., description="Research goal / search quer
     """Search Hugging Face for candidate datasets and rank them for the goal."""
     try:
         cands = hf.search_datasets(q, limit=limit)
+        cands = hf.enrich_candidates(cands, max_candidates=min(max(limit, 4), 6))
         comp = hf.compare_and_recommend(cands, q, top_n=4)
         return {"success": True, "goal": q, **comp}
     except Exception as e:

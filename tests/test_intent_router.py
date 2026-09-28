@@ -375,6 +375,23 @@ def test_coding_request_routes_to_coding(isolate_store):
         assert bad not in text
 
 
+def test_coding_followup_uses_client_conversation_history(isolate_store):
+    sid = "code-history"
+    first = handle_intent_message("write python code", session_id=sid)
+    followup = handle_intent_message(
+        "for hello world",
+        session_id="fresh-code-history",
+        conversation_history=[
+            {"role": "user", "content": "write python code"},
+            {"role": "assistant", "content": first["response"]},
+            {"role": "user", "content": "for hello world"},
+        ],
+    )
+    assert followup["intent"] == "CODING"
+    assert "print(\"hello, world!\")" in followup["response"].lower()
+    assert "what can i help" not in followup["response"].lower()
+
+
 def test_explicit_research_routes_to_deep_research(isolate_store):
     assert classify_intent("research why JavaScript became popular and how its ecosystem evolved",
                            session_id="r-1") == "DEEP_RESEARCH"
