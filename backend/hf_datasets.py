@@ -15,6 +15,7 @@ import os
 import io
 import re
 import json
+import csv
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -220,6 +221,24 @@ def _schema_from_preview_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             if len(dist) > 1:
                 result["minorityClassPct"] = min(d["percentage"] for d in dist)
     return result
+
+
+def _csv_range_preview(repo_id: str, splits: Dict[str, List[str]], revision: str) -> Optional[Dict[str, Any]]:
+    """Verify a CSV schema with a bounded range request (serverless-safe)."""
+    files = [f for group in splits.values() for f in group if f.lower().endswith(".csv")]
+    if not files:
+        return None
+    try:
+        fname = files[0]
+        req = urllib.request.Request(_resolve_url(repo_id, fname, revision), headers={
+            "User-Agent": _USER_AGENT, "Range": "bytes=0-262143",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read(262144).decode("utf-8", errors="replace")
+        rows = list(__import__("itertools").islice(csv.DictReader(io.StringIO(text)), 100))
+        return {"rows": rows, "file": fname}
+    except Exception:
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -518,6 +537,12 @@ def inspect_dataset(repo_id: str, download_preview: bool = True) -> Dict[str, An
             "previewFile": server_preview["file"],
             **schema,
         })
+        return result
+
+    csv_preview = _csv_range_preview(repo_id, splits, info.get("sha") or "main")
+    if csv_preview:
+        result.update({"previewSplit": "bounded CSV preview", "previewFile": csv_preview["file"],
+                       **_schema_from_preview_rows(csv_preview["rows"])})
         return result
 
     # Fall back to a repository file only when the Hub reports that the entire
