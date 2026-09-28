@@ -302,7 +302,8 @@ _RESEARCH_TRIGGERS = (
 _ML_SIGNALS = (
     "dataset", "data set", "model", "fraud", "predict", "churn", "train",
     "classify", "classification", "regression", "accuracy", "machine learning",
-    " ml", "tabular", "feature", "label", "anomaly", "forecast",
+    " ml", "tabular", "feature", "label", "anomaly", "forecast", "sensor",
+    "spam", "review", "house price", "sales",
 )
 
 # ML research is an *action*, not a topic.  These patterns deliberately require
