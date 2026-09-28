@@ -180,14 +180,46 @@ def _dataset_server_preview(repo_id: str) -> Optional[Dict[str, Any]]:
         rows = [r.get("row", {}) for r in payload.get("rows", [])]
         if not rows:
             return None
-        import pandas as pd
-        df = pd.DataFrame(rows)
-        if df.empty:
-            return None
-        return {"dataframe": df, "split": choice.get("split", "train"),
+        return {"rows": rows, "split": choice.get("split", "train"),
                 "file": "Hugging Face bounded preview"}
     except Exception:
         return None
+
+
+def _schema_from_preview_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Derive display-safe schema facts without requiring pandas in serverless."""
+    columns: List[str] = []
+    for row in rows:
+        for key in row:
+            if key not in columns:
+                columns.append(key)
+    lower = {str(c).lower(): c for c in columns}
+    target = next((lower[hint] for hint in _TARGET_HINTS if hint in lower), columns[-1] if columns else None)
+    feature_names = [c for c in columns if c != target]
+    result: Dict[str, Any] = {
+        "featureNames": feature_names,
+        "featureCount": len(feature_names),
+        "rowCount": len(rows),
+        "targetColumn": target,
+        "dtypes": None,
+        "classDistribution": None,
+        "minorityClassPct": None,
+    }
+    if target is not None:
+        counts: Dict[str, int] = {}
+        for row in rows:
+            value = row.get(target)
+            if value is not None:
+                label = str(value)
+                counts[label] = counts.get(label, 0) + 1
+        total = sum(counts.values())
+        if total:
+            dist = [{"label": label, "count": count,
+                     "percentage": round(count / total * 100, 3)} for label, count in counts.items()]
+            result["classDistribution"] = dist
+            if len(dist) > 1:
+                result["minorityClassPct"] = min(d["percentage"] for d in dist)
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -480,29 +512,12 @@ def inspect_dataset(repo_id: str, download_preview: bool = True) -> Dict[str, An
     # pulling a multi-gigabyte parquet file during search-card rendering.
     server_preview = _dataset_server_preview(repo_id)
     if server_preview:
-        df = server_preview["dataframe"]
-        target = _detect_target(df)
-        feature_names = [c for c in df.columns if c != target]
+        schema = _schema_from_preview_rows(server_preview["rows"])
         result.update({
             "previewSplit": server_preview["split"],
             "previewFile": server_preview["file"],
-            "featureNames": feature_names,
-            "featureCount": len(feature_names),
-            "rowCount": int(len(df)),
-            "targetColumn": target,
-            "dtypes": {c: str(t) for c, t in df.dtypes.astype(str).items()},
+            **schema,
         })
-        if target is not None:
-            try:
-                vc = df[target].value_counts(dropna=True)
-                total = int(vc.sum())
-                dist = [{"label": str(k), "count": int(v),
-                         "percentage": round(float(v) / total * 100, 3)} for k, v in vc.items()]
-                result["classDistribution"] = dist
-                if len(dist) > 1:
-                    result["minorityClassPct"] = min(d["percentage"] for d in dist)
-            except Exception:
-                pass
         return result
 
     # Fall back to a repository file only when the Hub reports that the entire

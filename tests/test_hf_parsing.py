@@ -3,7 +3,7 @@ target detection (section 12)."""
 import pytest
 
 from backend import hf_datasets
-from backend.hf_datasets import parse_hf_reference, _detect_target, score_candidate
+from backend.hf_datasets import parse_hf_reference, _detect_target, score_candidate, _schema_from_preview_rows
 
 
 # ---------------------------------------------------------------------------
@@ -118,3 +118,13 @@ def test_large_candidate_is_penalized_and_has_an_executable_sampling_plan():
     assert score < 0
     assert any("200,000-row sample" in reason for reason in reasons)
     assert hf_datasets.sandbox_sample_rows("10M<n<100M") == 200_000
+
+
+def test_bounded_preview_schema_does_not_require_pandas():
+    schema = _schema_from_preview_rows([
+        {"amount": 9.5, "merchant": "shop", "is_fraud": 0},
+        {"amount": 19.5, "merchant": "other", "is_fraud": 1},
+    ])
+    assert schema["featureCount"] == 2
+    assert schema["targetColumn"] == "is_fraud"
+    assert schema["minorityClassPct"] == 50.0
