@@ -54,7 +54,15 @@ def build_docker_run_args(temp_dir: str, dataset_path: str, extra_env: dict = No
     cmd = ["docker", "run", "--rm"]
     for m in mounts:
         cmd += ["-v", m]
-    cmd += ["--cpus=2", "--memory=2g", "--network=none"]
+    # Defence in depth for generated code: no root user, no privilege
+    # escalation, no network, bounded process count, and a read-only base
+    # filesystem. The temporary /app bind mount is the only writable workspace
+    # and is discarded after execution; datasets are separately mounted read-only.
+    cmd += [
+        "--cpus=2", "--memory=2g", "--pids-limit=128", "--network=none",
+        "--read-only", "--tmpfs=/tmp:rw,noexec,nosuid,size=64m",
+        "--security-opt=no-new-privileges", "--user=65534:65534",
+    ]
     for k, v in env.items():
         cmd += ["-e", f"{k}={v}"]
     cmd += ["python:3.11-slim", "python", "/app/experiment.py"]
@@ -100,10 +108,35 @@ def execute_sandboxed_experiment(script_code: str, dataset_path: str, timeout_se
                 exit_code = 1
         else:
             # Subprocess Isolation Fallback
-            env = os.environ.copy()
+            # Do not inherit API keys, database URLs, or arbitrary application
+            # configuration into generated code. This remains a development
+            # fallback only; Docker is the production sandbox boundary.
+            # APPDATA is allowlisted because on this Python install the ML stack
+            # (pandas/numpy/sklearn) resolves through the USER site-packages
+            # (%APPDATA%\\Python\\PythonXY\\site-packages); without it the child
+            # interpreter loses every pip package ("No module named 'numpy'").
+            # It is a filesystem path only — no credentials pass through.
+            _sandbox_env_allowlist = {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "APPDATA"}
+            env = {key: value for key, value in os.environ.items()
+                   if key in _sandbox_env_allowlist}
             env["DATASET_PATH"] = dataset_path
             env["METRICS_PATH"] = metrics_file
             env["PYTHONDONTWRITEBYTECODE"] = "1"
+            # Safety net independent of APPDATA: pass every resolved package
+            # directory from the parent interpreter.  Windows installs may put
+            # packages in either the roaming user site or the interpreter's
+            # local Lib/site-packages.  Keeping only one made a valid local ML
+            # runtime disappear inside experiments ("No module named numpy").
+            try:
+                import site as _site
+                _package_dirs = [_site.getusersitepackages(), *_site.getsitepackages()]
+                _package_dirs = [p for p in _package_dirs if p and os.path.isdir(p)]
+                if _package_dirs:
+                    env["PYTHONPATH"] = os.pathsep.join(
+                        dict.fromkeys([*_package_dirs, *filter(None, env.get("PYTHONPATH", "").split(os.pathsep))])
+                    )
+            except Exception:
+                pass
             for k, v in extra_env.items():
                 if v is not None:
                     env[k] = str(v)
