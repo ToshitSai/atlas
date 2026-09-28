@@ -69,8 +69,20 @@ measured scores**.
 
 ## Status
 
-Stub only — **no training/serving/benchmark backend**. Implementing it requires
-the extras in `requirements-finetune.txt` (torch/transformers/datasets/trl/peft/
-accelerate + lm-eval-harness) on a GPU host; it cannot run on the Vercel
-serverless deploy. Heavy deps are kept out of `requirements.txt` and imported
-lazily.
+**2026-09-26: real local training backend implemented** for the 8 GB RTX 5050
+laptop (see `docs/training-environment.md`, `docs/training-plan.md`,
+`docs/local-training-audit.md`):
+
+- `sft_trainer.py` — real QLoRA SFT (CUDA-gated, checkpoints, resume, metrics)
+- `dataset_pipeline.py` — multi-domain dataset builder (validate/dedupe/
+  per-row-license audit/90-5-5 split/manifest)
+- `inference.py` — local inference with the tokenizer's own chat template
+- `evaluate.py` — held-out eval battery + capability-gated before/after compare
+- smoke test **PASS**: Qwen3-0.6B QLoRA 5 steps → checkpoint → reload →
+  inference (peak VRAM 1315 MiB, loss 3.46 → saved) —
+  `artifacts/smoke_test_report.json`
+
+The legacy stdlib-only stub below still guards licensing and the
+backend-isolation invariant (tests untouched, 20/20 pass). Training runs ONLY
+inside `training_env/` (Python 3.12 + torch cu128 stack; `requirements-training.txt`).
+The Vercel serverless deploy cannot train or serve local models.

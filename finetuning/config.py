@@ -126,6 +126,12 @@ BASE_MODEL_CANDIDATES: List[str] = [
 ]
 LEGACY_WEAK_BASE_MODEL = "allenai/Llama-3.1-Tulu-3-8B"
 
+# Local 8 GB-VRAM selection (see docs/training-plan.md §1, verified on the HF
+# Hub 2026-09-26: Apache-2.0, not gated). The 4B model is the selected local
+# base; the 0.6B model is the pipeline smoke-test model.
+LOCAL_BASE_MODEL = "Qwen/Qwen3-4B"
+LOCAL_SMOKE_TEST_MODEL = "Qwen/Qwen3-0.6B"
+
 
 @dataclass
 class FineTuneConfig:

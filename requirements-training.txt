@@ -1,0 +1,28 @@
+# Local model-training stack (install ONLY inside training_env/, not on system
+# Python and NOT in the Vercel serverless bundle).
+#
+# Install procedure (Windows, RTX 5050 / Blackwell sm_120, CUDA 12.8 driver):
+#   uv venv training_env --python 3.12
+#   uv pip install --python training_env/Scripts/python.exe \
+#       --index-url https://download.pytorch.org/whl/cu128 "torch==2.10.0+cu128"
+#   uv pip install --python training_env/Scripts/python.exe -r requirements-training.txt
+#
+# Verify afterwards:
+#   training_env/Scripts/python.exe scripts/verify_training_env.py
+
+# --- CUDA build (installed separately from the cu128 index, see above) -------
+torch==2.10.0+cu128
+
+# --- training stack (version-bounded, verified on this machine 2026-09-26) ---
+transformers>=4.57,<5
+peft>=0.21,<1
+trl>=0.29,<1
+accelerate>=1.10,<2
+datasets>=4,<5
+bitsandbytes>=0.50,<1
+sentencepiece
+safetensors>=0.6
+evaluate
+scipy
+pandas
+numpy>=2.1
