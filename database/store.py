@@ -33,6 +33,15 @@ STORE_FILE = get_default_store_path()
 DB_DISABLED = os.environ.get("STORE_DB_DISABLED", "").strip() in ("1", "true", "True")
 
 
+def _llm_keys_configured() -> bool:
+    """True when at least one LLM provider API key is present in the environment."""
+    try:
+        from backend.llm import any_provider_configured
+        return any_provider_configured()
+    except Exception:
+        return False
+
+
 class ResearchStore:
     """Facade over the persistent data layer.
 
@@ -190,7 +199,11 @@ class ResearchStore:
             "bestMetric": "N/A",
             "bestModel": "Not trained",
             "llmProvider": provider or "HEURISTIC FALLBACK",
-            "engineState": "LLM AUTONOMOUS" if (provider and "OpenAI" in provider) else "HEURISTIC FALLBACK",
+            # Bug 5: engineState must reflect the engine that will ACTUALLY run
+            # (query_llm auto-races any provider with a key), not just the label
+            # passed in — the old check showed "HEURISTIC FALLBACK" while the
+            # pipeline silently used a configured LLM (and vice versa).
+            "engineState": "LLM AUTONOMOUS" if _llm_keys_configured() else "HEURISTIC FALLBACK",
             "budgetMins": budget,
             "computeUsed": f"0.0 mins / {budget} mins",
             "activeAgent": "INITIALIZING",
@@ -529,7 +542,8 @@ class ResearchStore:
                        intent: Optional[str] = None, topic: Optional[str] = None,
                        research_id: Optional[str] = None,
                        pending_action: Optional[Dict[str, Any]] = None,
-                       max_history: int = 200):
+                       max_history: int = 200,
+                       message_id: Optional[str] = None):
         """Append a single conversational message to the session history.
 
         Stored as its own row (id, role, content, timestamp, intent, topic,
@@ -540,7 +554,7 @@ class ResearchStore:
         import uuid
         sid = session_id or "default-session"
         msg = {
-            "id": str(uuid.uuid4()),
+            "id": message_id or str(uuid.uuid4()),
             "conversation_id": sid,
             "role": role,
             "content": content,

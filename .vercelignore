@@ -13,3 +13,14 @@ artifacts
 .env
 .env.local
 .env.*.local
+training_env
+training_artifacts
+.vercel_python_packages
+backups
+object_store
+pgdata
+test_workspace
+upstream_ai_scientist_v2
+__pycache__
+*.pyc
+.aider*
