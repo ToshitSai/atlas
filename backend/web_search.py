@@ -186,11 +186,25 @@ _PROVIDER_NAMES = ("tavily", "serper", "brave", "duckduckgo")
 
 
 def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
-    """Search the live web via the first provider that returns results."""
+    """Search the live web using ``SEARCH_PROVIDER`` or the auto fallback.
+
+    ``auto`` tries configured quality providers before the keyless fallback.
+    An explicit provider is deliberately strict: if it is unconfigured or
+    unavailable, callers receive no results and can state that current
+    verification is unavailable instead of silently using a different source.
+    """
     query = (query or "").strip()
     if not query:
         return []
-    for name in _PROVIDER_NAMES:
+    requested = os.environ.get("SEARCH_PROVIDER", "auto").strip().lower() or "auto"
+    if requested == "auto":
+        provider_names = _PROVIDER_NAMES
+    elif requested in _PROVIDER_NAMES:
+        provider_names = (requested,)
+    else:
+        print(f"[WEB SEARCH WARNING] unknown SEARCH_PROVIDER '{requested}'")
+        return []
+    for name in provider_names:
         provider = globals().get(f"_search_{name}")
         if provider is None:
             continue

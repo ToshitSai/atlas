@@ -95,6 +95,35 @@ def test_query_llm_skips_entirely_when_budget_already_spent(monkeypatch):
     assert called["n"] == 0
 
 
+def test_query_llm_refuses_work_when_global_admission_is_saturated(monkeypatch):
+    """Saturation must fail fast instead of adding another local-model job."""
+    class FullQueue:
+        def acquire(self, timeout=None):
+            self.timeout = timeout
+            return False
+
+    gate = FullQueue()
+    monkeypatch.setattr(llm, "_LLM_ADMISSION", gate)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(llm, "call_openai_api",
+                        lambda *a, **k: pytest.fail("provider should not be called"))
+    assert REAL_QUERY_LLM("hi", provider="openai", timeout=1) is None
+    assert 0 < gate.timeout <= 1
+
+
+def test_query_llm_retries_a_transient_provider_failure(monkeypatch):
+    calls = {"n": 0}
+
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        return "recovered" if calls["n"] == 2 else None
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(llm, "call_openai_api", flaky)
+    assert REAL_QUERY_LLM("hi", provider="openai", timeout=2) == "recovered"
+    assert calls["n"] == 2
+
+
 def test_handle_intent_message_clears_budget_after_run(monkeypatch):
     monkeypatch.setattr(ir, "classify_intent", lambda *a, **k: "CASUAL_CHAT")
     try:

@@ -9,6 +9,7 @@ import {
   sendControlSignal,
   sendChatMessage
 } from '../api';
+import ActivityPanel from './ActivityPanel';
 
 export default function ResearchChatWorkspace({
   activeProject,
@@ -34,7 +35,10 @@ export default function ResearchChatWorkspace({
   const [isProcessing, setIsProcessing] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
   const [lastTopic, setLastTopic] = useState(null);
-  const [localConversationId] = useState(() => 'conv-' + Math.random().toString(36).substring(2, 9));
+  const inFlightRequests = useRef(new Set());
+  const [localConversationId] = useState(() => 'conv-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)));
+  const [processingCount, setProcessingCount] = useState(0);
+  const [activeRequests, setActiveRequests] = useState({});
   // Prefer the app-level conversation (shared with the first message) so the
   // whole chat shares one server-side memory.
   const conversationId = propsConversationId || localConversationId;
@@ -80,19 +84,31 @@ export default function ResearchChatWorkspace({
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!chatInput.trim() || isProcessing) return;
+    if (!chatInput.trim()) return;
 
     const userText = chatInput.trim();
+    const requestId = globalThis.crypto?.randomUUID?.() || `request-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const userMessageId = globalThis.crypto?.randomUUID?.() || `message-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setChatInput('');
+    inFlightRequests.current.add(requestId);
+    setProcessingCount(inFlightRequests.current.size);
     setIsProcessing(true);
+    setActiveRequests(previous => ({ ...previous, [requestId]: { requestId, startedAt: Date.now() } }));
 
-    // 1. Add User message bubble immediately
-    const userMsg = { id: Date.now(), role: 'user', content: userText };
+    // The response carries this id back; it is the stable UI/API association.
+    const userMsg = { id: userMessageId, requestId, role: 'user', content: userText };
     setChatMessages(prev => [...prev, userMsg]);
 
     try {
       // 2. Call backend Intent Router endpoint
-      const res = await sendChatMessage(userText, projectId, conversationId, pendingAction, lastTopic);
+      const res = await sendChatMessage(userText, projectId, conversationId, pendingAction, lastTopic, {
+        requestId,
+        messageId: userMessageId
+      });
+      if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
+        throw new Error('The response could not be matched to the submitted message. Please retry.');
+      }
+      if (!inFlightRequests.current.has(requestId)) return;
 
       if (res.pendingAction !== undefined) {
         setPendingAction(res.pendingAction);
@@ -102,7 +118,10 @@ export default function ResearchChatWorkspace({
       }
 
       const assistantMsg = {
-        id: Date.now() + 1,
+        id: res.messageId,
+        conversationId: res.conversationId,
+        requestId,
+        responseToMessageId: res.responseToMessageId,
         role: 'assistant',
         content: res.response,
         intent: res.intent,
@@ -110,6 +129,7 @@ export default function ResearchChatWorkspace({
         datasets: res.candidates || null,
         recommendation: res.recommendation || null,
         researchQuery: res.researchQuery || null
+        ,activity: res.activity || []
       };
 
       setChatMessages(prev => [...prev, assistantMsg]);
@@ -129,10 +149,17 @@ export default function ResearchChatWorkspace({
     } catch (err) {
       setChatMessages(prev => [
         ...prev,
-        { id: Date.now() + 1, role: 'assistant', content: `Sorry, I ran into an error: ${err.message}` }
+        { id: `${userMessageId}-error`, requestId, responseToMessageId: userMessageId, role: 'assistant', content: `Sorry, I ran into an error: ${err.message}` }
       ]);
     } finally {
-      setIsProcessing(false);
+      inFlightRequests.current.delete(requestId);
+      setActiveRequests(previous => {
+        const next = { ...previous };
+        delete next[requestId];
+        return next;
+      });
+      setProcessingCount(inFlightRequests.current.size);
+      setIsProcessing(inFlightRequests.current.size > 0);
     }
   };
 
@@ -169,13 +196,46 @@ export default function ResearchChatWorkspace({
     }
   }
 
+  // User-facing pipeline. A few milestones are derived from the artifacts the
+  // backend has actually persisted: the server does not create separate fake
+  // states just to make the timeline look complete.
+  const baselineState = stageStates.baseline_training || 'NOT_STARTED';
+  const baselineFinished = baselineState === 'COMPLETED';
+  const baselineActive = baselineState === 'RUNNING';
+  const datasetChosen = Boolean(activeProject?.datasetName && activeProject.datasetName !== 'Not selected');
+  const datasetValidated = Boolean(datasetReport);
+  const derivedState = (complete, active = false) => complete ? 'COMPLETED' : active ? 'RUNNING' : 'NOT_STARTED';
+  // Experiment-cycle rows are derived from REAL persisted artifacts (the
+  // experiment tree nodes and the report), not only from the shared stage
+  // keys: several checklist rows map to the same backend stage, and the
+  // client's copy of a stage key can go stale while artifacts prove the step
+  // actually happened. NOT_CONFIGURED sandbox = ran in the process sandbox.
+  const hypothesisState = stageStates.hypothesis_generation || 'NOT_STARTED';
+  const sandboxState = stageStates.sandboxed_execution || 'NOT_STARTED';
+  const expGenerated = expNodes.length > 0 || hypothesisState === 'COMPLETED';
+  const expRan = expNodes.length > 0;
+  const expRunning = sandboxState === 'RUNNING';
+  const expFailed = sandboxState === 'FAILED' && !expRan;
+  const reportDone = Boolean(reportMd) || stageStates.research_report === 'COMPLETED';
+  const reportRunning = stageStates.research_report === 'RUNNING';
+  const expRowState = () => expRan ? 'COMPLETED' : expRunning ? 'RUNNING' : expFailed ? 'FAILED' : 'NOT_STARTED';
+  const genRowState = () => expGenerated ? 'COMPLETED' : hypothesisState === 'RUNNING' ? 'RUNNING' : 'NOT_STARTED';
+
   const progressItems = [
-    { key: 'literature_search', label: 'Looking at existing research', state: stageStates.literature_search },
-    { key: 'dataset_eda', label: 'Understanding the data', state: stageStates.dataset_eda },
-    { key: 'baseline_training', label: 'Building the first model', state: stageStates.baseline_training },
-    { key: 'hypothesis_generation', label: 'Trying different research ideas', state: stageStates.hypothesis_generation },
-    { key: 'error_diagnostics', label: 'Finding where models make mistakes', state: stageStates.error_diagnostics },
-    { key: 'research_report', label: 'Preparing final findings', state: stageStates.research_report }
+    { key: 'dataset-selected', label: 'Dataset selected', state: derivedState(datasetChosen) },
+    { key: 'dataset-loaded', label: 'Load dataset', state: derivedState(datasetValidated, datasetChosen && !datasetValidated) },
+    { key: 'dataset-validated', label: 'Validate dataset', state: derivedState(datasetValidated) },
+    { key: 'target-identified', label: 'Identify target column', state: derivedState(Boolean(datasetReport?.targetCandidate)) },
+    { key: 'class-distribution', label: 'Analyze class distribution', state: derivedState(Boolean(datasetReport?.classDistribution?.length)) },
+    { key: 'preprocess-data', label: 'Preprocess data', state: derivedState(baselineFinished, baselineActive) },
+    { key: 'baseline-training', label: 'Train baseline', state: baselineState },
+    { key: 'evaluate-baseline', label: 'Evaluate', state: derivedState(baselineFinished) },
+    { key: 'generate-experiment', label: 'Generate experiment', state: genRowState() },
+    { key: 'run-experiment', label: 'Run experiment', state: expRowState() },
+    { key: 'error-analysis', label: 'Analyze errors', state: stageStates.error_diagnostics || 'NOT_STARTED' },
+    { key: 'generate-hypothesis', label: 'Generate hypothesis', state: genRowState() },
+    { key: 'next-experiment', label: 'Run next experiment', state: expRowState() },
+    { key: 'research-report', label: 'Research report', state: reportDone ? 'COMPLETED' : reportRunning ? 'RUNNING' : 'NOT_STARTED' },
   ];
 
   return (
@@ -369,6 +429,8 @@ export default function ResearchChatWorkspace({
                       {msg.content}
                     </div>
 
+                    <ActivityPanel activities={msg.activity} />
+
                     {msg.datasets && msg.datasets.length > 0 && (
                       <DatasetCards
                         datasets={msg.datasets}
@@ -380,6 +442,12 @@ export default function ResearchChatWorkspace({
                     )}
                   </div>
                 )}
+              </div>
+            ))}
+
+            {Object.values(activeRequests).map(request => (
+              <div key={request.requestId} className="w-full">
+                <ActivityPanel running startedAt={request.startedAt} />
               </div>
             ))}
 
@@ -396,20 +464,25 @@ export default function ResearchChatWorkspace({
                     </span>
                     {isRunning && <span className="text-cyan-400 animate-pulse text-[11px]">Executing...</span>}
                   </div>
-                  <div className="space-y-2 text-xs">
-                    {progressItems.map((item) => (
-                      <div key={item.key} className="flex items-center gap-2.5">
-                        {item.state === 'COMPLETED' ? (
-                          <span className="text-emerald-400 font-bold">✓</span>
-                        ) : item.state === 'RUNNING' ? (
-                          <span className="text-cyan-400 animate-spin font-bold">●</span>
-                        ) : (
-                          <span className="text-slate-600">○</span>
-                        )}
-                        <span className={item.state === 'COMPLETED' ? 'text-slate-200' : item.state === 'RUNNING' ? 'text-cyan-400 font-semibold' : 'text-slate-500'}>
-                          {item.label}
-                        </span>
-                      </div>
+                  <div className="space-y-1 text-xs" aria-label="Research pipeline progress">
+                    {progressItems.map((item, index) => (
+                      <React.Fragment key={item.key}>
+                        <div className="flex items-center gap-2.5 min-h-5">
+                          {item.state === 'COMPLETED' ? (
+                            <span className="text-emerald-400 font-bold" aria-label="completed">✓</span>
+                          ) : item.state === 'RUNNING' ? (
+                            <span className="text-cyan-400 animate-spin font-bold" aria-label="running">●</span>
+                          ) : item.state === 'FAILED' ? (
+                            <span className="text-rose-400 font-bold" aria-label="failed">!</span>
+                          ) : (
+                            <span className="text-slate-600" aria-label="waiting">○</span>
+                          )}
+                          <span className={item.state === 'COMPLETED' ? 'text-slate-200' : item.state === 'RUNNING' ? 'text-cyan-400 font-semibold' : item.state === 'FAILED' ? 'text-rose-300' : 'text-slate-500'}>
+                            {item.label}
+                          </span>
+                        </div>
+                        {index < progressItems.length - 1 && <div className="pl-1.5 h-3 text-slate-600 leading-3" aria-hidden="true">↓</div>}
+                      </React.Fragment>
                     ))}
                   </div>
                 </div>
@@ -595,7 +668,7 @@ export default function ResearchChatWorkspace({
                     : 'bg-[#1C2536] text-slate-600 cursor-not-allowed'
                 }`}
               >
-                {isProcessing ? 'Sending...' : 'Send'}
+                {processingCount > 0 ? `Sending (${processingCount})...` : 'Send'}
               </button>
             </form>
           </div>

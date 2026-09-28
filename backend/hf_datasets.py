@@ -196,6 +196,20 @@ _ACTION_VERBS = {
     "design", "find", "detect", "predict", "forecast", "better", "using", "use",
 }
 
+# Terms that describe the modelling task rather than the dataset's topic. The
+# Hub phrase-search chokes on them ("churn prediction imbalanced data" -> 0
+# hits), so n-grams made only of these are skipped and they are never used as
+# single-term fallbacks.
+_GENERIC_TERMS = {
+    "data", "dataset", "datasets", "imbalanced", "unbalanced", "balanced",
+    "prediction", "predictions", "classifier", "classification", "regression",
+    "model", "models", "modeling", "performance", "accuracy", "metric",
+    "metrics", "task", "machine", "learning", "approach", "results", "better",
+    "high", "low", "good", "new", "using", "based", "driven",
+}
+
+_MAX_QUERY_VARIANTS = 16
+
 
 def _query_variants(goal: str) -> List[str]:
     """Produce progressively cleaner search queries for a research goal."""
@@ -215,7 +229,24 @@ def _query_variants(goal: str) -> List[str]:
         if joined not in variants:
             variants.append(joined)
 
-    # De-duplicate while preserving order.
+        # The Hub matches phrases almost literally, so long term joins often
+        # return nothing ("churn prediction imbalanced data" -> 0 hits) while a
+        # shorter core phrase succeeds ("churn prediction" -> 10 hits). Try
+        # progressively shorter n-grams (longest first), then informative
+        # single terms, so discovery degrades gracefully instead of giving up.
+        for n in range(len(terms) - 1, 1, -1):
+            for i in range(len(terms) - n + 1):
+                gram = terms[i:i + n]
+                if all(t in _GENERIC_TERMS for t in gram):
+                    continue
+                joined_gram = " ".join(gram)
+                if joined_gram not in variants:
+                    variants.append(joined_gram)
+        for t in terms:
+            if t not in _GENERIC_TERMS and t not in variants:
+                variants.append(t)
+
+    # De-duplicate while preserving order, and cap the number of upstream calls.
     seen = set()
     out = []
     for v in variants:
@@ -223,6 +254,8 @@ def _query_variants(goal: str) -> List[str]:
         if key and key not in seen:
             seen.add(key)
             out.append(v)
+        if len(out) >= _MAX_QUERY_VARIANTS:
+            break
     return out
 
 
@@ -258,6 +291,26 @@ def get_dataset_info(repo_id: str) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Loading real data files
 # --------------------------------------------------------------------------- #
+def ml_runtime_missing() -> List[str]:
+    """Names of ML packages required for dataset loading/training that are not
+    importable in this process. The serverless bundle intentionally excludes the
+    heavy stack (see requirements.txt), so callers must check and degrade with
+    an honest, actionable message instead of raising a raw ModuleNotFoundError."""
+    import importlib.util
+    return [m for m in ("pandas", "sklearn") if importlib.util.find_spec(m) is None]
+
+
+def ml_runtime_message(missing: Optional[List[str]] = None) -> str:
+    missing = missing if missing is not None else ml_runtime_missing()
+    return (
+        f"This deployment is missing the ML runtime ({', '.join(missing)}), so it "
+        "cannot load datasets or train models — the heavy stack (pandas/scikit-learn) "
+        "is excluded from the serverless bundle on purpose (size and execution-time "
+        "limits). You can still search and inspect dataset metadata here. To run the "
+        "full pipeline, start the app locally with `pip install -r requirements-local.txt`."
+    )
+
+
 def _read_table_bytes(filename: str, data: bytes):
     import pandas as pd
     low = filename.lower()

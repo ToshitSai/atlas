@@ -15,6 +15,7 @@ from backend.project_identity import identity_system_instruction
 INTENT_CATEGORIES = [
     "CONFIRM_PENDING_ACTION",
     "PROJECT_IDENTITY",
+    "ENTITY_INFORMATION",
     "RESEARCH_FOLLOWUP",
     "RESEARCH_CONTROL",
     "EXPLANATION",
@@ -42,18 +43,11 @@ INTENT_CATEGORIES = [
 # answer the user's actual question directly and completely, and must NOT force
 # the conversation into the ML/research workflow.
 GENERAL_ASSISTANT_SYSTEM_PROMPT = (
-    "You are a highly capable general-purpose AI assistant. Answer the user's "
-    "actual question directly, completely, and clearly in natural English. "
-    "Address every part of the question (for example, both 'what it is' and "
-    "'why it is used'). Do NOT mention datasets, model training, experiments, "
+    "Answer the user's actual question directly, completely, and clearly in natural English. "
+    "Address every part of the question. Do NOT mention datasets, model training, experiments, "
     "hypotheses, or research studies unless the user explicitly asks about them, "
     "and do NOT force the conversation into machine learning. Never invent "
     "facts, results, sources, or capabilities — if you are not sure, say so. "
-    "Premise check before answering: if the question embeds a factual assumption "
-    "(a cause, attribution, date, event, or claim) that is wrong or overstated, "
-    "politely correct that premise FIRST, then answer the underlying question as "
-    "far as it is useful. Apply this generically from your own knowledge — do not "
-    "invent corrections you are not confident about either. "
     "Be concise but complete.\n\n" + identity_system_instruction()
 )
 
@@ -131,6 +125,8 @@ GENERAL_KNOWLEDGE = {
     "computer": "A computer is an electronic device that processes data according to a set of instructions called a program. Its main parts are the CPU (which performs calculations and logic), memory/RAM (fast temporary storage), storage such as a disk or SSD (persistent data), and input/output devices. Software runs on this hardware to do everything from simple arithmetic to complex applications and networking.",
     "mahesh babu": "Mahesh Babu (born 9 August 1975) is an Indian actor and film producer who works mainly in Telugu cinema. He is one of Telugu cinema's leading actors and is known for films including *Murari*, *Okkadu*, *Pokiri*, *Dookudu*, *Srimanthudu*, and *Maharshi*.",
     "cpu": "The CPU (Central Processing Unit) is the part of a computer that executes a program's instructions. It performs arithmetic and logical operations, moves data, and controls other components, following a fetch–decode–execute cycle. Modern CPUs have multiple cores and caches, letting them run many instructions per second and several tasks in parallel. It is often called the 'brain' of the computer.",
+    "chatgpt": "ChatGPT is a conversational artificial intelligence chatbot developed by OpenAI and launched in November 2022. It is based on OpenAI's GPT family of large language models, originally founded by Sam Altman, Greg Brockman, Elon Musk, Ilya Sutskever, and others.",
+    "openai": "OpenAI is an artificial intelligence research organization founded in December 2015 by Sam Altman, Greg Brockman, Elon Musk, Ilya Sutskever, Wojciech Zaremba, and John Schulman. OpenAI developed ChatGPT, GPT-4, DALL-E, and Whisper.",
 }
 
 # Combined knowledge used for ANSWER lookup (longest key first so specific
@@ -175,7 +171,14 @@ def lookup_known_answer(message: str, topic: Optional[str] = None) -> Optional[s
     caller passes topic=None in that case so the LLM / honest fallback runs.
     """
     if topic and topic.lower() in KNOWLEDGE and _asks_about((message or "").strip().lower()):
-        return KNOWLEDGE[topic.lower()]
+        # Prefer a recognized subject explicitly present in this turn over a
+        # previous-turn topic supplied by the caller.
+        text = (message or "").lower()
+        current_keys = [key for key in _KNOWLEDGE_KEYS_SORTED
+                        if re.search(_whole_word_pattern(key), text)]
+        if not current_keys or topic.lower() in current_keys:
+            return KNOWLEDGE[topic.lower()]
+        return KNOWLEDGE[current_keys[0]]
     text = (message or "").lower()
     for key in _KNOWLEDGE_KEYS_SORTED:
         if re.search(_whole_word_pattern(key), text):
@@ -184,6 +187,10 @@ def lookup_known_answer(message: str, topic: Optional[str] = None) -> Optional[s
             if _asks_about(text):
                 return KNOWLEDGE[key]
             return None
+    # Explicit factual questions about named people/entities should be generated
+    # from the current question, not fall back to a prior conversation topic.
+    if topic and topic.lower() not in KNOWLEDGE and _asks_about(text):
+        return None
     return None
 
 
@@ -262,7 +269,7 @@ def extract_topic(message: str) -> Optional[str]:
         return concept
 
     msg_clean = re.sub(r'[^\w\s]', '', message.strip().lower())
-    match = re.search(r"(?:what is|what are|what's|explain|define|tell me about)\s+(.+)", msg_clean)
+    match = re.search(r"(?:what is|what are|what's|who is|explain|define|tell me about)\s+(.+)", msg_clean)
     if match:
         extracted = match.group(1).strip().rstrip('?').strip()
         if extracted:
@@ -625,11 +632,13 @@ def classify_intent(
     if confirm_exact or confirm_pattern:
         return "CONFIRM_PENDING_ACTION"
 
-    # Application identity must win before generic Q&A or model knowledge.
+    # 1b. PROJECT_IDENTITY — questions about who founded/created AI Scientist, creator background, or what AI Scientist is.
     from backend.project_identity import is_identity_intent
     if is_identity_intent(message):
         return "PROJECT_IDENTITY"
 
+    # General named-entity Q&A is a normal assistant capability. Specific
+    # current-fact and explicit research requests have already taken priority.
     # 1b. Explicit Hugging Face reference (URL or owner/name) => research start.
     if "huggingface.co/datasets" in msg_clean or "hf.co/datasets" in msg_clean:
         return "RESEARCH_START"
@@ -674,6 +683,13 @@ def classify_intent(
     # 2.8 Current-information signals beat the research/ML triggers — UNLESS
     # the message carries an explicit research verb ("Research the latest
     # developments in quantum computing." is deep research, not web search).
+    if not re.search(r"\b(?:research|investigate|deep dive|survey)\b", msg_clean):
+        try:
+            from backend.current_info import extract_current_fact_request
+            if extract_current_fact_request(message) is not None:
+                return "CURRENT_INFORMATION"
+        except Exception:
+            pass
     if (_WEB_CURRENCY_RE.search(msg_clean)
             and not re.search(r"\b(?:research|investigate|deep dive|survey)\b", msg_clean)
             and not (active_project_id and project_ref)):
@@ -688,6 +704,20 @@ def classify_intent(
         if any(s in msg_clean for s in _ML_SIGNALS):
             return "RESEARCH_START"
         return "DEEP_RESEARCH"
+
+    # Entity requests are a separate general-assistant capability. Run after
+    # explicit current-information and deep-research triggers have won.
+    from backend.intelligence import extract_entity_candidate
+    entity_candidate = extract_entity_candidate(message)
+    general_entity_question = bool(re.match(
+        r"\s*(?:who\s+(?:is|was|are|were)|tell\s+me\s+about)\b", msg_clean
+    )) or bool(
+        entity_candidate and definitional and not concept
+        and len(entity_candidate.split()) >= 2
+        and not re.search(r"\b(?:why|how|because|useful|important)\b", msg_clean)
+    )
+    if entity_candidate and general_entity_question:
+        return "ENTITY_INFORMATION"
 
     # 3b. Imperative ML/prediction task ("improve this model using my dataset",
     #     "predict churn"). This must beat EXPLANATION even when the sentence
@@ -828,7 +858,7 @@ def classify_intent(
     try:
         system_prompt = (
             "Classify user intent into EXACTLY ONE: CONFIRM_PENDING_ACTION, "
-            "EXPLANATION, CODING, DEEP_RESEARCH, DATA_ANALYSIS, DOCUMENT_ANALYSIS, "
+            "EXPLANATION, ENTITY_INFORMATION, CODING, DEEP_RESEARCH, DATA_ANALYSIS, DOCUMENT_ANALYSIS, "
             "RESEARCH_START, RESEARCH_FOLLOWUP, RESEARCH_CONTROL, REPORT_REQUEST, "
             "TECHNICAL_DETAILS, CASUAL_CHAT, MATHEMATICS, WEB_SEARCH, "
             "CURRENT_INFORMATION, REASONING, "
@@ -934,10 +964,12 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "") -
     ) if known else ""
     prompt = (
         f"{history_ctx}{kb_seed}"
-        f"Answer the user's question directly and completely in natural English. "
-        f"If it asks 'why' or 'how', give the actual reasoning — not just a "
-        f"definition. Resolve any pronoun ('it', 'that') using the recent "
-        f"conversation above.\nQuestion: \"{message}\""
+        "Treat the history above as context only. The CURRENT USER MESSAGE below "
+        "is authoritative and must be answered; do not answer an earlier question. "
+        "Answer it directly and completely in natural English. If it asks 'why' "
+        "or 'how', give the actual reasoning — not just a definition. Resolve "
+        "pronouns using prior turns only when the current message has no explicit subject.\n"
+        f"CURRENT USER MESSAGE: {message}"
     )
     llm_answer = query_llm(prompt, GENERAL_ASSISTANT_SYSTEM_PROMPT)
     if llm_answer and llm_answer.strip():
@@ -991,8 +1023,28 @@ def handle_intent_message(
     # local/prod deployments; serverless can pin it back down via env.
     set_llm_budget(DEFAULT_REQUEST_BUDGET)
     try:
-        return _handle_intent_message_impl(message, active_project_id, session_id,
-                                           payload_pending_action, payload_last_topic)
+        from backend.intelligence import (ambiguity_clarification, execution_metadata,
+                                          update_memory_summary)
+        clarification = ambiguity_clarification(message)
+        if clarification:
+            result = {
+                "intent": "EXPLANATION",
+                "taskType": "clarification",
+                "response": clarification,
+                "action": "NONE",
+                "projectId": active_project_id,
+                "pendingAction": None,
+                "lastTopic": None,
+            }
+        else:
+            result = _handle_intent_message_impl(message, active_project_id, session_id,
+                                                 payload_pending_action, payload_last_topic)
+        # The API preserves its existing response shape and adds an optional,
+        # compact execution record. It intentionally contains no hidden
+        # reasoning or provider credentials.
+        result["intelligence"] = execution_metadata(message, result)
+        update_memory_summary(store, session_id or "default-session", message, result)
+        return result
     finally:
         clear_llm_budget()
 
@@ -1122,20 +1174,78 @@ def _handle_intent_message_impl(
             "lastTopic": sess.get("last_topic")
         }
 
+    # 1b. PROJECT_IDENTITY
     elif intent == "PROJECT_IDENTITY":
-        # This path never delegates creator/application identity to an LLM.
         from backend.project_identity import handle_identity_response
-        identity = handle_identity_response(message, sess.get("last_topic"))
-        response = identity["response"]
+        res_identity = handle_identity_response(message, sess.get("last_topic"))
+        resp_text = res_identity["response"]
         store.clear_pending_action(sid)
-        store.update_session(sid, {
-            "last_assistant_message": response,
-            "last_topic": "ai scientist identity",
-        })
+        store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": "ai scientist identity"})
         return {
-            "intent": "PROJECT_IDENTITY", "taskType": "identity", "response": response,
-            "action": "NONE", "projectId": active_project_id, "pendingAction": None,
-            "lastTopic": "ai scientist identity",
+            "intent": intent,
+            "taskType": "identity",
+            "response": resp_text,
+            "action": "NONE",
+            "projectId": active_project_id,
+            "pendingAction": None,
+            "lastTopic": "ai scientist identity"
+        }
+
+    # Named entity question. Ask the model for a concise answer first, then
+    # search for source-grounded context if the model cannot identify it.
+    elif intent == "ENTITY_INFORMATION":
+        from backend.intelligence import extract_entity_candidate
+        from backend.web_search import search_web
+
+        entity = extract_entity_candidate(message) or message.strip()
+        history_ctx = _conversation_context(sid)
+        search_results = []
+        try:
+            search_results = search_web(f"{entity} biography", limit=5)
+        except Exception as search_err:
+            print(f"[ENTITY SEARCH WARNING]: {search_err}")
+
+        source_context = ""
+        if search_results:
+            source_context = "Retrieved source information (cite only if directly relevant):\n" + "\n".join(
+                f"- {item.get('title')}: {item.get('snippet')} ({item.get('url')})"
+                for item in search_results if item.get("snippet")
+            ) + "\n\n"
+
+        # A named-person answer must not be an unverified model biography.
+        # When a search result supplies a descriptive snippet, render that
+        # source-grounded text directly; it is both concise and traceable.
+        relevant = [item for item in search_results if item.get("snippet")]
+        if relevant:
+            first = relevant[0]
+            answer = f"{first.get('snippet')}\n\nSource: {first.get('url')}"
+        else:
+            prompt = (
+                f"{history_ctx}{source_context}"
+                "Answer this ordinary entity/person question directly. Identify the "
+                "subject and provide a concise overview. Do not ask for clarification "
+                "merely because the person is not in a local list. Do not invent facts. "
+                "If evidence is insufficient to identify the subject, say so plainly.\n"
+                f"CURRENT USER MESSAGE: {message}"
+            )
+            answer = query_llm(prompt, GENERAL_ASSISTANT_SYSTEM_PROMPT)
+            answer = answer.strip() if answer and answer.strip() else ""
+        if not answer:
+            answer = f"I can't reliably identify {entity} from the information available right now."
+        store.clear_pending_action(sid)
+        store.update_session(sid, {"last_assistant_message": answer, "last_topic": entity.lower()})
+        return {
+            "intent": intent,
+            "taskType": "entity_information",
+            "entity": entity,
+            "entityType": "PERSON" if re.match(r"^\s*who\s+", msg_clean) else "ENTITY",
+            "searchUsed": bool(search_results),
+            "sourceCount": len(search_results),
+            "response": answer,
+            "action": "NONE",
+            "projectId": active_project_id,
+            "pendingAction": None,
+            "lastTopic": entity.lower(),
         }
 
     # 2. EXPLANATION (general Q&A) — answer the question, nothing else.
@@ -1147,6 +1257,13 @@ def _handle_intent_message_impl(
         pronoun_topic = _resolve_pronoun_topic(message, last_topic_ctx)
         if pronoun_topic and not topic:
             topic = pronoun_topic
+        # A short factual question such as "Who is Mahesh Babu?" has a clear
+        # current subject even when it is not in the built-in knowledge map.
+        # Do not reinterpret it as a follow-up about the prior topic.
+        if (re.match(r"\s*(?:who|when|where|which)\b", message, re.IGNORECASE)
+                and not _PRONOUN_RE.search(message)):
+            topic = extract_topic(message)
+            pronoun_topic = None
         # Prefer a known knowledge key as the canonical topic for context.
         # Pending follow-up ("yes" after "Would you like me to show an example?"):
         # execute exactly what was offered — a deeper answer about the same topic.
@@ -1230,14 +1347,15 @@ def _handle_intent_message_impl(
         # (owner directive §12).
         store.clear_pending_action(sid)
         if topic:
-            store.update_session(sid, {"last_topic": topic.lower()})
-            # Track the last few topics so pronoun comparisons ("compare the two")
-            # can resolve what "the two" refers to.
-            recent = list(sess.get("recent_topics") or [])
             t_low = topic.lower()
-            if not recent or recent[-1] != t_low:
+            recent = list(sess.get("recent_topics") or [])
+            if t_low not in recent:
                 recent.append(t_low)
-            store.update_session(sid, {"recent_topics": recent[-4:]})
+            store.update_session(sid, {"last_topic": t_low, "recent_topics": recent[-4:]})
+
+        from backend.project_identity import sanitize_llm_identity_hallucinations
+        answer = sanitize_llm_identity_hallucinations(answer, message)
+
         store.update_session(sid, {"last_assistant_message": answer})
 
         # When the answer itself offers a concrete follow-up ("Would you like me

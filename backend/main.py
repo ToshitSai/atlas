@@ -124,6 +124,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/api/health")
 def health_check():
     """Health check endpoint for API dependencies."""
+    from backend.llm import get_llm_telemetry
     llm_configured = bool(os.environ.get("OPENAI_API_KEY"))
     docker_ready = safe_docker_check()
     return {
@@ -131,12 +132,14 @@ def health_check():
         "api": True,
         "database": True,
         "llm": llm_configured,
-        "docker": docker_ready
+        "docker": docker_ready,
+        "llmExecution": get_llm_telemetry(),
     }
 
 @app.get("/api/config")
 def config_status():
     """Returns system configuration status without exposing secrets."""
+    from backend.llm import get_llm_telemetry
     return {
         "openai": {
             "configured": bool(os.environ.get("OPENAI_API_KEY"))
@@ -147,7 +150,11 @@ def config_status():
         },
         "docker": {
             "available": safe_docker_check()
-        }
+        },
+        "llmExecution": get_llm_telemetry(),
+        "search": {
+            "provider": os.environ.get("SEARCH_PROVIDER", "auto")
+        },
     }
 
 @app.get("/api/settings")
@@ -156,6 +163,15 @@ def get_settings():
     docker_ready = safe_docker_check()
     st["dockerAvailable"] = docker_ready
     st["sandboxMode"] = "Docker Sandbox (Isolated Container)" if docker_ready else "Process Sandbox (Subprocess isolation)"
+    # Bug 5 disclosure: the stored settings can say "Not configured" while the
+    # deployment actually has provider API keys in its environment (the engine
+    # then really is LLM-driven). Report the truthful effective state.
+    from backend import llm as llm_mod
+    env_keys = llm_mod.any_provider_configured()
+    st["apiKeySet"] = bool(st.get("apiKeySet")) or env_keys
+    if env_keys and (not st.get("llmProvider") or st.get("llmProvider") == "Not configured"):
+        st["llmProvider"] = "Auto (provider API key detected)"
+    st["mlRuntimeAvailable"] = not hf.ml_runtime_missing()
     return st
 
 @app.post("/api/settings")
@@ -174,14 +190,29 @@ async def chat_endpoint(payload: dict):
     message = payload.get("message", "").strip()
     active_project_id = payload.get("projectId")
     conversation_id = payload.get("conversationId", "default-session")
+    request_id = str(payload.get("requestId") or "")
+    user_message_id = str(payload.get("messageId") or "")
+    import uuid
+    response_message_id = str(uuid.uuid4())
+
+    # Safe correlation diagnostics: never log message text, prompts, or secrets.
+    print(
+        f"[CHAT REQUEST] conversation_id={conversation_id} "
+        f"message_id={user_message_id or 'generated'} request_id={request_id or 'generated'}"
+    )
     payload_pending_action = payload.get("pendingAction")
     payload_last_topic = payload.get("lastTopic")
 
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    store.record_message(conversation_id, "user", message, research_id=active_project_id)
+    store.record_message(
+        conversation_id, "user", message, research_id=active_project_id,
+        message_id=user_message_id or None,
+    )
 
+    from backend import llm as llm_mod
+    llm_mod.begin_engine_trace()
     res = handle_intent_message(
         message=message, 
         active_project_id=active_project_id, 
@@ -190,6 +221,13 @@ async def chat_endpoint(payload: dict):
         payload_last_topic=payload_last_topic
     )
     action = res.get("action")
+
+    # Bug 5 disclosure: if the handler tried an LLM and none responded, the
+    # visible text necessarily came from the built-in rule-based engine — say so.
+    if action in (None, "NONE") and res.get("response"):
+        disclosure = llm_mod.engine_disclosure()
+        if disclosure and disclosure.strip() not in res["response"]:
+            res["response"] = res["response"] + disclosure
 
     if action == "START_RESEARCH":
         # Approval-gated dataset discovery. We NEVER auto-train on a randomly
@@ -224,7 +262,7 @@ async def chat_endpoint(payload: dict):
                 # the literal URL text.
                 if hf_ref.get("kind") == "general":
                     research_goal = "machine learning"
-                lead = f"I'll look for datasets that could help {research_goal.lower()}.\n\n"
+                lead = f"I'll look for datasets that could help {research_goal.lower().rstrip('.')}.\n\n"
                 cands = hf.search_datasets(research_goal, limit=6)
                 comp = hf.compare_and_recommend(cands, research_goal, top_n=4)
                 rec = comp.get("recommendation")
@@ -242,10 +280,21 @@ async def chat_endpoint(payload: dict):
 
                 summary = f"I found {len(comp['candidates'])} relevant datasets.\n\n"
                 if rec:
+                    reason = (rec['reasons'][0] if rec['reasons']
+                              else 'it fits the task well').lower().rstrip('.')
+                    if reason.split(' ', 1)[0] in ('matches', 'has', 'is', 'uses', 'contains'):
+                        reason = f"it {reason}"
                     summary += (
                         f"I recommend starting with {rec['repoId']} because "
-                        f"{(rec['reasons'][0] if rec['reasons'] else 'it fits the task well').lower()}\n\n"
+                        f"{reason}.\n\n"
                         f"Choose a dataset below to continue."
+                    )
+                else:
+                    summary += (
+                        "I couldn't find a match on Hugging Face for this exact goal. "
+                        "Try rephrasing with the core topic (e.g. \"customer churn\" instead of "
+                        "\"optimize churn prediction for imbalanced data\"), or paste a dataset URL "
+                        "(https://huggingface.co/datasets/owner/name) and I'll load it directly."
                     )
                 res.update({
                     "action": "RECOMMEND_DATASETS",
@@ -268,16 +317,50 @@ async def chat_endpoint(payload: dict):
         # Confirmation of a previously recommended dataset.
         repo_id = res.get("repoId")
         if repo_id:
-            approved = _approve_dataset(repo_id, res.get("researchQuery") or message)
-            res.update(approved)
+            try:
+                approved = _approve_dataset(repo_id, res.get("researchQuery") or message)
+                res.update(approved)
+            except Exception as approve_err:
+                print(f"[DATASET APPROVE ERROR]: {approve_err}")
+                res.update({
+                    "action": "NONE",
+                    "pendingAction": None,
+                    "response": f"I couldn't start that dataset run: {approve_err}",
+                })
+
+    # A safe, compact post-hoc work summary. It contains only completed,
+    # observable application actions — never model reasoning, prompts, or keys.
+    activity_by_intent = {
+        "MATHEMATICS": ["Understanding the problem", "Solving with the math tool", "Checking the result", "Preparing the explanation"],
+        "CURRENT_INFORMATION": ["Checking current information", "Verifying the result", "Preparing the answer"],
+        "CODING": ["Understanding requirements", "Writing the code", "Preparing the answer"],
+        "EXPLANATION": ["Understanding your question", "Preparing the answer"],
+        "ENTITY_INFORMATION": ["Understanding your question", "Preparing the answer"],
+    }
+    labels = activity_by_intent.get(res.get("intent"), ["Understanding your question", "Preparing the answer"])
+    if res.get("action") == "RECOMMEND_DATASETS":
+        labels = ["Understanding the research objective", "Searching datasets", "Preparing dataset options"]
+    res["activity"] = [{"id": f"{request_id or 'request'}-{i}", "label": label, "status": "completed"} for i, label in enumerate(labels)]
 
     store.record_message(
         conversation_id, "assistant", res.get("response", ""),
         intent=res.get("intent"), topic=res.get("lastTopic"),
         research_id=res.get("projectId") or active_project_id,
         pending_action=res.get("pendingAction"),
+        message_id=response_message_id,
     )
 
+    res.update({
+        "requestId": request_id or None,
+        "responseToMessageId": user_message_id or None,
+        "messageId": response_message_id,
+        "conversationId": conversation_id,
+    })
+    print(
+        f"[CHAT RESPONSE] conversation_id={conversation_id} "
+        f"response_to_message_id={user_message_id or 'unknown'} "
+        f"request_id={request_id or 'unknown'} intent={res.get('intent')}"
+    )
     return res
 
 
@@ -310,6 +393,12 @@ def _approve_dataset(repo_id: str, research_goal: str, budget: int = 60, max_exp
     """Download the approved dataset, create a project, and launch the real pipeline."""
     import uuid
     from agents.orchestrator import run_research_pipeline_async
+
+    missing = hf.ml_runtime_missing()
+    if missing:
+        # Fail fast with an honest, actionable message instead of letting a raw
+        # ModuleNotFoundError bubble up mid-download ("No module named 'pandas'").
+        raise RuntimeError(hf.ml_runtime_message(missing))
 
     dl = hf.download_dataset(repo_id)
     project_id = f"proj-{uuid.uuid4().hex[:6]}"
@@ -397,6 +486,9 @@ def datasets_approve(payload: dict):
     repo_id = payload.get("repoId")
     if not repo_id:
         raise HTTPException(status_code=400, detail="repoId is required to approve a dataset.")
+    missing = hf.ml_runtime_missing()
+    if missing:
+        raise HTTPException(status_code=422, detail=hf.ml_runtime_message(missing))
     research_goal = payload.get("researchQuery") or f"Improve modeling on {repo_id}"
     budget = int(payload.get("budget", 60))
     max_experiments = int(payload.get("maxExperiments", 5))
@@ -410,6 +502,20 @@ def datasets_approve(payload: dict):
 def get_conversation_messages(conversation_id: str):
     """Return the stored per-message history for a conversation (section 3)."""
     return store.get_messages(conversation_id)
+
+
+@app.post("/api/files/analyze")
+async def analyze_file(file: UploadFile = File(...)):
+    """Parse a supported upload and return only evidence actually extracted."""
+    from backend.file_analysis import parse_file_bytes
+    try:
+        content = await file.read()
+        parsed = parse_file_bytes(file.filename or "", content)
+        text = parsed.pop("text")
+        return {"success": True, "filename": os.path.basename(file.filename or ""),
+                **parsed, "textPreview": text[:4000], "charactersExtracted": len(text)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/api/projects")
@@ -434,6 +540,20 @@ async def start_research(
                 detail="Please enter a meaningful machine-learning research objective. (e.g. 'Improve fraud detection while increasing recall and controlling false positives.')"
             )
 
+        missing = hf.ml_runtime_missing()
+        if missing:
+            # The pipeline cannot download data, train, or report without the ML
+            # stack. Creating a project here would just produce a run that dies
+            # silently, so refuse up front with the honest reason.
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "error": hf.ml_runtime_message(missing),
+                    "code": "ML_RUNTIME_UNAVAILABLE",
+                },
+            )
+
         import uuid
         project_id = f"proj-{uuid.uuid4().hex[:6]}"
         dataset_path = None
@@ -441,10 +561,15 @@ async def start_research(
 
         if file and file.filename:
             dataset_name = file.filename
-            ext = os.path.splitext(file.filename)[1]
+            ext = os.path.splitext(file.filename)[1].lower()
+            if ext not in {".csv", ".parquet", ".json"}:
+                raise HTTPException(status_code=400, detail="Research datasets must be CSV, Parquet, or JSON files.")
+            content = await file.read()
+            if len(content) > 100 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="Research dataset exceeds the 100 MB upload limit.")
             dataset_path = os.path.join(DATASETS_DIR, f"{project_id}{ext}")
             with open(dataset_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+                buffer.write(content)
         else:
             dataset_name = "Auto: credit_card_fraud_benchmark.csv"
             dataset_path = os.path.join(DATASETS_DIR, f"{project_id}_auto.csv")
@@ -464,8 +589,14 @@ async def start_research(
         )
 
         try:
-            from agents.orchestrator import run_research_pipeline
-            run_research_pipeline(project_id, dataset_path)
+            # A research run may download data, train several baselines and run
+            # generated experiments. It must not occupy the normal HTTP request
+            # (or a Vercel function) until completion. The project row and SSE
+            # endpoint are the durable/status surface; the worker updates them.
+            from agents.orchestrator import run_research_pipeline_async
+            launched = run_research_pipeline_async(project_id, dataset_path)
+            if not launched:
+                raise RuntimeError("Research run was not queued because it is already active.")
         except Exception as orchestrator_err:
             print(f"[ORCHESTRATOR LAUNCH ERROR]: {orchestrator_err}")
             store.add_agent_log(project_id, "RESEARCH_ORCHESTRATOR", f"Launch error: {orchestrator_err}", "FAILED")

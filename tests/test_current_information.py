@@ -108,6 +108,13 @@ def test_detects_latest_product_question_with_punctuation():
     assert "NVIDIA" in req.entity
 
 
+def test_detects_possessive_latest_entity_fact():
+    req = extract_current_fact_request("What is Nova Author's latest book?")
+    assert req is not None
+    assert req.aspect == "latest"
+    assert "Nova Author" in req.entity
+
+
 def test_detects_holder_question():
     req = extract_current_fact_request("Who is the current CEO of Microsoft?")
     assert req is not None
@@ -285,6 +292,22 @@ def test_format_unavailable_has_no_fake_source():
            "sources": [], "verified": False, "reason": "x"}
     assert format_current_fact(res) == "nope"
     assert "Source:" not in format_current_fact(res)
+
+
+def test_explicit_search_provider_does_not_silently_fall_back(monkeypatch):
+    """A configured provider choice must remain auditable for current facts."""
+    from backend import web_search
+    monkeypatch.setenv("SEARCH_PROVIDER", "brave")
+    monkeypatch.setattr(web_search, "_search_brave", lambda *a, **k: [])
+    monkeypatch.setattr(web_search, "_search_duckduckgo",
+                        lambda *a, **k: pytest.fail("must not fall back"))
+    assert web_search.search_web("current Nova League result") == []
+
+
+def test_unknown_search_provider_is_an_honest_unavailable_result(monkeypatch):
+    from backend import web_search
+    monkeypatch.setenv("SEARCH_PROVIDER", "not-a-provider")
+    assert web_search.search_web("current Nova League result") == []
 
 
 def test_search_titles_drop_wrong_year_and_future_editions(monkeypatch):

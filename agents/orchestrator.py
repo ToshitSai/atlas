@@ -13,7 +13,7 @@ from sandbox.runner import execute_sandboxed_experiment
 from backend.error_analyzer import perform_error_analysis
 from backend.literature_search import search_literature
 from backend.report_generator import generate_research_report
-from backend.llm import generate_hypothesis_llm, generate_research_question, query_llm, query_critic_llm
+from backend.llm import generate_hypothesis_llm, generate_research_question, query_llm, query_critic_llm, any_provider_configured
 from backend.tracker import tracker
 
 def get_experiments_dir():
@@ -184,7 +184,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
         store.update_project(project_id, {
             "status": "RUNNING",
             "activeAgent": "RESEARCH_AGENT",
-            "engineState": "LLM AUTONOMOUS" if os.environ.get("OPENAI_API_KEY") else "HEURISTIC FALLBACK"
+            "engineState": "LLM AUTONOMOUS" if any_provider_configured() else "HEURISTIC FALLBACK"
         })
         store.add_event(project_id, "research.started", {"objective": objective})
 

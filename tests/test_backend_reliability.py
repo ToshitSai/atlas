@@ -373,6 +373,19 @@ def test_process_sandbox_hands_off_dataset_and_metrics(tmp_path, monkeypatch):
     assert res["metrics"]["metric_value"] == 0.5
 
 
+def test_process_sandbox_can_import_the_local_ml_runtime(tmp_path, monkeypatch):
+    """Regression for Windows: isolated experiments need the same ML stack as the API."""
+    monkeypatch.setattr(runner, "is_docker_available", lambda: False)
+    ds = tmp_path / "train.csv"
+    ds.write_text("a,target\n1,0\n2,1\n")
+    res = runner.execute_sandboxed_experiment(
+        "import numpy, pandas, sklearn\nprint('ml-runtime-ready')",
+        str(ds), timeout_sec=30,
+    )
+    assert res["success"] is True, res["stderr"]
+    assert "ml-runtime-ready" in res["stdout"]
+
+
 def test_process_sandbox_reports_failure_honestly(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "is_docker_available", lambda: False)
     ds = tmp_path / "train.csv"
@@ -382,6 +395,19 @@ def test_process_sandbox_reports_failure_honestly(tmp_path, monkeypatch):
     assert res["success"] is False
     assert "boom" in res["stderr"]
     assert res["metrics"] == {}
+
+
+def test_process_sandbox_does_not_inherit_application_secrets(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner, "is_docker_available", lambda: False)
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-generated-code")
+    ds = tmp_path / "train.csv"
+    ds.write_text("a\n1\n")
+    script = (
+        "import os\n"
+        "assert 'OPENAI_API_KEY' not in os.environ\n"
+    )
+    result = runner.execute_sandboxed_experiment(script, str(ds), timeout_sec=30)
+    assert result["success"] is True, result["stderr"]
 
 
 # ---------------------------------------------------------------------------

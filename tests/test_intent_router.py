@@ -58,6 +58,11 @@ def test_extract_topic_known_and_unknown():
     ("What is AI?", "EXPLANATION"),
     ("What is Python?", "EXPLANATION"),
     ("What is recall?", "EXPLANATION"),
+    ("Who is Mahesh Babu?", "ENTITY_INFORMATION"),
+    ("Tell me about React", "ENTITY_INFORMATION"),
+    ("What is Mahesh Babu's latest film?", "CURRENT_INFORMATION"),
+    ("Research Mahesh Babu's career", "DEEP_RESEARCH"),
+    ("Who created AI Scientist?", "PROJECT_IDENTITY"),
     ("Explain gradient boosting", "EXPLANATION"),
     ("Improve fraud detection", "RESEARCH_START"),
     ("predict customer churn", "RESEARCH_START"),
@@ -165,6 +170,61 @@ def test_natural_conversation_flow(isolate_store):
     assert r3["intent"] == "CONFIRM_PENDING_ACTION"
     assert r3["action"] == "NONE"
     assert "what would you like me to do" in r3["response"].lower()
+
+
+def test_short_person_question_prefers_a_source_over_a_model_biography(isolate_store, monkeypatch):
+    sid = "short-person-topic-switch"
+    first = handle_intent_message("What is Python?", session_id=sid)
+    assert "programming language" in first["response"].lower()
+
+    from backend import intent_router
+    monkeypatch.setattr(
+        "backend.web_search.search_web",
+        lambda *_a, **_k: [{"title": "Mahesh Babu", "snippet": "Mahesh Babu is an Indian actor.", "url": "https://example.test/mahesh"}],
+    )
+    captured = []
+    intent_router.query_llm = lambda prompt, *_a, **_k: captured.append(prompt) or "Invented biography"
+    result = handle_intent_message("Who is Mahesh Babu?", session_id=sid)
+    assert result["response"] == "Mahesh Babu is an Indian actor.\n\nSource: https://example.test/mahesh"
+    assert not captured
+
+
+def test_sequential_topic_switching_never_reuses_previous_answer(monkeypatch, isolate_store):
+    from backend import intent_router
+
+    monkeypatch.setattr(intent_router, "query_llm", lambda prompt, *_a, **_k: f"Answer about {prompt.split('CURRENT USER MESSAGE: ')[-1]}")
+    sid = "topic-switch-regression"
+    turns = [
+        ("What is Python?", "programming language", "mahesh babu"),
+        ("Who is Mahesh Babu?", "Mahesh Babu", "programming language"),
+        ("What is JavaScript?", "JavaScript", "Mahesh Babu"),
+        ("Who is Sachin Tendulkar?", "Sachin Tendulkar", "JavaScript"),
+        ("What is SQL?", "SQL", "Sachin Tendulkar"),
+    ]
+
+    for question, expected, stale_topic in turns:
+        result = handle_intent_message(question, session_id=sid)
+        assert result["intent"] in ("EXPLANATION", "ENTITY_INFORMATION")
+        assert expected.lower() in result["response"].lower()
+        assert stale_topic.lower() not in result["response"].lower()
+
+
+def test_concurrent_general_knowledge_calls_keep_current_question_prompt(monkeypatch, isolate_store):
+    from backend import intent_router
+
+    captured = []
+    monkeypatch.setattr(intent_router, "query_llm", lambda prompt, *_a, **_k: captured.append(prompt) or "Relevant answer")
+    # Unknown subjects need the LLM; the history includes earlier Python turns.
+    isolate_store.record_message("current-turn", "user", "What is Python?")
+    isolate_store.record_message("current-turn", "assistant", "Python is a programming language.")
+    response = intent_router._general_answer(
+        "Who is Taylor Exampleton?", None,
+        intent_router._conversation_context("current-turn"),
+    )
+
+    assert response == "Relevant answer"
+    assert "CURRENT USER MESSAGE: Who is Taylor Exampleton?" in captured[0]
+    assert "What is Python?" in captured[0]
 
 
 # ---------------------------------------------------------------------------

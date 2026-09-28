@@ -158,6 +158,35 @@ def test_general_question_with_active_project_stays_general():
     assert intent == "EXPLANATION"
 
 
+@pytest.mark.parametrize("msg", [
+    "who is the founder of you",
+    "who created you",
+    "who built you",
+    "who is your founder",
+    "who is behind AI Scientist",
+    "who made this AI",
+    "who developed this assistant",
+    "what model powers you",
+    "are you powered by Mistral?",
+    "are you ChatGPT?",
+])
+def test_identity_queries_are_intercepted_before_general_llm_knowledge(msg):
+    intent = ir.classify_intent(msg)
+    assert intent == "PROJECT_IDENTITY", f"{msg!r} should route to PROJECT_IDENTITY, got {intent!r}"
+
+    response = ir.handle_intent_message(msg, session_id="qa-identity-check")["response"]
+    assert "Mistral AI" not in response
+    assert "OpenAI" not in response
+    assert "Anthropic" not in response
+    assert "Gemini" not in response
+    assert "DeepMind" not in response
+
+    if "model" in msg.lower() or "powered by" in msg.lower() or "chatgpt" in msg.lower():
+        assert "AI Scientist" in response or "configured" in response.lower()
+    else:
+        assert "AI Scientist" in response or "Toshit Sai Galam" in response
+
+
 # --------------------------------------------------------------------------- #
 # Bug 7: the frontend contract — App.jsx and the workspace must share one
 # conversation id per project.

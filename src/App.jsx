@@ -7,8 +7,12 @@ import { fetchProjects, fetchProjectDetails, sendChatMessage, fetchSettings, app
 
 // One conversation per project so the FIRST message (sent from the start
 // screen) and every workspace follow-up share the same server-side memory.
+function createConversationId() {
+  return 'conv-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+}
+
 function getConversationId(projectId) {
-  if (!projectId) return null;
+  if (!projectId) return createConversationId();
   const key = 'ai-scientist-conv-' + projectId;
   let conv = null;
   try { conv = localStorage.getItem(key); } catch (e) { /* private mode */ }
@@ -89,19 +93,30 @@ export default function App() {
     if (!userText.trim()) return;
     setIsLaunching(true);
 
-    const userMsg = { id: Date.now(), role: 'user', content: userText };
+    const requestId = createConversationId();
+    const userMessageId = createConversationId();
+    const userMsg = { id: userMessageId, requestId, role: 'user', content: userText };
     setChatMessages([userMsg]);
     setIsInChatWorkspace(true);
 
     // A fresh chat without an active project still gets its own conversation
     // id so follow-ups keep the same memory.
-    const convId = conversationId || getConversationId(activeProject?.id || 'general-' + Date.now().toString(36));
+    const convId = conversationId || createConversationId();
     setConversationId(convId);
 
     try {
-      const res = await sendChatMessage(userText, activeProject?.id, convId, null, null);
+      const res = await sendChatMessage(userText, activeProject?.id, convId, null, null, {
+        requestId,
+        messageId: userMessageId
+      });
+      if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
+        throw new Error('The response could not be matched to the submitted message. Please retry.');
+      }
       const assistantMsg = {
-        id: Date.now() + 1,
+        id: res.messageId,
+        conversationId: res.conversationId,
+        requestId,
+        responseToMessageId: res.responseToMessageId,
         role: 'assistant',
         content: res.response,
         intent: res.intent,
@@ -119,7 +134,7 @@ export default function App() {
     } catch (err) {
       setChatMessages(prev => [
         ...prev,
-        { id: Date.now() + 1, role: 'assistant', content: `Error: ${err.message}` }
+        { id: userMessageId + '-error', requestId, responseToMessageId: userMessageId, role: 'assistant', content: `Error: ${err.message}` }
       ]);
     } finally {
       setIsLaunching(false);
