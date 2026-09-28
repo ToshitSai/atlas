@@ -123,7 +123,8 @@ export default function App() {
         action: res.action,
         datasets: res.candidates || null,
         recommendation: res.recommendation || null,
-        researchQuery: res.researchQuery || null
+        researchQuery: res.researchQuery || null,
+        activity: res.activity || []
       };
       setChatMessages(prev => [...prev, assistantMsg]);
 
