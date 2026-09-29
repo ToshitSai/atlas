@@ -23,7 +23,6 @@ _SYNTH_SYSTEM_PROMPT = (
 
 _FILLER_ABSTRACT_PREFIXES = ("research paper on", "academic research indexed")
 
-
 def plan_subqueries(goal: str, max_subqueries: int = 3) -> List[str]:
     """Break the research goal into concrete search sub-queries.
 
@@ -66,20 +65,23 @@ def plan_subqueries(goal: str, max_subqueries: int = 3) -> List[str]:
 def _paper_to_source(paper: Dict[str, Any]) -> Dict[str, str]:
     title = paper.get("title") or ""
     abstract = paper.get("abstract") or ""
-    # The literature tool injects a synthetic filler abstract when the API
-    # returned none; that is not real evidence, so drop it.
-    low = abstract.lower()
-    if any(low.startswith(p) for p in _FILLER_ABSTRACT_PREFIXES):
+    # Guard against legacy/mock providers that synthesize placeholder abstracts.
+    if any(abstract.lower().startswith(prefix) for prefix in _FILLER_ABSTRACT_PREFIXES):
         abstract = ""
     return {
         "title": title,
         "url": paper.get("url") or "",
         "snippet": abstract[:400],
         "source": paper.get("source") or "Academic",
+        "authors": paper.get("authors") or "",
+        "year": paper.get("year"),
+        "venue": paper.get("venue") or "",
+        "doi": paper.get("doi") or "",
+        "citationCount": paper.get("citationCount"),
     }
 
 
-def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int = 2) -> List[Dict[str, Any]]:
+def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int = 2, progress=None) -> List[Dict[str, Any]]:
     """Run web + academic searches per sub-query and deduplicate by URL.
 
     A paper hit without real evidence (empty snippet after dropping the
@@ -87,6 +89,8 @@ def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int
     sources: List[Dict[str, Any]] = []
     seen_urls = set()
     for idx, sq in enumerate(subqueries):
+        if progress:
+            progress("LITERATURE_SEARCH", "running", "Searching academic literature", f"Query {idx + 1}/{len(subqueries)}: {sq}")
         web_hits = search_web(sq, limit=per_query)
         paper_hits: List[Dict[str, str]] = []
         if idx < papers_on_first:
@@ -184,11 +188,19 @@ def run_deep_research(goal: str, per_query: int = 3, progress=None) -> Dict[str,
     emit("PLANNING", "completed", "Planned research", f"Created {len(subqueries)} focused research searches")
 
     emit("LITERATURE_SEARCH", "running", "Searching literature", "Searching web and academic sources")
-    sources = _collect_sources(subqueries, per_query)
+    try:
+        sources = _collect_sources(subqueries, per_query, progress=lambda *args: emit(*args))
+    except TypeError as exc:
+        # Compatibility for integrations that provide the original two-argument
+        # collector. Built-in collection always receives the progress callback.
+        if "progress" not in str(exc):
+            raise
+        sources = _collect_sources(subqueries, per_query)
     if not sources:
         emit("LITERATURE_SEARCH", "failed", "Literature search failed", "No verifiable sources were retrieved")
         return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": subqueries}
-    emit("LITERATURE_SEARCH", "completed", "Searched literature", f"Collected {len(sources)} unique source records")
+    academic_sources = sum(1 for source in sources if source.get("source") in ("Semantic Scholar", "OpenAlex"))
+    emit("LITERATURE_SEARCH", "completed", "Searched literature", f"Collected {len(sources)} unique source records ({academic_sources} academic)")
 
     emit("EVIDENCE_SYNTHESIS", "running", "Synthesizing source evidence", "Preparing evidence-grounded findings")
     report = _synthesize(goal, subqueries, sources)

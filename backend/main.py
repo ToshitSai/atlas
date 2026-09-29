@@ -156,7 +156,10 @@ def config_status():
         },
         "llmExecution": get_llm_telemetry(),
         "search": {
-            "provider": os.environ.get("SEARCH_PROVIDER", "auto")
+            "provider": os.environ.get("SEARCH_PROVIDER", "auto"),
+            "academicProvider": "Semantic Scholar + OpenAlex fallback",
+            "semanticScholarConfigured": bool(os.environ.get("SEMANTIC_SCHOLAR_API_KEY")),
+            "openAlexConfigured": bool(os.environ.get("OPENALEX_API_KEY")),
         },
     }
 

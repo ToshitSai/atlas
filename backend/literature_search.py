@@ -1,96 +1,160 @@
-import urllib.request
-import urllib.parse
+"""Server-side academic search providers for evidence-grounded research.
+
+Providers return a single normalised paper shape. No provider invents an
+abstract, paper, citation count, or DOI: missing upstream fields stay empty.
+Semantic Scholar is preferred when configured; OpenAlex is the keyless,
+production-safe academic fallback.
+"""
 import json
 import os
-from typing import Dict, Any, List
+import re
+import urllib.parse
+import urllib.request
+from typing import Any, Dict, List
+
 import backend.config
 
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 OPENALEX_URL = "https://api.openalex.org/works"
+_TIMEOUT = 10
+_USER_AGENT = "AI-Scientist-Assistant/1.0 (academic research)"
 
-def search_semantic_scholar(query: str, limit: int = 5) -> List[Dict[str, Any]]:
-    papers = []
-    try:
-        url = f"{SEMANTIC_SCHOLAR_URL}?query={urllib.parse.quote(query)}&limit={limit}&fields=title,authors,year,abstract,url,citationCount"
-        req = urllib.request.Request(url, headers={'User-Agent': 'AutoMLScientistEngine/2.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                for item in data.get("data", []):
-                    authors_str = ", ".join([a.get("name", "") for a in item.get("authors", [])[:3]])
-                    papers.append({
-                        "paperId": item.get("paperId", "s2-pub"),
-                        "source": "Semantic Scholar",
-                        "title": item.get("title", "Untitled Paper"),
-                        "authors": authors_str or "Unknown Authors",
-                        "year": item.get("year", 2024),
-                        "url": item.get("url") or f"https://www.semanticscholar.org/paper/{item.get('paperId', '')}",
-                        "abstract": item.get("abstract") or f"Research paper on {query[:40]}...",
-                        "relevance": f"High - Citations: {item.get('citationCount', 0)}. Semantic Scholar catalog."
-                    })
-    except Exception as err:
-        print(f"[SEMANTIC SCHOLAR WARNING]: {err}")
-    return papers
 
-def search_openalex(query: str, limit: int = 5) -> List[Dict[str, Any]]:
-    papers = []
-    api_key = os.environ.get("OPENALEX_API_KEY")
-    try:
-        url = f"{OPENALEX_URL}?search={urllib.parse.quote(query)}&per-page={limit}"
-        if api_key:
-            url += f"&api_key={api_key}"
-            
-        req = urllib.request.Request(url, headers={'User-Agent': 'AutoMLScientistEngine/2.0 (mailto:researcher@ai-scientist.io)'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                for item in data.get("results", []):
-                    title = item.get("display_name") or item.get("title") or "Untitled OpenAlex Paper"
-                    authorships = item.get("authorships", [])
-                    authors_list = [a.get("author", {}).get("display_name", "") for a in authorships[:3]]
-                    authors_str = ", ".join([a for a in authors_list if a])
-                    year = item.get("publication_year", 2024)
-                    doi = item.get("doi") or item.get("id", "")
-                    
-                    papers.append({
-                        "paperId": item.get("id", "openalex-pub"),
-                        "source": "OpenAlex",
-                        "title": title,
-                        "authors": authors_str or "OpenAlex Authors",
-                        "year": year,
-                        "url": doi if doi.startswith("http") else f"https://openalex.org/{item.get('id', '')}",
-                        "abstract": f"Academic research indexed in OpenAlex repository on {query[:40]}.",
-                        "relevance": f"High - OpenAlex Index. Citations: {item.get('cited_by_count', 0)}."
-                    })
-    except Exception as err:
-        print(f"[OPENALEX API WARNING]: {err}")
-    return papers
+class AcademicSearchProvider:
+    """Small provider contract used by the deep-research pipeline."""
+    name = "Academic"
+
+    def search_papers(self, query: str, limit: int = 5, recent: bool = False) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+
+def _http_json(url: str, headers: Dict[str, str] = None) -> Dict[str, Any]:
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, **(headers or {})})
+    with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
+        return json.loads(response.read().decode("utf-8", errors="replace"))
+
+
+def _normalise_title(value: str) -> str:
+    return re.sub(r"\W+", "", (value or "").lower())
+
+
+def _openalex_abstract(index: Dict[str, List[int]]) -> str:
+    """Rebuild OpenAlex's inverted-index abstract only when actually supplied."""
+    positions = [(position, word) for word, indexes in (index or {}).items()
+                 for position in (indexes or []) if isinstance(position, int)]
+    return " ".join(word for _, word in sorted(positions))
+
+
+class SemanticScholarProvider(AcademicSearchProvider):
+    name = "Semantic Scholar"
+
+    def search_papers(self, query: str, limit: int = 5, recent: bool = False) -> List[Dict[str, Any]]:
+        fields = "paperId,title,abstract,authors,year,venue,url,externalIds,citationCount,openAccessPdf"
+        params = {"query": query, "limit": str(limit), "fields": fields}
+        headers: Dict[str, str] = {}
+        if key := os.environ.get("SEMANTIC_SCHOLAR_API_KEY"):
+            headers["x-api-key"] = key
+        data = _http_json(f"{SEMANTIC_SCHOLAR_URL}?{urllib.parse.urlencode(params)}", headers)
+        papers = []
+        for item in data.get("data", []):
+            paper_id = item.get("paperId") or ""
+            authors = [a.get("name", "").strip() for a in (item.get("authors") or []) if a.get("name")]
+            external = item.get("externalIds") or {}
+            doi = external.get("DOI") or ""
+            papers.append({
+                "id": paper_id, "paperId": paper_id, "title": item.get("title") or "",
+                "abstract": item.get("abstract") or "", "authorsList": authors, "authors": ", ".join(authors),
+                "year": item.get("year"), "venue": item.get("venue") or "",
+                "url": item.get("url") or (f"https://www.semanticscholar.org/paper/{paper_id}" if paper_id else ""),
+                "pdfUrl": ((item.get("openAccessPdf") or {}).get("url") or ""),
+                "doi": doi, "citationCount": item.get("citationCount"), "source": self.name,
+            })
+        return papers
+
+
+class OpenAlexProvider(AcademicSearchProvider):
+    name = "OpenAlex"
+
+    def search_papers(self, query: str, limit: int = 5, recent: bool = False) -> List[Dict[str, Any]]:
+        params = {"search": query, "per-page": str(limit)}
+        if recent:
+            params["sort"] = "publication_date:desc"
+        if key := os.environ.get("OPENALEX_API_KEY"):
+            params["api_key"] = key
+        data = _http_json(f"{OPENALEX_URL}?{urllib.parse.urlencode(params)}")
+        papers = []
+        for item in data.get("results", []):
+            authors = [a.get("author", {}).get("display_name", "").strip()
+                       for a in (item.get("authorships") or []) if a.get("author", {}).get("display_name")]
+            location = item.get("primary_location") or {}
+            source = location.get("source") or {}
+            doi = item.get("doi") or ""
+            papers.append({
+                "id": item.get("id") or "", "paperId": item.get("id") or "",
+                "title": item.get("title") or item.get("display_name") or "",
+                "abstract": _openalex_abstract(item.get("abstract_inverted_index") or {}),
+                "authorsList": authors, "authors": ", ".join(authors),
+                "year": item.get("publication_year"), "venue": source.get("display_name") or location.get("raw_source_name") or "",
+                "url": doi or location.get("landing_page_url") or item.get("id") or "",
+                "pdfUrl": location.get("pdf_url") or "", "doi": doi,
+                "citationCount": item.get("cited_by_count"), "source": self.name,
+            })
+        return papers
+
+
+def _recent_requested(query: str) -> bool:
+    return bool(re.search(r"\b(latest|recent|current|new)\b", query or "", re.I))
+
+
+def _academic_query(query: str) -> str:
+    """Remove conversational recency phrasing that hurts scholarly ranking."""
+    cleaned = re.sub(r"\b(find|recent|latest|current|research|papers?|on|about)\b", " ", query, flags=re.I)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or query
+
+
+def _search_literature(objective: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """Retrieve real academic records, deduplicated by DOI/id/title.
+
+    A Semantic Scholar rate limit or outage falls through to OpenAlex; if both
+    fail, an empty result truthfully communicates unavailable evidence.
+    """
+    query = _academic_query((objective or "").strip())
+    if not query:
+        return []
+    results: List[Dict[str, Any]] = []
+    for provider in (SemanticScholarProvider(), OpenAlexProvider()):
+        try:
+            results.extend(provider.search_papers(query, limit, _recent_requested(query)) or [])
+        except Exception as exc:
+            print(f"[ACADEMIC SEARCH WARNING] {provider.name}: {type(exc).__name__}: {exc}")
+    unique, seen = [], set()
+    for paper in results:
+        identity = (paper.get("doi") or paper.get("id") or _normalise_title(paper.get("title") or "")).lower()
+        if not identity or identity in seen or not paper.get("title"):
+            continue
+        seen.add(identity)
+        unique.append(paper)
+    return unique[:limit]
+
 
 def search_literature(objective: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """
-    Searches Semantic Scholar & OpenAlex APIs for literature search.
-    Merges and deduplicates results from both academic databases.
-    """
-    query = objective
-    if "fraud" in objective.lower():
-        query = "credit card fraud detection class imbalance precision recall"
-    elif "churn" in objective.lower():
-        query = "customer churn prediction gradient boosting interpretability"
-    elif "price" in objective.lower() or "house" in objective.lower():
-        query = "tabular regression house prices feature engineering xgboost"
+    """Public academic retrieval hook, retained for pipeline injection/tests."""
+    return _search_literature(objective, limit)
 
-    s2_papers = search_semantic_scholar(query, limit=limit)
-    alex_papers = search_openalex(query, limit=limit)
 
-    all_papers = s2_papers + alex_papers
-    
-    # Deduplicate by title similarity
-    seen_titles = set()
-    unique_papers = []
-    for p in all_papers:
-        norm_title = p["title"].lower().strip()
-        if norm_title not in seen_titles:
-            seen_titles.add(norm_title)
-            unique_papers.append(p)
+# Backwards-compatible helpers retained for callers and tests.
+def search_semantic_scholar(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    try:
+        return SemanticScholarProvider().search_papers(query, limit, _recent_requested(query))
+    except Exception as exc:
+        print(f"[ACADEMIC SEARCH WARNING] Semantic Scholar: {type(exc).__name__}: {exc}")
+        return []
 
-    return unique_papers[:limit*2]
+
+def search_openalex(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    try:
+        return OpenAlexProvider().search_papers(query, limit, _recent_requested(query))
+    except Exception as exc:
+        print(f"[ACADEMIC SEARCH WARNING] OpenAlex: {type(exc).__name__}: {exc}")
+        return []
