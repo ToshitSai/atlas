@@ -8,6 +8,8 @@ import csv
 import random
 import sys
 import uuid
+import queue
+import threading
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -181,7 +183,7 @@ def update_settings(payload: dict):
     return {"status": "ok", "settings": store.get_settings()}
 
 @app.post("/api/chat")
-async def chat_endpoint(payload: dict):
+async def chat_endpoint(payload: dict, activity_callback=None):
     """
     Conversational AI Chat Endpoint powered by Intent Router.
     Routes incoming user messages into intents (CONFIRM_PENDING_ACTION, EXPLANATION, RESEARCH_START, RESEARCH_FOLLOWUP, RESEARCH_CONTROL, REPORT_REQUEST, TECHNICAL_DETAILS, CASUAL_CHAT).
@@ -283,6 +285,7 @@ async def chat_endpoint(payload: dict):
         payload_pending_action=payload_pending_action,
         payload_last_topic=payload_last_topic,
         conversation_history=conversation_history,
+        activity_callback=activity_callback,
     )
     res["researchRouting"] = routing_decision
     action = res.get("action")
@@ -537,6 +540,41 @@ async def chat_endpoint(payload: dict):
         f"request_id={request_id or 'unknown'} intent={res.get('intent')}"
     )
     return res
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(payload: dict):
+    """SSE wrapper for deep-chat activity. Events originate from real planner,
+    retrieval and synthesis callbacks; this endpoint never invents progress."""
+    event_queue: queue.Queue = queue.Queue()
+    result_box: Dict[str, Any] = {}
+
+    def publish(event):
+        event_queue.put({"type": "research_activity", **event})
+
+    def run_chat():
+        try:
+            result_box["result"] = asyncio.run(chat_endpoint(payload, activity_callback=publish))
+        except Exception as exc:
+            result_box["error"] = str(exc)
+        finally:
+            event_queue.put(None)
+
+    async def event_generator():
+        worker = threading.Thread(target=run_chat, daemon=True)
+        worker.start()
+        while True:
+            event = await asyncio.to_thread(event_queue.get)
+            if event is None:
+                break
+            yield f"event: activity\ndata: {json.dumps(event)}\n\n"
+        if result_box.get("error"):
+            yield f"event: error\ndata: {json.dumps({'error': result_box['error']})}\n\n"
+        else:
+            yield f"event: final\ndata: {json.dumps(result_box.get('result') or {})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 def _info_to_candidate(info: Dict[str, Any]) -> Dict[str, Any]:

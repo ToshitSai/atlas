@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import ResearchStartScreen from './components/ResearchStartScreen';
 import ResearchChatWorkspace from './components/ResearchChatWorkspace';
 import SettingsModal from './components/SettingsModal';
-import { fetchProjects, fetchProjectDetails, sendChatMessage, fetchSettings, approveDataset, fetchConversationMessages, fetchConversations } from './api';
+import { fetchProjects, fetchProjectDetails, sendChatMessage, sendDeepResearchStream, fetchSettings, approveDataset, fetchConversationMessages, fetchConversations } from './api';
 
 // One conversation per project so the FIRST message (sent from the start
 // screen) and every workspace follow-up share the same server-side memory.
@@ -40,6 +40,7 @@ export default function App() {
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStartedAt, setLaunchStartedAt] = useState(null);
   const [launchShowsResearchActivity, setLaunchShowsResearchActivity] = useState(false);
+  const [initialRequestActivities, setInitialRequestActivities] = useState([]);
   const [isApproving, setIsApproving] = useState(false);
   const [dockerReady, setDockerReady] = useState(false);
   const [llmConfigured, setLlmConfigured] = useState(false);
@@ -114,7 +115,9 @@ export default function App() {
     if (!userText.trim()) return;
     setIsLaunching(true);
     setLaunchStartedAt(Date.now());
-    setLaunchShowsResearchActivity(isLikelyDeepResearch(userText));
+    const showResearchActivity = isLikelyDeepResearch(userText);
+    setLaunchShowsResearchActivity(showResearchActivity);
+    setInitialRequestActivities([]);
 
     const requestId = createConversationId();
     const userMessageId = createConversationId();
@@ -129,11 +132,17 @@ export default function App() {
     try { localStorage.setItem('ai-scientist-active-conversation', convId); } catch (e) { /* private mode */ }
 
     try {
-      const res = await sendChatMessage(userText, activeProject?.id, convId, null, null, {
+      const onActivity = (event) => setInitialRequestActivities(previous => {
+        const existing = previous.findIndex(step => step.stage === event.stage);
+        if (existing >= 0) return previous.map((step, index) => index === existing ? { ...step, ...event, id: step.id || `${requestId}-${event.stage}` } : step);
+        return [...previous, { ...event, id: event.id || `${requestId}-${event.stage}` }];
+      });
+      const send = showResearchActivity ? sendDeepResearchStream : sendChatMessage;
+      const res = await send(userText, activeProject?.id, convId, null, null, {
         requestId,
         messageId: userMessageId,
         researchMode
-      }, [userMsg]);
+      }, [userMsg], onActivity);
       if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
         throw new Error('The response could not be matched to the submitted message. Please retry.');
       }
@@ -169,6 +178,7 @@ export default function App() {
       setIsLaunching(false);
       setLaunchStartedAt(null);
       setLaunchShowsResearchActivity(false);
+      setInitialRequestActivities([]);
     }
   };
 
@@ -300,6 +310,7 @@ export default function App() {
             conversationId={conversationId || getConversationId(activeProject?.id || 'general')}
             onConversationUpdated={loadConversations}
             initialRequestStartedAt={isLaunching && launchShowsResearchActivity ? launchStartedAt : null}
+            initialRequestActivities={initialRequestActivities}
             onOpenMenu={() => setIsSidebarOpen(true)}
           />
         )}

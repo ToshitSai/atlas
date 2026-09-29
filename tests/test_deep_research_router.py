@@ -61,7 +61,7 @@ def test_master_routing_matrix(message, mode):
 
 def test_deep_research_activity_contains_only_executed_stages(isolate_store, monkeypatch):
     import backend.deep_research as deep
-    monkeypatch.setattr(deep, "run_deep_research", lambda goal: {
+    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress=None: {
         "status": "ok", "report": "# Report\n\nEvidence-backed finding.",
         "sourceCount": 2, "subqueries": ["one", "two"],
     })
@@ -81,10 +81,35 @@ def test_deep_research_activity_contains_only_executed_stages(isolate_store, mon
 
 def test_deep_research_failure_is_visible_not_fabricated(isolate_store, monkeypatch):
     import backend.deep_research as deep
-    monkeypatch.setattr(deep, "run_deep_research", lambda goal: {
+    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress=None: {
         "status": "no_sources", "report": "", "sourceCount": 0, "subqueries": ["one"],
     })
     result = handle_intent_message("Research this topic", session_id="deep-failure")
     assert any(event["stage"] == "LITERATURE_SEARCH" and event["status"] == "failed"
                for event in result["activity"])
     assert "won't pretend" in result["response"].lower()
+
+
+def test_deep_research_reports_real_progress_in_execution_order(monkeypatch):
+    import backend.deep_research as deep
+
+    monkeypatch.setattr(deep, "plan_subqueries", lambda goal: ["first query", "second query"])
+    monkeypatch.setattr(deep, "_collect_sources", lambda queries, per_query: [
+        {"title": "Source", "url": "https://example.test/source", "snippet": "Evidence", "source": "Web", "query": queries[0]}
+    ])
+    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources: "# Report")
+    events = []
+
+    result = deep.run_deep_research("Test goal", progress=events.append)
+
+    assert result["status"] == "ok"
+    assert [(event["stage"], event["status"]) for event in events] == [
+        ("PLANNING", "running"),
+        ("PLANNING", "completed"),
+        ("LITERATURE_SEARCH", "running"),
+        ("LITERATURE_SEARCH", "completed"),
+        ("EVIDENCE_SYNTHESIS", "running"),
+        ("EVIDENCE_SYNTHESIS", "completed"),
+        ("REPORT", "completed"),
+        ("COMPLETED", "completed"),
+    ]

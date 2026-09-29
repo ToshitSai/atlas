@@ -1278,6 +1278,7 @@ def handle_intent_message(
     payload_pending_action: Optional[Dict[str, Any]] = None,
     payload_last_topic: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
+    activity_callback=None,
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1311,7 +1312,7 @@ def handle_intent_message(
         else:
             result = _handle_intent_message_impl(message, active_project_id, session_id,
                                                  payload_pending_action, payload_last_topic,
-                                                 conversation_history)
+                                                 conversation_history, activity_callback)
         # The API preserves its existing response shape and adds an optional,
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
@@ -1329,6 +1330,7 @@ def _handle_intent_message_impl(
     payload_pending_action: Optional[Dict[str, Any]] = None,
     payload_last_topic: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
+    activity_callback=None,
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
@@ -1744,9 +1746,11 @@ def _handle_intent_message_impl(
         activity = [
             make_activity(None, job_id, "UNDERSTANDING", "completed", "Understood the research question", f"Research objective: {goal}"),
         ]
+        if activity_callback:
+            activity_callback(activity[0])
         try:
             from backend.deep_research import run_deep_research
-            research = run_deep_research(goal)
+            research = run_deep_research(goal, progress=activity_callback)
         except Exception as dr_err:
             print(f"[DEEP RESEARCH WARNING]: {dr_err}")
             research = {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": []}

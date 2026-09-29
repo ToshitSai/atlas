@@ -170,17 +170,31 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]])
     return "\n".join(lines)
 
 
-def run_deep_research(goal: str, per_query: int = 3) -> Dict[str, Any]:
+def run_deep_research(goal: str, per_query: int = 3, progress=None) -> Dict[str, Any]:
     """Execute the full deep-research pass for a goal."""
+    def emit(stage, status, label, detail=None):
+        if progress:
+            progress({"stage": stage, "status": status, "label": label, "detail": detail})
+
+    emit("PLANNING", "running", "Planning research", "Creating focused research searches")
     subqueries = plan_subqueries(goal)
     if not subqueries:
+        emit("PLANNING", "failed", "Research planning failed", "No usable research question was produced")
         return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": []}
+    emit("PLANNING", "completed", "Planned research", f"Created {len(subqueries)} focused research searches")
 
+    emit("LITERATURE_SEARCH", "running", "Searching literature", "Searching web and academic sources")
     sources = _collect_sources(subqueries, per_query)
     if not sources:
+        emit("LITERATURE_SEARCH", "failed", "Literature search failed", "No verifiable sources were retrieved")
         return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": subqueries}
+    emit("LITERATURE_SEARCH", "completed", "Searched literature", f"Collected {len(sources)} unique source records")
 
+    emit("EVIDENCE_SYNTHESIS", "running", "Synthesizing source evidence", "Preparing evidence-grounded findings")
     report = _synthesize(goal, subqueries, sources)
+    emit("EVIDENCE_SYNTHESIS", "completed", "Synthesized source evidence", "Built findings only from retrieved source snippets")
+    emit("REPORT", "completed", "Generated research report", "Prepared the final sourced report")
+    emit("COMPLETED", "completed", "Deep research complete", f"Completed a sourced review using {len(sources)} unique sources")
     return {
         "status": "ok",
         "report": report,

@@ -7,7 +7,8 @@ import {
   fetchProjectLiterature,
   fetchProjectReport,
   sendControlSignal,
-  sendChatMessage
+  sendChatMessage,
+  sendDeepResearchStream
 } from '../api';
 import ActivityPanel from './ActivityPanel';
 import ChatMarkdown from './ChatMarkdown';
@@ -38,6 +39,7 @@ export default function ResearchChatWorkspace({
   conversationId: propsConversationId,
   onConversationUpdated,
   initialRequestStartedAt,
+  initialRequestActivities = [],
   onOpenMenu
 }) {
   const [activeTab, setActiveTab] = useState('chat'); // 'workspace' | 'chat' | 'report'
@@ -129,7 +131,7 @@ export default function ResearchChatWorkspace({
     setIsProcessing(true);
     const showResearchActivity = isLikelyDeepResearch(userText);
     if (showResearchActivity) {
-      setActiveRequests(previous => ({ ...previous, [requestId]: { requestId, startedAt: Date.now() } }));
+      setActiveRequests(previous => ({ ...previous, [requestId]: { requestId, startedAt: Date.now(), activities: [] } }));
     }
 
     // The response carries this id back; it is the stable UI/API association.
@@ -138,10 +140,20 @@ export default function ResearchChatWorkspace({
 
     try {
       // 2. Call backend Intent Router endpoint
-      const res = await sendChatMessage(userText, projectId, conversationId, pendingAction, lastTopic, {
+      const onActivity = (event) => setActiveRequests(previous => {
+        const request = previous[requestId];
+        if (!request) return previous;
+        const existing = (request.activities || []).findIndex(step => step.stage === event.stage);
+        const activities = existing >= 0
+          ? request.activities.map((step, index) => index === existing ? { ...step, ...event, id: step.id || `${requestId}-${event.stage}` } : step)
+          : [...(request.activities || []), { ...event, id: event.id || `${requestId}-${event.stage}` }];
+        return { ...previous, [requestId]: { ...request, activities } };
+      });
+      const send = showResearchActivity ? sendDeepResearchStream : sendChatMessage;
+      const res = await send(userText, projectId, conversationId, pendingAction, lastTopic, {
         requestId,
         messageId: userMessageId
-      }, [...chatMessages, userMsg]);
+      }, [...chatMessages, userMsg], onActivity);
       if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
         throw new Error('The response could not be matched to the submitted message. Please retry.');
       }
@@ -445,13 +457,13 @@ export default function ResearchChatWorkspace({
 
             {Object.values(activeRequests).map(request => (
               <div key={request.requestId} className="w-full">
-                <ActivityPanel running startedAt={request.startedAt} />
+                <ActivityPanel running startedAt={request.startedAt} activities={request.activities || []} />
               </div>
             ))}
 
             {initialRequestStartedAt && (
               <div className="w-full">
-                <ActivityPanel running startedAt={initialRequestStartedAt} />
+                <ActivityPanel running startedAt={initialRequestStartedAt} activities={initialRequestActivities} />
               </div>
             )}
 

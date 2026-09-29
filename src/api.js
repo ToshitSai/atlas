@@ -102,6 +102,34 @@ export async function sendChatMessage(message, projectId = null, conversationId 
   });
 }
 
+export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}) {
+  const response = await fetch(`${API_BASE}/chat/stream`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, ...correlation })
+  });
+  if (!response.ok || !response.body) throw new Error(`Server error (${response.status})`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = ''; let finalResult = null;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split('\n\n'); buffer = frames.pop() || '';
+    frames.forEach(frame => {
+      const kind = (frame.match(/^event:\s*(.+)$/m) || [])[1];
+      const raw = (frame.match(/^data:\s*(.+)$/m) || [])[1];
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (kind === 'activity') onActivity(data);
+      else if (kind === 'final') finalResult = data;
+      else if (kind === 'error') throw new Error(data.error || 'Research stream failed');
+    });
+  }
+  if (!finalResult) throw new Error('Research stream ended without a final response.');
+  return finalResult;
+}
+
 export async function sendControlSignal(projectId, signal) {
   return safeFetchJson(`${API_BASE}/projects/${projectId}/control`, {
     method: 'POST',

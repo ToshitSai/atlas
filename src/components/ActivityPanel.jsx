@@ -10,7 +10,9 @@ export default function ActivityPanel({ activities = [], running = false, starte
   // current client-side stage. Once it completes, only server-produced
   // pipeline/router events remain — never a fabricated completed history.
   const shown = running
-    ? [{ id: 'request-understanding', label: 'Understanding your question', status: 'running' }]
+    ? (activities.length
+      ? activities
+      : [{ id: 'request-understanding', label: 'Understanding your question', status: 'running', detail: 'Classifying the request before starting research.' }])
     : activities;
   if (!shown.length) return null;
 
