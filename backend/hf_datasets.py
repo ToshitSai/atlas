@@ -689,6 +689,11 @@ def download_dataset(repo_id: str, dest_dir: Optional[str] = None,
 def _goal_terms(goal: str) -> List[str]:
     stop = {"improve", "the", "a", "an", "for", "and", "of", "to", "detect",
             "detection", "using", "with", "model", "ml", "better"}
+    # Action verbs ("train", "build", "predict"...) describe what the user
+    # wants us to DO, not what the dataset is ABOUT. Searching the Hub for
+    # "train" matches generic training-corpus dumps, so exclude them exactly
+    # like the other stopwords.
+    stop |= {w for w in _ACTION_VERBS}
     words = re.findall(r"[a-z]+", (goal or "").lower())
     return [w for w in words if w not in stop and len(w) > 2]
 

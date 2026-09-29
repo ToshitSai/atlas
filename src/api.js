@@ -170,3 +170,16 @@ export async function fetchProjectReport(id) {
     return null;
   }
 }
+
+// Structured research state (§14): the single endpoint that serves the full
+// researchSession/goal/questions/literature/datasets/hypotheses/experiments/
+// results/analysis/pipeline/reasoning shape. The workspace currently derives
+// the same view client-side from the per-artifact endpoints; this keeps the
+// server-side structured state available to any client (mobile, API, tests).
+export async function fetchResearchState(id) {
+  try {
+    return await safeFetchJson(`${API_BASE}/projects/${id}/research-state`);
+  } catch (err) {
+    return null;
+  }
+}

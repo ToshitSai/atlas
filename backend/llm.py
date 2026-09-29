@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import re
 import time
 import threading
 import contextvars
@@ -422,12 +423,15 @@ Provide a 2-sentence peer critique evaluating scientific soundness, potential fa
     }
 
 def generate_research_question(objective: str) -> str:
-    system_prompt = "You are a senior machine learning scientist. Convert the user's research objective into a formal, testable ML research question."
+    system_prompt = "You are a senior machine learning scientist. Convert the user's research objective into a formal, testable ML research question. Return plain text: no markdown emphasis, no surrounding quotes."
     prompt = f"Objective: '{objective}'\nFormulate a precise research question addressing model design, class imbalance, metrics, or feature strategy. Return ONLY the research question text."
     
     llm_res = query_llm(prompt, system_prompt)
     if llm_res and len(llm_res.strip()) > 15:
-        return llm_res.strip().strip('"')
+        # Models love wrapping the question in **bold** or quotes; the UI and
+        # the report quote it verbatim, so store plain text only.
+        cleaned = re.sub(r"\*{1,3}|_{1,3}", "", llm_res.strip()).strip().strip('"').strip()
+        return cleaned or llm_res.strip()
 
     obj_lower = objective.lower()
     if "fraud" in obj_lower:
@@ -439,11 +443,24 @@ def generate_research_question(objective: str) -> str:
     else:
         return f"How can predictive performance and generalization for '{objective}' be optimized across tabular baseline models?"
 
-def generate_hypothesis_llm(objective: str, dataset_summary: Dict[str, Any], baseline_summary: List[Dict[str, Any]], literature: List[Dict[str, Any]], exp_idx: int = 1) -> Dict[str, Any]:
+def generate_hypothesis_llm(objective: str, dataset_summary: Dict[str, Any], baseline_summary: List[Dict[str, Any]], literature: List[Dict[str, Any]], exp_idx: int = 1, previous_experiments: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     system_prompt = (
         "You are an autonomous AI machine learning researcher. Given a research objective, dataset properties, "
         "and baseline model metrics, formulate a clear hypothesis and write clean, runnable Python experiment code."
     )
+
+    # Research memory (directive §7): the model must see what was already run
+    # so it proposes the NEXT distinct experiment instead of repeating itself.
+    prev_block = ""
+    prev = previous_experiments or []
+    if prev:
+        prev_block = "Previous Experiments (already executed — do NOT repeat any of these approaches; build on their results):\n"
+        prev_block += json.dumps([
+            {"title": p.get("title"), "hypothesis": p.get("hypothesis"),
+             "metric": f"{p.get('metricName')}={p.get('metricValue')}", "status": p.get("status")}
+            for p in prev
+        ], indent=2)
+        prev_block += "\n\n"
 
     user_prompt = f"""
 Research Objective: {objective}
@@ -456,7 +473,7 @@ Dataset Summary:
 Baseline Results:
 {json.dumps([{b['name']: b['metrics']} for b in baseline_summary], indent=2)}
 
-Formulate 1 testable scientific hypothesis to improve performance.
+{prev_block}Formulate 1 {"NEW testable scientific hypothesis that is meaningfully different from every previous experiment listed above, and that addresses their weaknesses or extends their best result." if prev else "testable scientific hypothesis to improve performance."}
 Return JSON format strictly:
 {{
   "title": "Short experiment title",
@@ -489,11 +506,32 @@ Return JSON format strictly:
         hyp = ("Adding explicit class weighting to a gradient-boosted tree model will raise detection of the "
                "rare positive (fraud) class, improving PR-AUC and recall under severe imbalance.")
         hyperparams = "HistGradientBoosting, class_weight via sample_weight, max_iter=250, lr=0.08"
-    else:
+    elif exp_idx == 2:
         title = f"Exp {exp_idx}: Threshold Tuning & Balanced Boosting"
         hyp = ("Tuning the decision threshold and combining balanced boosting with deeper trees will improve the "
                "precision/recall trade-off for the minority class beyond the baseline.")
         hyperparams = "XGBoost scale_pos_weight, threshold optimized on PR curve, max_depth=6"
+    else:
+        # The fallback has no real history to reason over, so vary the *strategy*
+        # per index instead of re-issuing the same experiment (directive §7).
+        strategies = [
+            ("SMOTE Oversampling + Regularized Ensemble",
+             "Synthetic minority oversampling (SMOTE) combined with a strongly regularized ensemble will "
+             "recover minority-class separation without the overfitting seen in previous runs.",
+             "SMOTE k=5, HistGradientBoosting max_leaf_nodes=31, L2=1.0"),
+            ("Feature Selection & Dimensionality Reduction",
+             "Dropping low-importance features and retraining on the selected subset will reduce noise-driven "
+             "false positives and improve generalization of the minority class.",
+             "Mutual-information top-k feature selection (k=20), shallow ensemble"),
+            ("Calibrated Probability Ensemble",
+             "Calibrating probabilities and averaging diverse model families will stabilize the precision/recall "
+             "trade-off where single models plateaued.",
+             "Isotonic calibration over LR + HistGB soft-voting ensemble"),
+        ]
+        s = strategies[(exp_idx - 3) % len(strategies)]
+        title = f"Exp {exp_idx}: {s[0]}"
+        hyp = s[1]
+        hyperparams = s[2]
 
     script = '''import os, json
 import numpy as np

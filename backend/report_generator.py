@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 
-def generate_research_report(project: Dict[str, Any], dataset_report: Dict[str, Any], baselines: List[Dict[str, Any]], tree_nodes: List[Dict[str, Any]], error_analysis: Dict[str, Any]) -> str:
+def generate_research_report(project: Dict[str, Any], dataset_report: Dict[str, Any], baselines: List[Dict[str, Any]], tree_nodes: List[Dict[str, Any]], error_analysis: Dict[str, Any], literature: List[Dict[str, Any]] = None) -> str:
     """
     Generates a full Markdown research report for the autonomous ML pipeline.
     Complies with Sakana AI License Clause 3.2.e machine-generated content disclosure requirements.
@@ -66,8 +66,25 @@ def generate_research_report(project: Dict[str, Any], dataset_report: Dict[str, 
             ""
         ])
 
+    # §9: Literature Review — real papers fetched by the literature agent only.
     report_lines.extend([
-        "## 5. Error Analysis & Key Takeaways",
+        "## 5. Literature Review",
+    ])
+    literature = literature or []
+    if literature:
+        report_lines.append(f"{len(literature)} relevant papers were retrieved and considered during planning:")
+        report_lines.append("")
+        for p in literature[:10]:
+            title = p.get("title") or p.get("name") or "Untitled"
+            url = p.get("url") or p.get("link") or ""
+            year = p.get("year") or ""
+            report_lines.append(f"- [{title}]({url}) {f'({year})' if year else ''}".replace("()", ""))
+    else:
+        report_lines.append("_Literature search was unavailable in this run; no papers were retrieved. Findings below rely on dataset analysis and experiments only._")
+
+    report_lines.extend([
+        "",
+        "## 6. Error Analysis & Key Takeaways",
     ])
 
     if error_analysis:
@@ -78,11 +95,56 @@ def generate_research_report(project: Dict[str, Any], dataset_report: Dict[str, 
             ""
         ])
 
+    # §9: Statistical Analysis — the real bootstrap CI computed by the
+    # error-analysis agent, plus per-experiment variance of the primary metric.
     report_lines.extend([
-        "## 6. Recommendations & Next Steps",
+        "## 7. Statistical Analysis",
+    ])
+    if error_analysis and error_analysis.get("bootstrapCI"):
+        ci = error_analysis["bootstrapCI"]
+        report_lines.append(f"- **95% Bootstrap Confidence Interval** for the primary metric: [{ci.get('ci_lower')} – {ci.get('ci_upper')}] "
+                            f"({error_analysis.get('bootstrapIterations', 'n/a')} resamples).")
+    exp_vals = [n.get("metricValue") for n in tree_nodes if isinstance(n.get("metricValue"), (int, float)) and n.get("metricValue") is not None]
+    if len(exp_vals) >= 2:
+        mean_v = sum(exp_vals) / len(exp_vals)
+        var_v = sum((v - mean_v) ** 2 for v in exp_vals) / (len(exp_vals) - 1)
+        report_lines.append(f"- Observed primary-metric values across {len(exp_vals)} runs: mean {mean_v:.4f}, sample std-dev {var_v ** 0.5:.4f}.")
+    else:
+        report_lines.append("- Not enough repeated measurements for dispersion statistics in this run.")
+
+    # §9: Findings / Limitations / Future Work, tied to real results.
+    report_lines.extend([
+        "",
+        "## 8. Findings",
+    ])
+    if tree_nodes:
+        best_node = max(
+            (n for n in tree_nodes if isinstance(n.get("metricValue"), (int, float))),
+            key=lambda n: n["metricValue"], default=None)
+        if best_node:
+            report_lines.append(f"- Best validated result: **{best_node.get('title')}** with {best_node.get('metricName')} = {best_node.get('metricValue')} (see experiment {best_node.get('experimentId')}).")
+        failed = [n for n in tree_nodes if n.get("status") == "FAILED"]
+        if failed:
+            report_lines.append(f"- {len(failed)} experiment(s) failed to execute and contribute no validated metric.")
+    else:
+        report_lines.append("- No experiment results were produced in this run.")
+
+    report_lines.extend([
+        "",
+        "## 9. Limitations",
+        "- Results reflect the single dataset and split used here; cross-dataset generalization was not measured.",
+        "- The compute budget of this run (" + str(project.get("budgetMins", "n/a")) + " minutes) bounds the search space explored.",
+    ])
+    if error_analysis and error_analysis.get("bootstrapCI"):
+        ci = error_analysis["bootstrapCI"]
+        report_lines.append(f"- The primary metric carries sampling uncertainty: 95% CI [{ci.get('ci_lower')} – {ci.get('ci_upper')}].")
+
+    report_lines.extend([
+        "",
+        "## 10. Future Work",
         "1. Deploy the best performing pipeline configuration into production serving.",
         "2. Monitor real-world data drift on key failing feature signatures identified in error analysis.",
-        "3. Collect further edge-case training samples for underperforming data slices."
+        "3. Collect further edge-case training samples for underperforming data slices.",
     ])
 
     return "\n".join(report_lines)

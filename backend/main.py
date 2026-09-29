@@ -820,6 +820,181 @@ def get_project(project_id: str):
         raise HTTPException(status_code=404, detail="Project not found")
     return proj
 
+
+# Ordered pipeline presented to the user. Each entry maps a user-facing stage
+# to the backend stageState key(s) and the real artifact used to derive its
+# detail line. The UI renders from this; nothing is faked.
+_PIPELINE_ORDER = [
+    ("planning", "Research Planning", ["research_question"], "questions"),
+    ("literature", "Literature Search", ["literature_search"], "papers"),
+    ("dataset", "Dataset Discovery", ["dataset_eda"], "dataset"),
+    ("baseline", "Baseline Selection", ["baseline_training"], "baseline"),
+    ("experiment-design", "Experiment Design", ["hypothesis_generation"], "design"),
+    ("experiment", "Experiment Execution", ["sandboxed_execution"], "experiment"),
+    ("evaluation", "Evaluation", ["sandboxed_execution"], "evaluation"),
+    ("error-analysis", "Error Analysis", ["error_diagnostics"], "errors"),
+    ("hypothesis", "Hypothesis Generation", ["hypothesis_generation"], "hypothesis"),
+    ("next-experiment", "Next Experiment", ["sandboxed_execution"], "next"),
+    ("report", "Research Report", ["research_report"], "report"),
+]
+
+
+def _fmt_metric_string(metric_str: Optional[str]) -> str:
+    return metric_str or "Not available yet"
+
+
+def _derive_pipeline(proj: Dict[str, Any], artifacts: Dict[str, Any]) -> list:
+    """User-facing pipeline state derived ONLY from real persisted artifacts.
+
+    Detail lines use actual counts and names (literature count, dataset rows,
+    best baseline, experiment metric). Anything not yet available is an honest
+    "Not available yet" — never an invented value (directive §15).
+    """
+    stages = proj.get("stageStates", {})
+
+    def state_of(keys):
+        vals = [stages.get(k) for k in keys if stages.get(k)]
+        if not vals:
+            return "PENDING"
+        if any(v == "RUNNING" for v in vals):
+            return "RUNNING"
+        if any(v == "FAILED" for v in vals):
+            return "FAILED"
+        if any(v in ("COMPLETED", "NOT_CONFIGURED") for v in vals):
+            return "COMPLETED"
+        return "PENDING"
+
+    def detail_of(kind):
+        if kind == "questions":
+            rq = proj.get("researchQuestion")
+            return f"{1 if rq else 0} research question generated" if rq else "Not available yet"
+        if kind == "papers":
+            papers = artifacts.get("literature") or []
+            return f"{len(papers)} relevant papers analyzed" if papers else ("Searching..." if stages.get("literature_search") == "RUNNING" else "Not available yet")
+        if kind == "dataset":
+            dr = artifacts.get("dataset")
+            if dr:
+                rows = dr.get("rowCount")
+                return f"{dr.get('repoId') or dr.get('filename')} — {rows:,} rows × {dr.get('columnCount')} cols" if rows else f"{dr.get('repoId') or dr.get('filename')}"
+            return "Waiting for results..." if stages.get("dataset_eda") == "RUNNING" else "Not available yet"
+        if kind == "baseline":
+            bl = artifacts.get("baselines") or []
+            done = [b for b in bl if b.get("status") == "COMPLETED"]
+            if done:
+                return f"{len(done)} models benchmarked — best: {proj.get('bestModel')}"
+            return "Training..." if stages.get("baseline_training") == "RUNNING" else "Not available yet"
+        if kind == "design":
+            exps = artifacts.get("experiments") or []
+            if exps:
+                return f"Designed: {exps[-1].get('title')}"
+            return "Designing..." if stages.get("hypothesis_generation") == "RUNNING" else "Not available yet"
+        if kind == "hypothesis":
+            exps = artifacts.get("experiments") or []
+            latest = exps[-1] if exps else None
+            if latest and latest.get("hypothesis"):
+                return f"Next: {latest.get('title')}"
+            return "Planning..." if stages.get("hypothesis_generation") == "RUNNING" else "Not available yet"
+        if kind == "experiment":
+            exps = artifacts.get("experiments") or []
+            running = stages.get("sandboxed_execution") == "RUNNING"
+            if running:
+                return f"Experiment {len(exps) + 1:03d} executing..."
+            if exps:
+                last = exps[-1]
+                return f"Experiment {len(exps):03d} — {last.get('metricName')}: {last.get('metricValue')} ({last.get('status')})"
+            return "Queued..." if stages.get("sandboxed_execution") == "RUNNING" else "Not available yet"
+        if kind == "evaluation":
+            exps = artifacts.get("experiments") or []
+            if exps:
+                last = exps[-1]
+                mv = last.get("metricValue")
+                return f"{last.get('metricName')}: {mv} vs baseline {proj.get('bestMetric')}" if mv is not None else "Waiting for results..."
+            return "Not available yet"
+        if kind == "errors":
+            ea = artifacts.get("errorAnalysis")
+            if ea:
+                ci = ea.get("bootstrapCI") or {}
+                return f"95% CI [{ci.get('ci_lower')} – {ci.get('ci_upper')}]"
+            return "Not available yet"
+        if kind == "next":
+            proj_status = proj.get("runState")
+            if proj_status in ("COMPLETED", "FAILED"):
+                return "Cycle complete"
+            return "Queued after current experiment" if stages.get("sandboxed_execution") == "RUNNING" else "Not available yet"
+        if kind == "report":
+            return "Report ready" if artifacts.get("report") else ("Compiling..." if stages.get("research_report") == "RUNNING" else "Not available yet")
+        return "Not available yet"
+
+    out = []
+    for sid, label, keys, detail_kind in _PIPELINE_ORDER:
+        out.append({
+            "id": sid,
+            "label": label,
+            "state": state_of(keys),
+            "detail": detail_of(detail_kind),
+        })
+    return out
+
+
+@app.get("/api/projects/{project_id}/research-state")
+def get_research_state(project_id: str):
+    """Structured research session state (§14): the UI renders from THIS,
+    not from unstructured chat text. Every field is real or honestly absent.
+    """
+    proj = store.get_project(project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    artifacts = {
+        "literature": store.get_literature(project_id),
+        "dataset": store.get_dataset_report(project_id),
+        "baselines": store.get_baselines(project_id),
+        "experiments": [n for n in store.get_tree_nodes(project_id) if n.get("parentId") is not None],
+        "rootNode": next((n for n in store.get_tree_nodes(project_id) if n.get("parentId") is None), None),
+        "errorAnalysis": store.get_error_analysis(project_id),
+        "report": store.get_report(project_id),
+    }
+    reasoning = [
+        {"message": l.get("message"), "agent": l.get("agent"),
+         "level": l.get("level", "INFO"), "timestamp": l.get("timestamp")}
+        for l in (proj.get("agentLogs") or [])
+    ]
+    return {
+        "researchSession": {
+            "id": project_id,
+            "status": proj.get("status"),
+            "currentStage": proj.get("runState"),
+            "currentStatus": ("Researching..." if proj.get("status") in ("RUNNING", "IN_PROGRESS", "QUEUED")
+                              else "Research complete" if proj.get("status") == "COMPLETED"
+                              else "Research failed" if proj.get("status") == "FAILED" else "Idle"),
+        },
+        "researchGoal": proj.get("objective"),
+        "researchQuestions": [proj.get("researchQuestion")] if proj.get("researchQuestion") else [],
+        "literature": artifacts["literature"],
+        "datasets": [artifacts["dataset"]] if artifacts["dataset"] else [],
+        "hypotheses": [
+            {"experimentId": n.get("experimentId"), "title": n.get("title"), "hypothesis": n.get("hypothesis")}
+            for n in ([artifacts["rootNode"]] if artifacts["rootNode"] else []) + artifacts["experiments"]
+        ],
+        "experiments": ([artifacts["rootNode"]] if artifacts["rootNode"] else []) + artifacts["experiments"],
+        "experimentResults": [
+            {"experimentId": n.get("experimentId"), "metricName": n.get("metricName"),
+             "metricValue": n.get("metricValue"), "allMetrics": n.get("allMetrics"), "status": n.get("status")}
+            for n in artifacts["experiments"]
+        ],
+        "analysis": artifacts["errorAnalysis"],
+        "currentStage": proj.get("runState"),
+        "currentStatus": proj.get("status"),
+        "researchHistory": [
+            {"id": n.get("experimentId"), "title": n.get("title"),
+             "metricName": n.get("metricName"), "metricValue": n.get("metricValue"), "status": n.get("status")}
+            for n in ([artifacts["rootNode"] if artifacts["rootNode"] else None] + artifacts["experiments"]) if n
+        ],
+        "finalReport": artifacts["report"],
+        "pipeline": _derive_pipeline(proj, artifacts),
+        "reasoning": reasoning,
+    }
+
 @app.post("/api/projects/{project_id}/control")
 def set_control_signal(project_id: str, payload: dict):
     if not store.get_project(project_id):
@@ -855,7 +1030,10 @@ async def stream_project_events(project_id: str):
                 event_payload = {
                     "projectId": project_id,
                     "status": proj.get("status"),
+                    "runState": proj.get("runState"),
+                    "runStateNote": proj.get("runStateNote"),
                     "activeAgent": proj.get("activeAgent"),
+                    "controlSignal": proj.get("controlSignal"),
                     "stageStates": proj.get("stageStates"),
                     "researchQuestion": proj.get("researchQuestion"),
                     "experimentsCount": proj.get("experimentsCount"),

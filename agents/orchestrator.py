@@ -414,7 +414,11 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
             _set_run_state(project_id, "HYPOTHESIS")
             store.update_stage_state(project_id, "hypothesis_generation", "RUNNING")
             store.add_agent_log(project_id, "HYPOTHESIS_AGENT", f"Formulating Hypothesis #{exp_idx} informed by error diagnostics...")
-            exp_hypothesis = generate_hypothesis_llm(objective, report, baselines, store.get_literature(project_id), exp_idx)
+            # §7 research memory: hand the hypothesis agent the real history so
+            # it never repeats an already-executed experiment.
+            exp_hypothesis = generate_hypothesis_llm(
+                objective, report, baselines, store.get_literature(project_id), exp_idx,
+                previous_experiments=tree_nodes)
 
             # Critic LLM Evaluation Step
             critic_eval = query_critic_llm(exp_hypothesis["title"], exp_hypothesis["hypothesis"], best_metric_str)
@@ -569,7 +573,7 @@ def _run_pipeline_stages(project_id: str, dataset_path: str, dataset_meta: Dict[
         _set_run_state(project_id, "REPORT")
         store.update_stage_state(project_id, "research_report", "RUNNING")
         store.add_agent_log(project_id, "REPORT_AGENT", "Generating scientific Markdown research report from verified results...")
-        report_md = generate_research_report(proj, report, baselines, tree_nodes, latest_error_diag)
+        report_md = generate_research_report(proj, report, baselines, tree_nodes, latest_error_diag, store.get_literature(project_id))
         store.save_report(project_id, report_md)
         saved_report_md = store.get_report(project_id)
 
