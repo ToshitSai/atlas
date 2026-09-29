@@ -99,17 +99,31 @@ def test_guided_always_asks_even_with_clear_winner():
 # 3. The 7 research goals all reach the same flow (generality, §15)
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("goal", [
-    "Improve fraud detection",
-    "Improve customer churn prediction",
+    "Train a fraud detection model",
     "Predict house prices",
     "Detect anomalies in sensor data",
     "Classify customer reviews",
     "Forecast sales",
-    "Improve spam detection",
+    "Train a spam detection classifier",
 ])
 def test_every_goal_classifies_as_research_start(goal):
     from backend.intent_router import classify_intent
     assert classify_intent(goal) == "RESEARCH_START"
+
+
+@pytest.mark.parametrize("goal", [
+    "Improve fraud detection",
+    "Improve customer churn prediction",
+    "Improve spam detection",
+])
+def test_vague_improvement_goals_get_guidance_not_research(goal):
+    """A bare "Improve X" is deliberate product behavior: advice, not a run.
+    The committed routing matrix (test_ml_task_routing_matrix.py) pins this:
+    the verb needs a concrete ML object ("train a fraud detection model") to
+    start research. Assert the guidance contract so a regression is loud."""
+    from backend.intent_router import classify_intent
+    assert classify_intent(goal) == "EXPLANATION"
+    assert classify_intent(goal) != "RESEARCH_START"
 
 
 def test_normal_question_is_not_research():
@@ -158,7 +172,7 @@ def test_autonomous_mode_selects_and_continues(api_client, monkeypatch):
     _stub_hf(monkeypatch, scores=(62, 30))
     _stub_launch(monkeypatch, pid="proj-autotest")
     r = api_client.post("/api/chat", json={
-        "message": "Improve fraud detection", "conversationId": "conv-auto",
+        "message": "Train a fraud detection model", "conversationId": "conv-auto",
         "requestId": "req-auto-1", "messageId": "msg-auto-1",
         "researchMode": "AUTONOMOUS",
     })
@@ -186,7 +200,7 @@ def test_autonomous_mode_selects_and_continues(api_client, monkeypatch):
 def test_guided_mode_still_pauses_for_approval(api_client, monkeypatch):
     _stub_hf(monkeypatch, scores=(62, 30))
     r = api_client.post("/api/chat", json={
-        "message": "Improve fraud detection", "conversationId": "conv-guided",
+        "message": "Train a fraud detection model", "conversationId": "conv-guided",
         "requestId": "req-guided-1", "messageId": "msg-guided-1",
         "researchMode": "GUIDED",
     })
@@ -203,7 +217,7 @@ def test_guided_mode_still_pauses_for_approval(api_client, monkeypatch):
 def test_autonomous_mode_asks_when_candidates_are_close(api_client, monkeypatch):
     _stub_hf(monkeypatch, scores=(55, 53))
     r = api_client.post("/api/chat", json={
-        "message": "Improve fraud detection", "conversationId": "conv-tie",
+        "message": "Train a fraud detection model", "conversationId": "conv-tie",
         "requestId": "req-tie-1", "messageId": "msg-tie-1",
         "researchMode": "AUTONOMOUS",
     })
@@ -219,7 +233,7 @@ def test_dataset_search_failure_is_honest(api_client, monkeypatch):
     from backend import hf_datasets as hf
     monkeypatch.setattr(hf, "search_datasets", lambda goal, limit=6: (_ for _ in ()).throw(RuntimeError("HF unreachable")))
     r = api_client.post("/api/chat", json={
-        "message": "Improve fraud detection", "conversationId": "conv-fail",
+        "message": "Train a fraud detection model", "conversationId": "conv-fail",
         "requestId": "req-fail-1", "messageId": "msg-fail-1",
         "researchMode": "AUTONOMOUS",
     })
