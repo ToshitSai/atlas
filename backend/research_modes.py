@@ -129,6 +129,10 @@ def make_activity(request_id: str, job_id: str, stage: str, status: str,
     model reasoning, no internal engineering details (directive §7).
     """
     event: Dict[str, Any] = {
+        # A stage has one stable identity within a request.  Streaming clients
+        # use this to replace a running row with its completed/failed state
+        # instead of rendering a second row and leaving a stale spinner.
+        "id": f"{request_id or job_id or 'activity'}:{stage}",
         "requestId": request_id or None,
         "jobId": job_id or None,
         "stage": stage,
