@@ -66,7 +66,8 @@ def _paper_to_source(paper: Dict[str, Any]) -> Dict[str, str]:
     title = paper.get("title") or ""
     abstract = paper.get("abstract") or ""
     # Guard against legacy/mock providers that synthesize placeholder abstracts.
-    if any(abstract.lower().startswith(prefix) for prefix in _FILLER_ABSTRACT_PREFIXES):
+    synthetic_abstract = any(abstract.lower().startswith(prefix) for prefix in _FILLER_ABSTRACT_PREFIXES)
+    if synthetic_abstract:
         abstract = ""
     return {
         "title": title,
@@ -78,6 +79,7 @@ def _paper_to_source(paper: Dict[str, Any]) -> Dict[str, str]:
         "venue": paper.get("venue") or "",
         "doi": paper.get("doi") or "",
         "citationCount": paper.get("citationCount"),
+        "syntheticAbstract": synthetic_abstract,
     }
 
 
@@ -105,12 +107,13 @@ def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int
             snippet = (hit.get("snippet") or "").strip()
             if not url or url in seen_urls:
                 continue
+            if hit.get("syntheticAbstract"):
+                continue
             if title.lower().startswith("untitled"):
                 continue
-            # Web hits may legitimately lack snippets (link-only results), but
-            # academic hits without evidence add nothing verifiable.
-            if not snippet and hit.get("source") in ("Academic", "Semantic Scholar", "OpenAlex"):
-                continue
+            # An academic record without an abstract remains a real, citeable
+            # bibliographic source.  It is clearly labelled as metadata-only
+            # in the final report; we never turn its title into a factual claim.
             seen_urls.add(url)
             sources.append({**hit, "query": sq})
     return sources
