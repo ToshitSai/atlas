@@ -23,7 +23,7 @@ from backend.intent_router import classify_intent, handle_intent_message
     ("build a churn model", "RESEARCH_START"),
     ("train a fraud detection model", "RESEARCH_START"),
     ("evaluate my classification model", "RESEARCH_START"),
-    ("improve this model using my dataset", "RESEARCH_START"),
+    ("improve this model using my dataset", "DEEP_RESEARCH"),
     ("detect fraudulent transactions", "RESEARCH_START"),
     ("forecast sales with a regression model", "RESEARCH_START"),
     ("classify spam emails", "RESEARCH_START"),
@@ -32,7 +32,7 @@ from backend.intent_router import classify_intent, handle_intent_message
     ("recommend datasets for house price prediction", "DATASET_RESEARCH"),
     ("show me datasets about customer churn", "DATASET_RESEARCH"),
     # Borderline imperatives provide advice plus an opt-in offer.
-    ("improve fraud detection", "RESEARCH_START"),
+    ("improve fraud detection", "DEEP_RESEARCH"),
     ("optimize sales forecasting", "RESEARCH_START"),
     ("tune churn prediction", "EXPLANATION"),
     ("build fraud detection", "EXPLANATION"),
@@ -66,7 +66,6 @@ def test_borderline_ml_request_answers_and_offers_dataset_search(isolate_store):
 
 
 @pytest.mark.parametrize("goal,expected_terms", [
-    ("Improve credit-card fraud detection", ("transaction or account fraud", "PR-AUC", "Class-weighted")),
     ("Predict customer churn", ("future window", "post-churn leakage", "tenure")),
     ("predict house prices", ("regression", "sale or listing price", "MAE")),
     ("predict employee attrition", ("supervised classification", "outcome label", "F1")),

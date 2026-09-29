@@ -410,40 +410,79 @@ def _is_how_what_why_explain_question(msg_clean: str) -> bool:
     ))
 
 
-def classify_research_route(message: str) -> Dict[str, Any]:
-    """Return the public, strict research-routing schema.
+def assess_research_complexity(message: str) -> Dict[str, Any]:
+    """Score study-level intent without treating every ML question as research.
 
-    This deliberately stays lightweight: obvious rules handle the fast path,
-    while the existing intent router's LLM fallback remains available for
-    ordinary ambiguous assistant intents.  It never turns an ML noun into a
-    research job by itself.
+    The score is based on distinct requested operations, not keyword volume.
+    It is deliberately deterministic after any model classification so a low
+    confidence model response cannot silently downgrade a clear investigation.
     """
     text = (message or "").strip().lower()
+    signals = {"multi_step": False, "experimentation": False, "external_evidence": False,
+               "dataset_required": False, "statistical_analysis": False,
+               "iterative_reasoning": False, "diagnosis": False, "ml": False}
+    signals["ml"] = any(term in text for term in _ML_SIGNALS + ("smote", "xgboost", "random forest", "overfitting", "recall", "feature engineering"))
+    signals["experimentation"] = bool(re.search(r"\b(?:experiment|evaluate (?:different|candidate|alternative)|test (?:several|different|possible)|controlled experiment|benchmark|reproduce|validate|train models?|baseline|determine whether)\b", text))
+    signals["external_evidence"] = bool(re.search(r"\b(?:research|paper|literature|recent techniques|research gap|evidence|source)\b", text))
+    signals["dataset_required"] = bool(re.search(r"\b(?:this dataset|datasets? for|select datasets?|data set)\b", text))
+    signals["statistical_analysis"] = bool(re.search(r"\b(?:statistical|significant|significance|compare(?: several| xgboost| random forest| recent)?|which approach.*better|outperform)\b", text))
+    signals["diagnosis"] = bool(re.search(r"\b(?:investigate|diagnose|figure out|find out|why (?:my |the )?model|causing|failing|poor recall|performance degradation|performs poorly|overfitting)\b", text))
+    signals["iterative_reasoning"] = bool(re.search(r"\b(?:improve|optimi[sz]e|alternative|hypothes|iterate|determine which|full .*research|scientifically justified)\b", text))
+    signals["multi_step"] = sum(bool(v) for k, v in signals.items() if k not in {"ml", "multi_step"}) >= 2 or bool(re.search(r"\b(?:and then|and test|and determine|and evaluate|and run)\b", text))
+
+    score = 0
+    score += 3 if signals["experimentation"] else 0
+    score += 2 if signals["external_evidence"] else 0
+    score += 2 if signals["dataset_required"] else 0
+    score += 2 if signals["statistical_analysis"] else 0
+    score += 2 if signals["diagnosis"] else 0
+    score += 2 if signals["iterative_reasoning"] else 0
+    score += 2 if signals["multi_step"] else 0
+    score += 1 if signals["ml"] and score else 0
+    # A concise imperative can still be a whole study. These patterns require
+    # both an investigation operation and an ML object, unlike "explain
+    # recall" or "how does XGBoost work".
+    focused_study = not _is_how_what_why_explain_question(text) and bool(re.search(
+        r"\b(?:improve|optimi[sz]e|investigate|diagnose|figure out|find out)\b.*"
+        r"\b(?:fraud|model|recall|minority.class|detection|performance|overfitting|features?|churn|spam|classification|prediction)\b", text
+    ))
+    if focused_study:
+        score += 4
+    if "research gap" in text:
+        score += 5
+    if re.search(r"\b(?:research|study)\b.*\b(?:fraud|ml|machine learning|classification|model|detection)\b", text):
+        score += 5
+    if re.search(r"\b(?:design|run) experiments?\b", text):
+        score += 3
+    if "compare" in text and re.search(r"\b(?:xgboost|random forest|neural network|several models?)\b", text):
+        score += 4
+    if re.search(r"\b(?:significantly improve|performance degradation|experimentally|try several)\b", text):
+        score += 7
+    return {"complexity_score": min(score, 10), "signals": signals}
+
+
+def classify_research_route(message: str) -> Dict[str, Any]:
+    """Return the strict normal/web/deep routing decision and its evidence."""
+    text = (message or "").strip().lower()
+    assessment = assess_research_complexity(text)
     normal = {"mode": "normal", "confidence": 0.94,
               "reason": "A direct answer is sufficient for this request.",
-              "requires_web": False, "requires_deep_research": False}
+              "requires_web": False, "requires_deep_research": False, **assessment}
     if not text:
         return normal
-    if re.search(r"\b(?:just answer briefly|brief answer|don't research|do not research)\b", text):
+    if re.search(r"\b(?:just (?:answer|explain)|brief answer|don't research|do not research)\b", text):
         return {**normal, "confidence": 0.99, "reason": "The user explicitly requested a direct answer."}
-    if _WEB_CURRENCY_RE.search(text) and not any(s in text for s in _DEEP_RESEARCH_SIGNALS):
+    explicit_override = bool(re.search(r"\b(?:do deep research|research this thoroughly|conduct a full .*research)\b", text))
+    # A quick current lookup is web search unless it also asks for a synthesis
+    # or comparative study.
+    if _WEB_CURRENCY_RE.search(text) and assessment["complexity_score"] < 7 and not explicit_override:
         return {"mode": "web_search", "confidence": 0.93,
                 "reason": "This asks for a current fact or quick live lookup.",
-                "requires_web": True, "requires_deep_research": False}
-    explicit_study = any(signal in text for signal in _DEEP_RESEARCH_SIGNALS) or bool(
-        re.search(r"\b(?:study|conduct)\b.*\b(?:recent|techniques|research|ml|machine learning)\b", text)
-        or ("compare" in text and any(term in text for term in ("paper", "approach", "recent", "dataset", "xgboost", "random forest")))
-        or ("dataset" in text and any(term in text for term in ("evaluate", "experiment", "benchmark", "test several")))
-    )
-    research_verb = any(trigger in text for trigger in _RESEARCH_TRIGGERS)
-    experiment_request = _is_explicit_ml_experiment_request(text)
-    # "Investigate why my model performs poorly" and "improve fraud
-    # detection" are studies: their requested outcome entails diagnosis or
-    # experimental evaluation, not just an educational answer.
-    if explicit_study or research_verb or experiment_request:
-        return {"mode": "deep_research", "confidence": 0.95 if explicit_study or experiment_request else 0.88,
-                "reason": "The request requires evidence gathering, planning, or iterative evaluation.",
-                "requires_web": True, "requires_deep_research": True}
+                "requires_web": True, "requires_deep_research": False, **assessment}
+    if explicit_override or assessment["complexity_score"] >= 7:
+        return {"mode": "deep_research", "confidence": 0.97 if explicit_override else 0.91,
+                "reason": "The request implies a multi-step investigation rather than a direct explanation.",
+                "requires_web": True, "requires_deep_research": True, **assessment}
     return normal
 
 
@@ -878,6 +917,13 @@ def classify_intent(
             and not re.search(r"\b(?:research|investigate|deep dive|survey)\b", msg_clean)
             and not (active_project_id and project_ref)):
         return "WEB_SEARCH"
+
+    # The final deterministic safeguard runs after direct math/current-fact
+    # routing but before ordinary explanations. A request with study-level
+    # complexity cannot be downgraded to a fast answer by a weak fallback.
+    research_route = classify_research_route(message)
+    if research_route["mode"] == "deep_research":
+        return "DEEP_RESEARCH"
 
     # Advice and explanatory questions must win before every research/dataset
     # rule, even when their wording contains verbs such as improve or predict.

@@ -26,8 +26,9 @@ function getConversationId(projectId) {
 function isLikelyDeepResearch(text) {
   const value = String(text || '').toLowerCase();
   return !/\b(just answer briefly|brief answer|don't research|do not research)\b/.test(value)
-    && (/\b(deep research|investigate|literature review|research gap|analyze multiple papers|recent papers|design experiments|run experiments|error analysis|reproduce|benchmark|autonomous ml research)\b/.test(value)
-      || /^(?:please\s+)?(?:improve|optimi[sz]e|train|test|evaluate|build)\b.*\b(model|fraud|churn|classification|regression|dataset|pipeline|forecast)/.test(value));
+    && (/\b(deep research|investigate|literature review|research gap|analyze multiple papers|recent papers|design experiments|run experiments|error analysis|reproduce|benchmark|autonomous ml research|determine whether|statistically significant|significantly improve|performance degradation|experimentally|try several)\b/.test(value)
+      || /\b(improve|optimi[sz]e|diagnose|figure out|find out)\b.*\b(model|fraud|recall|minority.class|detection|performance|overfitting|features?)\b/.test(value)
+      || (/\b(dataset|datasets)\b.*\b(evaluate|experiment|test|benchmark)\b/.test(value) || /\bcompare\b.*\b(xgboost|random forest|models?|dataset|approach)\b/.test(value)));
 }
 
 export default function App() {

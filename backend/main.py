@@ -273,6 +273,9 @@ async def chat_endpoint(payload: dict):
     # the dataset-approval flow for direct ML build requests.
     from backend.intent_router import classify_research_route
     routing_decision = classify_research_route(message)
+    # Persist the selected mode once per user request. Streamed/project updates
+    # read this state; they never reclassify partial assistant output.
+    store.update_session(conversation_id, {"research_route": routing_decision})
     res = handle_intent_message(
         message=message, 
         active_project_id=active_project_id, 

@@ -33,10 +33,27 @@ from backend.intent_router import classify_research_route, handle_intent_message
     ("Best model for fraud detection?", "normal"),
     ("How can I improve my model?", "normal"),
     ("Research fraud detection.", "deep_research"),
+    # Semantic variations: no dependency on the literal word "research".
+    ("How can we significantly improve the minority-class detection rate in this ML problem?", "deep_research"),
+    ("Figure out why the model is failing and test possible solutions.", "deep_research"),
+    ("Which approach actually works better on this dataset?", "deep_research"),
+    ("Explore alternative modeling strategies and validate them.", "deep_research"),
+    ("Can you investigate whether feature engineering is responsible for the improvement?", "deep_research"),
+    ("Find out what is causing the performance degradation.", "deep_research"),
+    ("Determine experimentally which preprocessing strategy is most effective.", "deep_research"),
+    ("Try several scientifically justified approaches and learn from the results.", "deep_research"),
+    # Negative educational ML cases remain fast.
+    ("What is the best way to reduce overfitting?", "normal"),
+    ("How does XGBoost work?", "normal"),
+    ("Explain SMOTE.", "normal"),
+    ("Why is recall important in fraud detection?", "normal"),
+    ("Give me three ways to handle class imbalance.", "normal"),
+    ("What is the difference between ROC-AUC and PR-AUC?", "normal"),
+    ("Write a Python example using Random Forest.", "normal"),
 ])
 def test_master_routing_matrix(message, mode):
     result = classify_research_route(message)
-    assert set(result) == {"mode", "confidence", "reason", "requires_web", "requires_deep_research"}
+    assert {"mode", "confidence", "reason", "requires_web", "requires_deep_research", "complexity_score", "signals"} <= set(result)
     assert result["mode"] == mode
     assert 0 <= result["confidence"] <= 1
     assert result["requires_deep_research"] is (mode == "deep_research")
