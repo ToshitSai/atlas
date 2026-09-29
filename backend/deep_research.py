@@ -35,9 +35,6 @@ def plan_subqueries(goal: str, max_subqueries: int = 3, trace: Optional[StepTrac
     if not goal:
         return []
 
-    if trace:
-        trace.start_step(Stages.PLANNING, "Planning research approach", f"Breaking down: {goal[:80]}")
-
     llm = query_llm(
         f'Research goal: "{goal}"\n'
         f"Break it into {max_subqueries} short, self-contained web search queries. "
@@ -226,7 +223,6 @@ def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional
         trace.fail_step(Stages.PLANNING, "Research planning failed", "No usable research question was produced")
         return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": [], "trace": trace.to_dict()}
 
-    trace.start_step(Stages.WEB_SEARCH, "Searching the web", f"Running {len(subqueries)} search queries")
     try:
         sources = _collect_sources(subqueries, per_query, trace=trace)
     except TypeError as exc:
@@ -241,9 +237,7 @@ def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional
     academic_sources = sum(1 for source in sources if source.get("source") in ("Semantic Scholar", "OpenAlex"))
     trace.complete_step(Stages.LITERATURE_SEARCH, "Literature search complete", f"Collected {len(sources)} unique sources ({academic_sources} academic)")
 
-    trace.start_step(Stages.SYNTHESIS, "Synthesizing findings", "Building evidence-grounded report sections")
     report = _synthesize(goal, subqueries, sources, trace=trace)
-    trace.complete_step(Stages.SYNTHESIS, "Synthesis complete", "All sections synthesized from source evidence")
 
     trace.start_step(Stages.VERIFICATION, "Verifying citations", "Checking source traceability")
     trace.complete_step(Stages.VERIFICATION, "Verification complete", "All claims traceable to sources")

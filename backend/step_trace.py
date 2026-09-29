@@ -74,10 +74,38 @@ class StepTrace:
         return self.emit(stage, "running", label, detail, metadata)
 
     def complete_step(self, stage: str, label: str, detail: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> StepEvent:
-        return self.emit(stage, "completed", label, detail, metadata)
+        return self._finish_running(stage, "completed", label, detail, metadata)
 
     def fail_step(self, stage: str, label: str, detail: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> StepEvent:
-        return self.emit(stage, "failed", label, detail, metadata)
+        return self._finish_running(stage, "failed", label, detail, metadata)
+
+    def _finish_running(self, stage: str, status: str, label: str, detail: Optional[str], metadata: Optional[Dict[str, Any]]) -> StepEvent:
+        """Finish the most recent real operation for a stage in-place.
+
+        A start and completion are lifecycle updates for one operation, not two
+        independent UI rows. Re-emitting the same id lets the client upsert it
+        and ensures no stale spinner remains after completion.
+        """
+        with self._lock:
+            running = next((step for step in reversed(self.steps)
+                            if step.stage == stage and step.status == "running"), None)
+            if running:
+                running.status = status
+                running.label = label
+                running.detail = detail
+                running.metadata = metadata
+                running.timestamp = int(time.time() * 1000)
+                payload = running.to_dict()
+            else:
+                running = None
+        if running is None:
+            return self.emit(stage, status, label, detail, metadata)
+        for callback in self._callbacks:
+            try:
+                callback(payload)
+            except Exception:
+                pass
+        return running
 
     def skip_step(self, stage: str, label: str, detail: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> StepEvent:
         return self.emit(stage, "skipped", label, detail, metadata)
