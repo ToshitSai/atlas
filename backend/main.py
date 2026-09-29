@@ -392,7 +392,16 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                 search_activity = []
                 def dataset_step(stage, status, label, detail=None):
                     event = make_activity(request_id, job_id, stage, status, label, detail)
-                    search_activity.append(event)
+                    # Keep one record per stage in the final persisted trace.
+                    # The SSE client receives the same stable id and updates
+                    # its live row in place; without this, a final response
+                    # reintroduced obsolete `running` rows after completion.
+                    existing = next((i for i, item in enumerate(search_activity)
+                                     if item.get("id") == event["id"]), None)
+                    if existing is None:
+                        search_activity.append(event)
+                    else:
+                        search_activity[existing] = event
                     if activity_callback:
                         activity_callback(event)
                     return event
@@ -457,6 +466,8 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                             )
                         else:
                             summary = "I couldn't find a suitable dataset automatically."
+                        dataset_step("DATASET_SELECTED", "completed", "Dataset candidates ready",
+                                     "A dataset choice is needed before training")
                         dataset_step("WAITING_FOR_USER", "waiting", "Waiting for dataset choice", "Training requires a dataset selection")
                         res.update({
                             "action": "RECOMMEND_DATASETS",
@@ -532,6 +543,8 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                                 "\"optimize churn prediction for imbalanced data\"), or paste a dataset URL "
                                 "(https://huggingface.co/datasets/owner/name) and I'll load it directly."
                             )
+                        dataset_step("DATASET_SELECTED", "completed", "Dataset candidates ready",
+                                     "A dataset choice is needed before training")
                         dataset_step("WAITING_FOR_USER", "waiting", "Waiting for dataset choice", "Select a candidate to continue")
                         res.update({
                             "action": "RECOMMEND_DATASETS",
