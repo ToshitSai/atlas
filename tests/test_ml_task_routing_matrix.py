@@ -66,10 +66,10 @@ def test_borderline_ml_request_answers_and_offers_dataset_search(isolate_store):
 
 
 @pytest.mark.parametrize("goal,expected_terms", [
-    ("Improve credit-card fraud detection", ("fraud-risk", "PR-AUC", "baseline")),
-    ("Predict customer churn", ("future time window", "prediction date", "time-aware")),
+    ("Improve credit-card fraud detection", ("transaction or account fraud", "PR-AUC", "Class-weighted")),
+    ("Predict customer churn", ("future window", "post-churn leakage", "tenure")),
     ("predict house prices", ("regression", "sale or listing price", "MAE")),
-    ("detect spam emails", ("text-classification", "TF-IDF", "F1")),
+    ("detect spam emails", ("text classification", "TF-IDF", "F1")),
 ])
 def test_research_start_gives_goal_specific_answer_before_dataset_search(isolate_store, goal, expected_terms):
     """Regression for the former one-line RESEARCH_START dataset stub."""
@@ -77,8 +77,24 @@ def test_research_start_gives_goal_specific_answer_before_dataset_search(isolate
     assert result["intent"] == "RESEARCH_START"
     assert result["action"] == "NONE"
     assert result["pendingAction"]["type"] == "START_RESEARCH"
-    assert "Want me to search for datasets for this?" in result["response"]
+    assert "Want me to search for relevant datasets?" in result["response"]
     assert "I'll look for datasets that could help" not in result["response"]
     assert all(term in result["response"] for term in expected_terms)
-    # Guidance has several meaningful sentences before the follow-up offer.
-    assert result["response"].count(". ") >= 3
+    assert "**Task type:**" in result["response"]
+    assert "**Suggested first approaches:**" in result["response"]
+    assert "- " in result["response"]
+
+
+def test_research_start_uses_configured_llm_with_structured_prompt(isolate_store, monkeypatch):
+    import backend.intent_router as router
+    captured = {}
+    monkeypatch.setattr(router, "any_provider_configured", lambda: True)
+    monkeypatch.setattr(router, "query_llm", lambda prompt, system, timeout: captured.update({
+        "prompt": prompt, "system": system, "timeout": timeout
+    }) or "**Task type:** custom regression\n\n- Start with a baseline\n\nWant me to search for relevant datasets?")
+
+    result = router.handle_intent_message("predict employee attrition", session_id="research-llm")
+    assert result["action"] == "NONE"
+    assert result["response"].startswith("**Task type:** custom regression")
+    assert "goal-specific" in captured["prompt"]
+    assert "experienced ML engineer" in captured["system"]

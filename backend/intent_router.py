@@ -5,7 +5,7 @@ import operator
 import re
 from typing import Dict, Any, Optional, List, Tuple
 from backend.llm import (
-    query_llm, set_llm_budget, clear_llm_budget, DEFAULT_REQUEST_BUDGET,
+    query_llm, any_provider_configured, set_llm_budget, clear_llm_budget, DEFAULT_REQUEST_BUDGET,
 )
 from backend.calculator import try_evaluate
 from database.store import store
@@ -259,55 +259,62 @@ def _research_start_brief(goal: str) -> str:
     This is intentionally deterministic so RESEARCH_START stays substantive
     when an LLM provider is unavailable.
     """
+    def structured(task, target, watch_out, evaluation, models):
+        return (
+            f"**Task type:** {task}\n"
+            f"**Target:** {target}\n"
+            f"**Watch out for:** {watch_out}\n"
+            f"**Evaluation:** {evaluation}\n"
+            "**Suggested first approaches:**\n"
+            + "\n".join(f"- {model}" for model in models)
+            + "\n\nWant me to search for relevant datasets?"
+        )
+
     text = (goal or "").lower()
-    if any(term in text for term in ("fraud", "anomaly", "fraudulent")):
-        return (
-            "This is a binary fraud-risk task: the target is whether a transaction or account is truly fraudulent. "
-            "Fraud is usually rare, so check label quality and leakage, use a stratified split, and prioritize PR-AUC plus recall at an operational threshold. "
-            "Start with a logistic-regression or tree baseline before tuning more complex models. "
-            "Want me to search for datasets for this?"
-        )
+    if any(term in text for term in ("fraud", "fraudulent", "credit card")):
+        return structured("binary classification", "transaction or account fraud label",
+            "severe class imbalance, label noise, and time-based leakage",
+            "PR-AUC and recall at the operational review threshold—not raw accuracy",
+            ["Class-weighted logistic-regression baseline", "Gradient-boosted trees with calibrated probabilities"])
     if any(term in text for term in ("churn", "retention", "customer attrition")):
-        return (
-            "Customer churn means predicting whether a customer will leave within a clearly defined future time window. "
-            "Set that horizon first, exclude information recorded after the prediction date, and inspect class balance and missingness across customer segments. "
-            "Start with a time-aware split and a simple baseline using tenure, usage, support, and billing features. "
-            "Want me to search for datasets for this?"
-        )
+        return structured("binary classification", "whether a customer leaves within a defined future window",
+            "post-churn leakage, changing customer cohorts, and sparse behavior history",
+            "PR-AUC plus recall/precision at the retention-team capacity",
+            ["Logistic regression using tenure, usage, and billing features", "Gradient boosting with time-aware validation"])
     if any(term in text for term in ("house price", "housing price", "real estate", "price prediction", "pricing")):
-        return (
-            "This is a regression task whose target is the sale or listing price for each property. "
-            "Check skewed prices, location effects, missing property attributes, and whether a log transform stabilizes errors. "
-            "Begin with a median-price baseline, then compare regularized linear and tree models with MAE and RMSE. "
-            "Want me to search for datasets for this?"
-        )
+        return structured("regression", "sale or listing price per property",
+            "skewed prices, location effects, missing attributes, and target leakage from post-sale fields",
+            "MAE for typical error and RMSE to expose costly large misses",
+            ["Median-price baseline and regularized linear regression", "Gradient-boosted trees with a log-price target"])
     if any(term in text for term in ("spam", "email", "text", "nlp", "sentiment")):
-        return (
-            "This is a text-classification task: the target is the message label, such as spam versus legitimate email. "
-            "Deduplicate near-identical messages before splitting and inspect label balance and leakage in headers or metadata. "
-            "A strong first baseline is TF-IDF features with logistic regression, measured with precision, recall, and F1. "
-            "Want me to search for datasets for this?"
-        )
+        return structured("text classification", "message label, such as spam versus legitimate",
+            "duplicate messages across splits, label noise, and metadata/header leakage",
+            "precision, recall, and F1; use PR-AUC when spam is rare",
+            ["TF-IDF with logistic regression", "A compact transformer only after the baseline is trustworthy"])
     if any(term in text for term in ("forecast", "time series", "demand", "sales", "temperature")):
-        return (
-            "This is a forecasting task: the target is a future value at a defined prediction horizon. "
-            "Keep data ordered in time, use only information available at prediction time, and validate with rolling time-based splits. "
-            "Compare a seasonal-naive forecast with a simple regression or gradient-boosting baseline using lagged features. "
-            "Want me to search for datasets for this?"
-        )
+        return structured("time-series forecasting", "a future value at a defined prediction horizon",
+            "future-data leakage, seasonality, missing intervals, and random train/test splits",
+            "MAE or MAPE/SMAPE, compared on rolling time-based validation",
+            ["Seasonal-naive forecast", "Lag-feature regression or gradient boosting"])
+    if any(term in text for term in ("recommend", "ranking", "personaliz")):
+        return structured("recommendation/ranking", "the next item or ordering most likely to help each user",
+            "feedback loops, popularity bias, cold starts, and offline-to-online metric mismatch",
+            "Recall@K and NDCG@K, segmented for new and returning users",
+            ["Popularity and item-item collaborative-filtering baselines", "Matrix factorization or a feature-aware ranker"])
+    if any(term in text for term in ("anomaly", "outlier", "rare event")):
+        return structured("anomaly detection", "an anomaly score or an investigation label",
+            "few verified positives, distribution drift, and treating unusual-but-valid cases as errors",
+            "precision at the investigation budget and recall on confirmed anomalies",
+            ["Robust statistical thresholds or Isolation Forest", "Supervised classifier if reliable labels exist"])
     if any(term in text for term in ("classif", "detect", "predict", "label")):
-        return (
-            "This appears to be a supervised classification task, where the target is the outcome label you want to predict. "
-            "Define that label and its decision cost, then check data quality, class balance, and leakage before making a stratified validation split. "
-            "Use a simple interpretable baseline to establish a reliable metric before trying more complex models. "
-            "Want me to search for datasets for this?"
-        )
-    return (
-        f"For “{goal}”, first define the prediction target, the unit of observation, and how success will be measured. "
-        "Check data quality and leakage, then create a validation split that matches how the model will be used. "
-        "A simple baseline should establish a trustworthy reference point before tuning or complex modeling. "
-        "Want me to search for datasets for this?"
-    )
+        return structured("supervised classification", "the outcome label specified by the business decision",
+            "class imbalance, mislabeled examples, data leakage, and a validation split unlike production",
+            "F1 or PR-AUC, selected according to the false-positive and false-negative costs",
+            ["Interpretable logistic-regression baseline", "Random forest or gradient-boosted trees"])
+    return structured("supervised ML problem", "the measurable outcome you want to predict or optimize",
+        "an ambiguous target, leakage, missing data, and a validation setup unlike real use",
+        "a metric tied to the decision cost, measured on a held-out validation set",
+        ["Simple, interpretable baseline", "A tree-based model after the baseline and data checks"])
 
 CONFIRMATION_PHRASES = [
     "yes", "yes do it", "do it", "go ahead", "sure", "okay", "ok",
@@ -2067,7 +2074,25 @@ def _handle_intent_message_impl(
         clean_goal = re.sub(r"https?://\S+", "", topic).strip() or topic
         store.set_pending_action(sid, "START_RESEARCH", topic=clean_goal, query=clean_goal)
 
-        resp_text = _research_start_brief(clean_goal)
+        resp_text = None
+        if any_provider_configured():
+            resp_text = query_llm(
+                f"The user's ML goal is: {clean_goal}\n\n"
+                "Give a genuinely useful, goal-specific response. Infer the likely task and target, "
+                "call out domain-specific risks, recommend an evaluation metric, and suggest 2-3 sensible "
+                "first models or approaches. Use concise Markdown with bold labels and bullets. Do not claim "
+                "that you searched for data or ran an experiment. End by asking whether the user wants help "
+                "finding a relevant dataset.",
+                "You are an experienced ML engineer helping plan a new project. Vary the depth and examples "
+                "to the actual goal; do not force a generic sentence template. Be accurate, practical, and concise.",
+                timeout=15,
+            )
+        if not resp_text or not resp_text.strip():
+            resp_text = _research_start_brief(clean_goal)
+        elif "dataset" not in resp_text.lower():
+            resp_text = resp_text.rstrip() + "\n\nWant me to search for relevant datasets?"
+        else:
+            resp_text = resp_text.strip()
         store.update_session(sid, {"last_assistant_message": resp_text})
 
         return {

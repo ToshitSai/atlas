@@ -10,6 +10,7 @@ import {
   sendChatMessage
 } from '../api';
 import ActivityPanel from './ActivityPanel';
+import ChatMarkdown from './ChatMarkdown';
 import ResearchWorkspace from './research/ResearchWorkspace';
 import { API_ORIGIN } from '../api';
 
@@ -405,8 +406,8 @@ export default function ResearchChatWorkspace({
                       <h4 className="text-xs font-bold text-slate-100">AI Scientist</h4>
                     </div>
 
-                    <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap min-w-0">
-                      {msg.content}
+                    <div className="text-sm text-slate-200 leading-relaxed min-w-0">
+                      <ChatMarkdown content={msg.content} />
                     </div>
 
                     <ActivityPanel activities={msg.activity} />

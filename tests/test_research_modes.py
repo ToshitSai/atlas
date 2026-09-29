@@ -176,8 +176,8 @@ def _confirm_research_start(api_client, conversation_id, mode):
     offer_body = offer.json()
     assert offer_body["intent"] == "RESEARCH_START"
     assert offer_body["action"] == "NONE"
-    assert "binary fraud-risk task" in offer_body["response"]
-    assert "Want me to search for datasets for this?" in offer_body["response"]
+    assert "**Task type:** binary classification" in offer_body["response"]
+    assert "Want me to search for relevant datasets?" in offer_body["response"]
     assert offer_body["pendingAction"]["type"] == "START_RESEARCH"
 
     confirmed = api_client.post("/api/chat", json={
