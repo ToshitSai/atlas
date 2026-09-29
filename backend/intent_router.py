@@ -351,6 +351,14 @@ def _is_explicit_ml_experiment_request(msg_clean: str) -> bool:
         r"\b(?:model|classifier|regressor|pipeline|dataset|data\s*set|"
         r"training|experiment|baseline)\b", msg_clean))
     if verb in {"improve", "optimize", "optimise", "tune", "build", "train", "test", "evaluate", "experiment"}:
+        # A named predictive outcome is a concrete ML objective even before the
+        # user names a particular library or model ("improve fraud detection",
+        # "improve image classification").  This keeps the research workspace
+        # general-purpose without treating broad advice like "improve sales" as
+        # an automatic dataset search.
+        if verb in {"improve", "optimize", "optimise"} and re.search(
+                r"\b(?:detection|classification|prediction|forecasting|regression)\b", msg_clean):
+            return has_signal
         return has_model_object and has_signal
     return has_signal and bool(re.search(r"\b(?:predict|forecast|classify|detect)\s+\S+", msg_clean))
 

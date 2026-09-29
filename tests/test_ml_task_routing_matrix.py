@@ -32,8 +32,8 @@ from backend.intent_router import classify_intent, handle_intent_message
     ("recommend datasets for house price prediction", "DATASET_RESEARCH"),
     ("show me datasets about customer churn", "DATASET_RESEARCH"),
     # Borderline imperatives provide advice plus an opt-in offer.
-    ("improve fraud detection", "EXPLANATION"),
-    ("optimize sales forecasting", "EXPLANATION"),
+    ("improve fraud detection", "RESEARCH_START"),
+    ("optimize sales forecasting", "RESEARCH_START"),
     ("tune churn prediction", "EXPLANATION"),
     ("build fraud detection", "EXPLANATION"),
     # Greetings and ordinary general questions remain non-research.
@@ -58,7 +58,7 @@ def test_routing_matrix(message, expected):
 
 
 def test_borderline_ml_request_answers_and_offers_dataset_search(isolate_store):
-    response = handle_intent_message("improve fraud detection", session_id="borderline-ml")
+    response = handle_intent_message("improve sales", session_id="borderline-ml")
     assert response["intent"] == "EXPLANATION"
     assert response["action"] == "NONE"
     assert "Want me to search for datasets for this?" in response["response"]
