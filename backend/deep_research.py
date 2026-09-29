@@ -49,7 +49,13 @@ def plan_subqueries(goal: str, max_subqueries: int = 3) -> List[str]:
             if len(subs) >= max_subqueries:
                 break
         if subs:
-            return subs
+            # Keep the user's complete objective as the first retrieval query.
+            # An LLM planner may paraphrase away the core subject, whereas the
+            # original is the strongest recall anchor for academic providers.
+            original = goal.rstrip("?.!").strip()
+            if original.lower() not in (s.lower() for s in subs):
+                subs.insert(0, original)
+            return subs[:max_subqueries]
 
     base = goal.rstrip("?.!").strip()
     year = datetime.datetime.now().year
