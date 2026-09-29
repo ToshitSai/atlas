@@ -363,6 +363,18 @@ _RESEARCH_TRIGGERS = (
     "state of the art", "latest research", "survey the", "find papers",
 )
 
+# Signals that describe a *study* rather than a one-shot explanation.  These
+# are intentionally separate from subject words such as "fraud" or "model":
+# knowing the topic is ML is never sufficient to spend research resources.
+_DEEP_RESEARCH_SIGNALS = (
+    "deep research", "conduct a study", "literature review", "research gap",
+    "research this", "analyze multiple papers", "compare research approaches",
+    "compare recent", "recent papers", "benchmark", "reproduce", "ablation",
+    "design experiments", "run experiments", "error analysis", "hypothesis",
+    "iterative experimentation", "autonomous ml research", "full autonomous",
+    "evidence synthesis", "multiple reliable sources", "multiple sources",
+)
+
 _ML_SIGNALS = (
     "dataset", "data set", "model", "fraud", "predict", "churn", "train",
     "classify", "classification", "regression", "accuracy", "machine learning",
@@ -396,6 +408,43 @@ def _is_how_what_why_explain_question(msg_clean: str) -> bool:
         r"what(?:\s+is|\s+are|\s+does|\s+should)?|why|explain\b)",
         msg_clean,
     ))
+
+
+def classify_research_route(message: str) -> Dict[str, Any]:
+    """Return the public, strict research-routing schema.
+
+    This deliberately stays lightweight: obvious rules handle the fast path,
+    while the existing intent router's LLM fallback remains available for
+    ordinary ambiguous assistant intents.  It never turns an ML noun into a
+    research job by itself.
+    """
+    text = (message or "").strip().lower()
+    normal = {"mode": "normal", "confidence": 0.94,
+              "reason": "A direct answer is sufficient for this request.",
+              "requires_web": False, "requires_deep_research": False}
+    if not text:
+        return normal
+    if re.search(r"\b(?:just answer briefly|brief answer|don't research|do not research)\b", text):
+        return {**normal, "confidence": 0.99, "reason": "The user explicitly requested a direct answer."}
+    if _WEB_CURRENCY_RE.search(text) and not any(s in text for s in _DEEP_RESEARCH_SIGNALS):
+        return {"mode": "web_search", "confidence": 0.93,
+                "reason": "This asks for a current fact or quick live lookup.",
+                "requires_web": True, "requires_deep_research": False}
+    explicit_study = any(signal in text for signal in _DEEP_RESEARCH_SIGNALS) or bool(
+        re.search(r"\b(?:study|conduct)\b.*\b(?:recent|techniques|research|ml|machine learning)\b", text)
+        or ("compare" in text and any(term in text for term in ("paper", "approach", "recent", "dataset", "xgboost", "random forest")))
+        or ("dataset" in text and any(term in text for term in ("evaluate", "experiment", "benchmark", "test several")))
+    )
+    research_verb = any(trigger in text for trigger in _RESEARCH_TRIGGERS)
+    experiment_request = _is_explicit_ml_experiment_request(text)
+    # "Investigate why my model performs poorly" and "improve fraud
+    # detection" are studies: their requested outcome entails diagnosis or
+    # experimental evaluation, not just an educational answer.
+    if explicit_study or research_verb or experiment_request:
+        return {"mode": "deep_research", "confidence": 0.95 if explicit_study or experiment_request else 0.88,
+                "reason": "The request requires evidence gathering, planning, or iterative evaluation.",
+                "requires_web": True, "requires_deep_research": True}
+    return normal
 
 
 def _is_explicit_ml_experiment_request(msg_clean: str) -> bool:
@@ -1644,13 +1693,26 @@ def _handle_intent_message_impl(
             r"^(?:please\s+)?(?:research|investigate|deep\s+dive\s+into|deep\s+dive|"
             r"find\s+out\s+about|look\s+into|do\s+some\s+research\s+on|do\s+research\s+on)\s+",
             "", goal, flags=re.IGNORECASE).strip() or goal
+        from backend.research_modes import make_activity
+        job_id = f"deep-research-{sid}"
+        activity = [
+            make_activity(None, job_id, "UNDERSTANDING", "completed", "Understood the research question"),
+        ]
         try:
             from backend.deep_research import run_deep_research
             research = run_deep_research(goal)
         except Exception as dr_err:
             print(f"[DEEP RESEARCH WARNING]: {dr_err}")
             research = {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": []}
+        subquery_count = len(research.get("subqueries") or [])
+        if subquery_count:
+            activity.append(make_activity(None, job_id, "PLANNING", "completed", f"Planned {subquery_count} research searches"))
         if research.get("status") == "ok" and research.get("report"):
+            activity.extend([
+                make_activity(None, job_id, "LITERATURE_SEARCH", "completed", f"Collected {research['sourceCount']} verifiable sources"),
+                make_activity(None, job_id, "REPORT", "completed", "Generated a sourced research report"),
+                make_activity(None, job_id, "COMPLETED", "completed", "Research completed"),
+            ])
             resp_text = (
                 f"I ran a multi-step research pass on: {goal}\n\n"
                 f"{research['report']}\n\n"
@@ -1658,6 +1720,7 @@ def _handle_intent_message_impl(
                 f"search -> synthesis -> verification ({research['sourceCount']} sources)._"
             )
         else:
+            activity.append(make_activity(None, job_id, "LITERATURE_SEARCH", "failed", "No verifiable sources were available"))
             resp_text = (
                 f"You've asked me to research: {goal}.\n\n"
                 "I ran the deep-research pipeline (plan -> search -> synthesize -> verify) "
@@ -1679,7 +1742,9 @@ def _handle_intent_message_impl(
             "research": {
                 "status": research.get("status"),
                 "sourceCount": research.get("sourceCount", 0),
-            }
+            },
+            "researchRoute": classify_research_route(message),
+            "activity": activity,
         }
 
     # 4b. MATHEMATICS / CALCULATION — real computed answer via the safe evaluators.

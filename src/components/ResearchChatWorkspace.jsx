@@ -14,6 +14,15 @@ import ChatMarkdown from './ChatMarkdown';
 import ResearchWorkspace from './research/ResearchWorkspace';
 import { API_ORIGIN } from '../api';
 
+// Mirrors only the unambiguous deep-study cues. It controls temporary UI while
+// the backend is classifying; the server remains the authority for routing.
+function isLikelyDeepResearch(text) {
+  const value = String(text || '').toLowerCase();
+  if (/\b(just answer briefly|brief answer|don't research|do not research)\b/.test(value)) return false;
+  return /\b(deep research|investigate|literature review|research gap|analyze multiple papers|recent papers|design experiments|run experiments|error analysis|reproduce|benchmark|autonomous ml research)\b/.test(value)
+    || /^(?:please\s+)?(?:improve|optimi[sz]e|train|test|evaluate|build)\b.*\b(model|fraud|churn|classification|regression|dataset|pipeline|forecast)/.test(value);
+}
+
 export default function ResearchChatWorkspace({
   activeProject,
   setActiveProject,
@@ -115,7 +124,10 @@ export default function ResearchChatWorkspace({
     inFlightRequests.current.add(requestId);
     setProcessingCount(inFlightRequests.current.size);
     setIsProcessing(true);
-    setActiveRequests(previous => ({ ...previous, [requestId]: { requestId, startedAt: Date.now() } }));
+    const showResearchActivity = isLikelyDeepResearch(userText);
+    if (showResearchActivity) {
+      setActiveRequests(previous => ({ ...previous, [requestId]: { requestId, startedAt: Date.now() } }));
+    }
 
     // The response carries this id back; it is the stable UI/API association.
     const userMsg = { id: userMessageId, requestId, role: 'user', content: userText };

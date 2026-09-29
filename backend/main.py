@@ -268,6 +268,11 @@ async def chat_endpoint(payload: dict):
             "messageId": response_message_id,
             "conversationId": conversation_id,
         }
+    # Lightweight, strict mode decision is computed before answer generation.
+    # It is returned for clients/telemetry while the existing intent preserves
+    # the dataset-approval flow for direct ML build requests.
+    from backend.intent_router import classify_research_route
+    routing_decision = classify_research_route(message)
     res = handle_intent_message(
         message=message, 
         active_project_id=active_project_id, 
@@ -276,6 +281,7 @@ async def chat_endpoint(payload: dict):
         payload_last_topic=payload_last_topic,
         conversation_history=conversation_history,
     )
+    res["researchRouting"] = routing_decision
     action = res.get("action")
 
     # Bug 5 disclosure: if the handler tried an LLM and none responded, the
@@ -505,6 +511,8 @@ async def chat_endpoint(payload: dict):
     # Do not fabricate a generic two-step "worked" log for a normal answer.
     for i, ev in enumerate(res.get("activity") or []):
         ev.setdefault("id", f"{request_id or 'request'}-{i}")
+        if not ev.get("requestId"):
+            ev["requestId"] = request_id or None
 
     store.record_message(
         conversation_id, "assistant", res.get("response", ""),

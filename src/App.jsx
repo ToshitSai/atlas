@@ -23,6 +23,13 @@ function getConversationId(projectId) {
   return conv;
 }
 
+function isLikelyDeepResearch(text) {
+  const value = String(text || '').toLowerCase();
+  return !/\b(just answer briefly|brief answer|don't research|do not research)\b/.test(value)
+    && (/\b(deep research|investigate|literature review|research gap|analyze multiple papers|recent papers|design experiments|run experiments|error analysis|reproduce|benchmark|autonomous ml research)\b/.test(value)
+      || /^(?:please\s+)?(?:improve|optimi[sz]e|train|test|evaluate|build)\b.*\b(model|fraud|churn|classification|regression|dataset|pipeline|forecast)/.test(value));
+}
+
 export default function App() {
   const [projects, setProjects] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -31,6 +38,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStartedAt, setLaunchStartedAt] = useState(null);
+  const [launchShowsResearchActivity, setLaunchShowsResearchActivity] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [dockerReady, setDockerReady] = useState(false);
   const [llmConfigured, setLlmConfigured] = useState(false);
@@ -105,6 +113,7 @@ export default function App() {
     if (!userText.trim()) return;
     setIsLaunching(true);
     setLaunchStartedAt(Date.now());
+    setLaunchShowsResearchActivity(isLikelyDeepResearch(userText));
 
     const requestId = createConversationId();
     const userMessageId = createConversationId();
@@ -158,6 +167,7 @@ export default function App() {
       await loadConversations();
       setIsLaunching(false);
       setLaunchStartedAt(null);
+      setLaunchShowsResearchActivity(false);
     }
   };
 
@@ -288,7 +298,7 @@ export default function App() {
             isApproving={isApproving}
             conversationId={conversationId || getConversationId(activeProject?.id || 'general')}
             onConversationUpdated={loadConversations}
-            initialRequestStartedAt={isLaunching ? launchStartedAt : null}
+            initialRequestStartedAt={isLaunching && launchShowsResearchActivity ? launchStartedAt : null}
             onOpenMenu={() => setIsSidebarOpen(true)}
           />
         )}
