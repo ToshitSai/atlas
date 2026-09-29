@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import ResearchStartScreen from './components/ResearchStartScreen';
 import ResearchChatWorkspace from './components/ResearchChatWorkspace';
 import SettingsModal from './components/SettingsModal';
-import { fetchProjects, fetchProjectDetails, sendChatMessage, sendDeepResearchStream, fetchSettings, approveDataset, fetchConversationMessages, fetchConversations } from './api';
+import { fetchProjects, fetchProjectDetails, sendDeepResearchStream, fetchSettings, approveDataset, fetchConversationMessages, fetchConversations } from './api';
 
 // One conversation per project so the FIRST message (sent from the start
 // screen) and every workspace follow-up share the same server-side memory.
@@ -115,8 +115,7 @@ export default function App() {
     if (!userText.trim()) return;
     setIsLaunching(true);
     setLaunchStartedAt(Date.now());
-    const showResearchActivity = isLikelyDeepResearch(userText);
-    setLaunchShowsResearchActivity(showResearchActivity);
+    setLaunchShowsResearchActivity(false);
     setInitialRequestActivities([]);
 
     const requestId = createConversationId();
@@ -132,13 +131,15 @@ export default function App() {
     try { localStorage.setItem('ai-scientist-active-conversation', convId); } catch (e) { /* private mode */ }
 
     try {
-      const onActivity = (event) => setInitialRequestActivities(previous => {
-        const existing = previous.findIndex(step => step.stage === event.stage);
+      const onActivity = (event) => {
+        setLaunchShowsResearchActivity(true);
+        setInitialRequestActivities(previous => {
+        const existing = previous.findIndex(step => step.id === event.id);
         if (existing >= 0) return previous.map((step, index) => index === existing ? { ...step, ...event, id: step.id || `${requestId}-${event.stage}` } : step);
         return [...previous, { ...event, id: event.id || `${requestId}-${event.stage}` }];
       });
-      const send = showResearchActivity ? sendDeepResearchStream : sendChatMessage;
-      const res = await send(userText, activeProject?.id, convId, null, null, {
+      };
+      const res = await sendDeepResearchStream(userText, activeProject?.id, convId, null, null, {
         requestId,
         messageId: userMessageId,
         researchMode
@@ -218,7 +219,7 @@ export default function App() {
       const msgs = await fetchConversationMessages(conversation.id);
       setChatMessages((msgs || []).map(m => ({
         id: m.id, role: m.role, content: m.content, intent: m.intent,
-        datasets: null, recommendation: null, researchQuery: null, activity: []
+        datasets: null, recommendation: null, researchQuery: null, activity: m.activity || []
       })));
     } catch (e) {
       setChatMessages([]);
@@ -242,7 +243,8 @@ export default function App() {
         intent: m.intent,
         datasets: null,
         recommendation: null,
-        researchQuery: null
+        researchQuery: null,
+        activity: m.activity || []
       }));
       setChatMessages(mapped);
     } catch (e) {

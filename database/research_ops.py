@@ -374,6 +374,7 @@ class ResearchOpsMixin:
                        intent: Optional[str] = None, topic: Optional[str] = None,
                        research_id: Optional[str] = None,
                        pending_action: Optional[Dict[str, Any]] = None,
+                       activity: Optional[List[Dict[str, Any]]] = None,
                        message_id: Optional[str] = None,
                        created_at: Optional[str] = None) -> Dict[str, Any]:
         """Insert one chat message. ``created_at`` (ISO) preserves original
@@ -389,7 +390,10 @@ class ResearchOpsMixin:
                        COALESCE(%s::timestamptz, now()))
                ON CONFLICT (id) DO NOTHING""",
             (mid, conversation_id, role, content, intent, topic, research_id,
-             Json({"pending_action": pending_action} if pending_action else {}),
+             Json({key: value for key, value in {
+                 "pending_action": pending_action,
+                 "activity": activity or [],
+             }.items() if value}),
              created_at))
         return {"id": mid, "conversation_id": conversation_id, "role": role,
                 "content": content, "intent": intent, "topic": topic,
@@ -417,6 +421,7 @@ class ResearchOpsMixin:
                 "topic": r[5],
                 "research_id": r[6],
                 "pending_action": metadata.get("pending_action"),
+                "activity": metadata.get("activity") or [],
             })
         return messages
 

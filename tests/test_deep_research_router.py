@@ -59,57 +59,117 @@ def test_master_routing_matrix(message, mode):
     assert result["requires_deep_research"] is (mode == "deep_research")
 
 
+def _trace(steps):
+    return {"trace": {"steps": steps}}
+
+
 def test_deep_research_activity_contains_only_executed_stages(isolate_store, monkeypatch):
     import backend.deep_research as deep
-    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress=None: {
+    executed = [
+        {"id": "t-0", "trace_id": "t", "stage": "planning", "status": "completed",
+         "label": "Planned research approach", "detail": "Created 2 search queries", "timestamp": 1},
+        {"id": "t-1", "trace_id": "t", "stage": "web_search", "status": "completed",
+         "label": "Search completed: \"one\"", "detail": "Found 3 web results", "timestamp": 2},
+    ]
+    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress_callback=None: {
         "status": "ok", "report": "# Report\n\nEvidence-backed finding.",
-        "sourceCount": 2, "subqueries": ["one", "two"],
+        "sourceCount": 2, "subqueries": ["one", "two"], **_trace(executed),
     })
     result = handle_intent_message("Research this topic", session_id="deep-events")
     stages = [(event["stage"], event["status"]) for event in result["activity"]]
     assert result["intent"] == "DEEP_RESEARCH"
-    assert ("UNDERSTANDING", "completed") in stages
-    assert ("PLANNING", "completed") in stages
-    assert ("LITERATURE_SEARCH", "completed") in stages
-    assert ("EVIDENCE_SYNTHESIS", "completed") in stages
-    assert ("VERIFICATION", "completed") in stages
-    assert ("REPORT", "completed") in stages
-    assert ("COMPLETED", "completed") in stages
-    assert not any(stage in {"BASELINE", "EVALUATION", "ERROR_ANALYSIS"} for stage, _ in stages)
-    assert all(event.get("detail") for event in result["activity"] if event["stage"] != "COMPLETED")
+    # The activity list IS the executed trace: only real steps, in execution
+    # order, and nothing re-derived after the fact.
+    assert [("planning", "completed"), ("web_search", "completed")] == stages
+    assert result["activity"][1]["label"] == 'Search completed: "one"'
+    assert result["activity"][1]["detail"] == "Found 3 web results"
+    assert not any(stage in {"baseline", "evaluation", "error_analysis"} for stage, _ in stages)
+    assert all(event.get("detail") for event in result["activity"])
 
 
 def test_deep_research_failure_is_visible_not_fabricated(isolate_store, monkeypatch):
     import backend.deep_research as deep
-    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress=None: {
-        "status": "no_sources", "report": "", "sourceCount": 0, "subqueries": ["one"],
+    failed = [
+        {"id": "t-0", "trace_id": "t", "stage": "planning", "status": "completed",
+         "label": "Planned research approach", "detail": "Created 1 search query", "timestamp": 1},
+        {"id": "t-1", "trace_id": "t", "stage": "literature_search", "status": "failed",
+         "label": "Literature search failed", "detail": "No verifiable sources were retrieved", "timestamp": 2},
+    ]
+    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress_callback=None: {
+        "status": "no_sources", "report": "", "sourceCount": 0, "subqueries": ["one"], **_trace(failed),
     })
     result = handle_intent_message("Research this topic", session_id="deep-failure")
-    assert any(event["stage"] == "LITERATURE_SEARCH" and event["status"] == "failed"
+    assert any(event["stage"] == "literature_search" and event["status"] == "failed"
                for event in result["activity"])
     assert "won't pretend" in result["response"].lower()
 
 
-def test_deep_research_reports_real_progress_in_execution_order(monkeypatch):
+def test_deep_research_pipeline_crash_is_honest(isolate_store, monkeypatch):
+    """If the pipeline itself cannot run, the UI gets one honest failure row —
+    not a fabricated stage history."""
     import backend.deep_research as deep
 
-    monkeypatch.setattr(deep, "plan_subqueries", lambda goal: ["first query", "second query"])
-    monkeypatch.setattr(deep, "_collect_sources", lambda queries, per_query: [
-        {"title": "Source", "url": "https://example.test/source", "snippet": "Evidence", "source": "Web", "query": queries[0]}
+    def boom(goal, progress_callback=None):
+        raise RuntimeError("search provider unreachable")
+
+    monkeypatch.setattr(deep, "run_deep_research", boom)
+    result = handle_intent_message("Research this topic", session_id="deep-crash")
+    assert result["intent"] == "DEEP_RESEARCH"
+    assert len(result["activity"]) == 1
+    assert result["activity"][0]["status"] == "failed"
+    assert "search provider unreachable" in result["activity"][0]["detail"]
+
+
+def test_deep_research_streams_real_steps_as_they_happen(monkeypatch):
+    """Live progress carries the ACTUAL search queries and result counts, in
+    execution order — no generic filler, no post-hoc summary."""
+    import backend.deep_research as deep
+
+    monkeypatch.setattr(deep, "plan_subqueries", lambda goal, max_subqueries=3, trace=None: ["first query", "second query"])
+    monkeypatch.setattr(deep, "search_web", lambda query, limit=3: [
+        {"title": f"Web hit {i} for {query}", "url": f"https://example.test/{query.replace(' ', '-')}-{i}", "snippet": "Evidence"}
+        for i in range(3)
     ])
-    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources: "# Report")
+    monkeypatch.setattr(deep, "search_literature", lambda query, limit=2: [
+        {"title": f"Paper on {query}", "url": f"https://doi.test/{query.replace(' ', '-')}", "abstract": "Real abstract text"},
+    ])
+    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
     events = []
 
-    result = deep.run_deep_research("Test goal", progress=events.append)
+    result = deep.run_deep_research("Test goal", progress_callback=events.append)
 
     assert result["status"] == "ok"
-    assert [(event["stage"], event["status"]) for event in events] == [
-        ("PLANNING", "running"),
-        ("PLANNING", "completed"),
-        ("LITERATURE_SEARCH", "running"),
-        ("LITERATURE_SEARCH", "completed"),
-        ("EVIDENCE_SYNTHESIS", "running"),
-        ("EVIDENCE_SYNTHESIS", "completed"),
-        ("REPORT", "completed"),
-        ("COMPLETED", "completed"),
-    ]
+    # Callbacks receive the shared dict schema (SSE publishes **event).
+    assert all(isinstance(event, dict) for event in events)
+    labels = [event["label"] for event in events]
+    # Real work items appear: the actual search query text and result counts.
+    assert any('Searching: "first query"' in label for label in labels)
+    assert any('Searching: "second query"' in label for label in labels)
+    assert any("Found 3 web results" in (event.get("detail") or "") for event in events)
+    assert any("Found 1 papers" in (event.get("detail") or "") for event in events)
+    assert any("Collected 8 unique sources" in (event.get("detail") or "") for event in events)
+    # Never generic filler: no "understanding your question" placeholders.
+    assert not any("understanding" in label.lower() for label in labels)
+    # Steps stream in execution order: planning starts first, search runs per query.
+    assert events[0]["stage"] == deep.Stages.PLANNING and events[0]["status"] == "running"
+    search_positions = [i for i, event in enumerate(events) if event["stage"] == deep.Stages.WEB_SEARCH]
+    assert search_positions == sorted(search_positions) and len(search_positions) >= 4
+
+
+def test_deep_research_trace_registry_roundtrip(monkeypatch):
+    """begin_trace/poll_trace/finish_trace: polling clients see the same real
+    steps while running, and the final list is returned for persistence."""
+    from backend import step_trace as st
+
+    trace = st.begin_trace("req-roundtrip", "deep_research")
+    seen = []
+    trace.add_callback(seen.append)
+    trace.start_step(st.Stages.WEB_SEARCH, 'Searching: "history of quantum computing"')
+    polled = st.poll_trace("req-roundtrip")
+    assert polled["status"] == "running"
+    assert polled["steps"][0]["label"] == 'Searching: "history of quantum computing"'
+    assert seen and seen[0]["trace_id"] == "req-roundtrip"
+    final = st.finish_trace("req-roundtrip")
+    assert final == polled["steps"]
+    assert st.poll_trace("req-roundtrip")["status"] == "completed"
+    assert st.poll_trace("unknown-request") is None

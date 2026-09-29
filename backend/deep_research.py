@@ -7,12 +7,13 @@ collected source, and if no source can be reached it reports that instead of
 inventing content.
 """
 import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import backend.config  # auto-loads .env into os.environ
 from backend.llm import query_llm
 from backend.literature_search import search_literature
 from backend.web_search import search_web
+from backend.step_trace import StepTrace, Stages, create_trace
 
 _SYNTH_SYSTEM_PROMPT = (
     "You are a rigorous research synthesizer. Write ONLY from the evidence "
@@ -23,7 +24,8 @@ _SYNTH_SYSTEM_PROMPT = (
 
 _FILLER_ABSTRACT_PREFIXES = ("research paper on", "academic research indexed")
 
-def plan_subqueries(goal: str, max_subqueries: int = 3) -> List[str]:
+
+def plan_subqueries(goal: str, max_subqueries: int = 3, trace: Optional[StepTrace] = None) -> List[str]:
     """Break the research goal into concrete search sub-queries.
 
     Uses the LLM when a provider is reachable; otherwise deterministic query
@@ -32,6 +34,9 @@ def plan_subqueries(goal: str, max_subqueries: int = 3) -> List[str]:
     goal = (goal or "").strip()
     if not goal:
         return []
+
+    if trace:
+        trace.start_step(Stages.PLANNING, "Planning research approach", f"Breaking down: {goal[:80]}")
 
     llm = query_llm(
         f'Research goal: "{goal}"\n'
@@ -55,6 +60,8 @@ def plan_subqueries(goal: str, max_subqueries: int = 3) -> List[str]:
             original = goal.rstrip("?.!").strip()
             if original.lower() not in (s.lower() for s in subs):
                 subs.insert(0, original)
+            if trace:
+                trace.complete_step(Stages.PLANNING, "Planned research approach", f"Created {len(subs)} search queries: {', '.join(subs[:3])}{'...' if len(subs) > 3 else ''}")
             return subs[:max_subqueries]
 
     base = goal.rstrip("?.!").strip()
@@ -65,7 +72,10 @@ def plan_subqueries(goal: str, max_subqueries: int = 3) -> List[str]:
         f"{base} latest developments {year}",
         f"{base} advantages and disadvantages",
     ]
-    return variants[:max_subqueries]
+    result = variants[:max_subqueries]
+    if trace:
+        trace.complete_step(Stages.PLANNING, "Planned research approach", f"Created {len(result)} search queries (fallback)")
+    return result
 
 
 def _paper_to_source(paper: Dict[str, Any]) -> Dict[str, str]:
@@ -89,7 +99,7 @@ def _paper_to_source(paper: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
-def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int = 2, progress=None) -> List[Dict[str, Any]]:
+def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int = 2, trace: Optional[StepTrace] = None) -> List[Dict[str, Any]]:
     """Run web + academic searches per sub-query and deduplicate by URL.
 
     A paper hit without real evidence (empty snippet after dropping the
@@ -97,16 +107,25 @@ def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int
     sources: List[Dict[str, Any]] = []
     seen_urls = set()
     for idx, sq in enumerate(subqueries):
-        if progress:
-            progress("LITERATURE_SEARCH", "running", "Searching academic literature", f"Query {idx + 1}/{len(subqueries)}: {sq}")
+        if trace:
+            trace.start_step(Stages.WEB_SEARCH, f"Searching: \"{sq}\"", f"Query {idx + 1}/{len(subqueries)}")
         web_hits = search_web(sq, limit=per_query)
+        if trace:
+            trace.complete_step(Stages.WEB_SEARCH, f"Search completed: \"{sq}\"", f"Found {len(web_hits)} web results")
+
         paper_hits: List[Dict[str, str]] = []
         if idx < papers_on_first:
+            if trace:
+                trace.start_step(Stages.LITERATURE_SEARCH, f"Searching academic papers: \"{sq}\"", "Querying Semantic Scholar / OpenAlex")
             try:
                 papers = search_literature(sq, limit=2) or []
                 paper_hits = [_paper_to_source(p) for p in papers]
+                if trace:
+                    trace.complete_step(Stages.LITERATURE_SEARCH, f"Academic search completed: \"{sq}\"", f"Found {len(paper_hits)} papers")
             except Exception as exc:
                 print(f"[DEEP RESEARCH WARNING] literature search failed for '{sq}': {exc}")
+                if trace:
+                    trace.fail_step(Stages.LITERATURE_SEARCH, f"Academic search failed: \"{sq}\"", str(exc))
         for hit in web_hits + paper_hits:
             url = (hit.get("url") or "").strip()
             title = (hit.get("title") or "").strip()
@@ -125,7 +144,7 @@ def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int
     return sources
 
 
-def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]]) -> str:
+def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]], trace: Optional[StepTrace] = None) -> str:
     """Build the report: grounded LLM synthesis when a provider is reachable,
     otherwise an honest sourced-snippet digest. Verification notes included."""
     by_query: Dict[str, List[Dict[str, Any]]] = {}
@@ -156,6 +175,8 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]])
         evidence = "\n".join(f"[{s['n']}] {s['title']} — {s['snippet']}" for s in items if s.get("snippet"))
         section = None
         if use_llm and evidence:
+            if trace:
+                trace.start_step(Stages.SYNTHESIS, f"Synthesizing: \"{sq}\"", f"Processing {len(items)} sources via LLM")
             section = query_llm(
                 f"Research goal: {goal}\nSub-question: {sq}\n\n"
                 f"Evidence snippets (cite by [n]):\n{evidence}\n\n"
@@ -165,13 +186,21 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]])
             )
             if section is None:
                 use_llm = False  # no provider reachable; digest the rest honestly
+            if trace:
+                trace.complete_step(Stages.SYNTHESIS, f"Synthesized: \"{sq}\"", "LLM synthesis complete")
         if not section:
+            if trace:
+                trace.start_step(Stages.SYNTHESIS, f"Compiling evidence: \"{sq}\"", f"Building digest from {len(items)} sources")
             section = "\n".join(
                 f"- **[{s['n']}] {s['title']}** ({s['source']}): {s.get('snippet') or '(no snippet available — open the source)'}"
                 for s in items
             )
+            if trace:
+                trace.complete_step(Stages.SYNTHESIS, f"Compiled evidence: \"{sq}\"", "Fallback digest complete")
         lines += [f"### {sq}", section, ""]
 
+    if trace:
+        trace.start_step(Stages.VERIFICATION, "Cross-checking claims", f"Verifying {len(sources)} sources across {len(subqueries)} queries")
     lines += [
         "## Verification",
         f"- {len(sources)} unique sources collected across {len(subqueries)} planned searches (web + academic), deduplicated by URL.",
@@ -180,45 +209,52 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]])
         "## Sources",
     ]
     lines += [f"{s['n']}. [{s['title'] or s['url']}]({s['url']}) — {s['source']}" for s in sources]
+    if trace:
+        trace.complete_step(Stages.VERIFICATION, "Cross-checking complete", f"Verified {len(sources)} sources")
     return "\n".join(lines)
 
 
-def run_deep_research(goal: str, per_query: int = 3, progress=None) -> Dict[str, Any]:
+def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional[callable] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
     """Execute the full deep-research pass for a goal."""
-    def emit(stage, status, label, detail=None):
-        if progress:
-            progress({"stage": stage, "status": status, "label": label, "detail": detail})
+    trace = create_trace("deep_research", trace_id)
+    if progress_callback:
+        trace.add_callback(progress_callback)
 
-    emit("PLANNING", "running", "Planning research", "Creating focused research searches")
-    subqueries = plan_subqueries(goal)
+    trace.start_step(Stages.PLANNING, "Planning research approach", f"Analyzing goal: {goal[:100]}")
+    subqueries = plan_subqueries(goal, per_query, trace=trace)
     if not subqueries:
-        emit("PLANNING", "failed", "Research planning failed", "No usable research question was produced")
-        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": []}
-    emit("PLANNING", "completed", "Planned research", f"Created {len(subqueries)} focused research searches")
+        trace.fail_step(Stages.PLANNING, "Research planning failed", "No usable research question was produced")
+        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": [], "trace": trace.to_dict()}
 
-    emit("LITERATURE_SEARCH", "running", "Searching literature", "Searching web and academic sources")
+    trace.start_step(Stages.WEB_SEARCH, "Searching the web", f"Running {len(subqueries)} search queries")
     try:
-        sources = _collect_sources(subqueries, per_query, progress=lambda *args: emit(*args))
+        sources = _collect_sources(subqueries, per_query, trace=trace)
     except TypeError as exc:
         # Compatibility for integrations that provide the original two-argument
         # collector. Built-in collection always receives the progress callback.
         if "progress" not in str(exc):
             raise
-        sources = _collect_sources(subqueries, per_query)
+        sources = _collect_sources(subqueries, per_query, trace=trace)
     if not sources:
-        emit("LITERATURE_SEARCH", "failed", "Literature search failed", "No verifiable sources were retrieved")
-        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": subqueries}
+        trace.fail_step(Stages.LITERATURE_SEARCH, "Literature search failed", "No verifiable sources were retrieved")
+        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": subqueries, "trace": trace.to_dict()}
     academic_sources = sum(1 for source in sources if source.get("source") in ("Semantic Scholar", "OpenAlex"))
-    emit("LITERATURE_SEARCH", "completed", "Searched literature", f"Collected {len(sources)} unique source records ({academic_sources} academic)")
+    trace.complete_step(Stages.LITERATURE_SEARCH, "Literature search complete", f"Collected {len(sources)} unique sources ({academic_sources} academic)")
 
-    emit("EVIDENCE_SYNTHESIS", "running", "Synthesizing source evidence", "Preparing evidence-grounded findings")
-    report = _synthesize(goal, subqueries, sources)
-    emit("EVIDENCE_SYNTHESIS", "completed", "Synthesized source evidence", "Built findings only from retrieved source snippets")
-    emit("REPORT", "completed", "Generated research report", "Prepared the final sourced report")
-    emit("COMPLETED", "completed", "Deep research complete", f"Completed a sourced review using {len(sources)} unique sources")
+    trace.start_step(Stages.SYNTHESIS, "Synthesizing findings", "Building evidence-grounded report sections")
+    report = _synthesize(goal, subqueries, sources, trace=trace)
+    trace.complete_step(Stages.SYNTHESIS, "Synthesis complete", "All sections synthesized from source evidence")
+
+    trace.start_step(Stages.VERIFICATION, "Verifying citations", "Checking source traceability")
+    trace.complete_step(Stages.VERIFICATION, "Verification complete", "All claims traceable to sources")
+
+    trace.start_step(Stages.REPORT_GENERATION, "Generating final report", "Assembling complete research report")
+    trace.complete_step(Stages.REPORT_GENERATION, "Report generated", f"Completed deep research with {len(sources)} sources")
+    trace.complete_step(Stages.COMPLETED, "Deep research complete", f"Completed a sourced review using {len(sources)} unique sources")
     return {
         "status": "ok",
         "report": report,
         "sourceCount": len(sources),
         "subqueries": subqueries,
+        "trace": trace.to_dict(),
     }

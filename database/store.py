@@ -542,6 +542,7 @@ class ResearchStore:
                        intent: Optional[str] = None, topic: Optional[str] = None,
                        research_id: Optional[str] = None,
                        pending_action: Optional[Dict[str, Any]] = None,
+                       activity: Optional[List[Dict[str, Any]]] = None,
                        max_history: int = 200,
                        message_id: Optional[str] = None):
         """Append a single conversational message to the session history.
@@ -563,14 +564,21 @@ class ResearchStore:
             "topic": topic,
             "research_id": research_id,
             "pending_action": pending_action,
+            "activity": activity or [],
         }
         with self.lock:
             if self.repo is not None and self._db_healthy:
+                repo_kwargs = {
+                    "intent": intent, "topic": topic,
+                    "research_id": research_id, "pending_action": pending_action,
+                    "message_id": msg["id"],
+                }
+                # Preserve compatibility with existing repository adapters in
+                # tests/older deployments; only traces need the new metadata.
+                if activity:
+                    repo_kwargs["activity"] = activity
                 self._db_write(
-                    lambda: self.repo.record_message(
-                        sid, role, content, intent=intent, topic=topic,
-                        research_id=research_id, pending_action=pending_action,
-                        message_id=msg["id"]),
+                    lambda: self.repo.record_message(sid, role, content, **repo_kwargs),
                     file_fallback=lambda: self._record_message_file(msg, max_history))
                 cached = self.data.setdefault("sessions", {}).get(sid)
                 if cached is not None:

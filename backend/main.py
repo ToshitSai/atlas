@@ -226,7 +226,26 @@ async def chat_endpoint(payload: dict, activity_callback=None):
         make_activity, resolve_mode, set_session_mode,
         mode_requested_in_message, selection_decision,
     )
+    from backend import step_trace
     llm_mod.begin_engine_trace()
+
+    # Open the live step trace for this request. Real flows (deep research,
+    # dataset discovery) record actual work into it as it happens; a plain
+    # answer records nothing and therefore renders no activity panel at all.
+    live_trace = step_trace.begin_trace(request_id) if request_id else step_trace.StepTrace("", "chat_request")
+
+    def record_event(event):
+        # Single sink for every streamed step: recorded into the live trace
+        # (polled by the UI) and published to SSE consumers. Accepts both raw
+        # trace steps and activity-contract dicts.
+        if isinstance(event, dict):
+            step = live_trace.record_payload(event)
+        else:
+            live_trace_record = live_trace.emit(event.stage, event.status, event.label, event.detail)
+            step = live_trace_record
+        if activity_callback:
+            activity_callback(step_trace.event_to_activity(step, request_id))
+        return step
 
     # Research mode resolution (directive §2): explicit request field wins,
     # then an in-chat switch ("switch to autonomous mode"), then the session
@@ -291,6 +310,34 @@ async def chat_endpoint(payload: dict, activity_callback=None):
         activity_callback=activity_callback,
     )
     res["researchRouting"] = routing_decision
+
+    # Persisted activity = the REAL trace recorded during execution, merged
+    # with any handler-produced events, deduplicated by event id. A request
+    # that performed no observable steps keeps an empty list: the UI then
+    # shows no activity log at all instead of a fabricated one.
+    def _activity_from_step(step):
+        if isinstance(step, dict) and step.get("requestId") is not None or (isinstance(step, dict) and "label" in step and "requestId" in step and "stage" in step):
+            return {**step, "requestId": step.get("requestId") or request_id or None}
+        if isinstance(step, dict):
+            converted = step_trace.StepEvent(
+                step.get("id") or "", step.get("trace_id") or request_id or "",
+                step.get("stage") or "step", step.get("status") or "running",
+                step.get("label") or "", step.get("detail"), step.get("timestamp") or 0,
+            )
+            return step_trace.event_to_activity(converted, request_id or None)
+        return step_trace.event_to_activity(step, request_id or None)
+
+    seen_event_ids = set()
+    merged_activity = []
+    for step in list(live_trace.steps) + list(res.get("activity") or []):
+        ev = _activity_from_step(step)
+        if not ev.get("id") or ev["id"] in seen_event_ids:
+            continue
+        seen_event_ids.add(ev["id"])
+        merged_activity.append(ev)
+    res["activity"] = merged_activity
+    step_trace.finish_trace(request_id) if request_id else live_trace.mark_finished()
+
     action = res.get("action")
 
     # Bug 5 disclosure: if the handler tried an LLM and none responded, the
@@ -343,15 +390,22 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                     research_goal = "machine learning"
                 lead = f"I'll look for datasets that could help {research_goal.lower().rstrip('.')}.\n\n"
                 search_activity = []
-                search_activity.append(make_activity(request_id, job_id, "PLANNING", "completed", "Research goal understood"))
-                search_activity.append(make_activity(request_id, job_id, "DATASET_SEARCH", "running", "Finding relevant datasets"))
+                def dataset_step(stage, status, label, detail=None):
+                    event = make_activity(request_id, job_id, stage, status, label, detail)
+                    search_activity.append(event)
+                    if activity_callback:
+                        activity_callback(event)
+                    return event
+
+                dataset_step("PLANNING", "completed", "Dataset search planned", f"Searching for: {research_goal}")
+                dataset_step("DATASET_SEARCH", "running", "Searching Hugging Face datasets", f"Query: {research_goal}")
                 try:
                     cands = hf.search_datasets(research_goal, limit=6)
                 except Exception as search_err:
                     # Directive §13: say the source failed and try to continue
                     # honestly — never silently return an unrelated result.
                     print(f"[DATASET SEARCH ERROR]: {search_err}")
-                    search_activity.append(make_activity(request_id, job_id, "DATASET_SEARCH", "failed", "Dataset search failed — trying another approach"))
+                    dataset_step("DATASET_SEARCH", "failed", "Dataset search failed", str(search_err))
                     res.update({
                         "action": "NONE",
                         "response": (
@@ -366,18 +420,17 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                     # Cards are shown only after best-effort real inspection so
                     # the user sees schema facts, not Hub-search placeholders.
                     cands = hf.enrich_candidates(cands, max_candidates=4)
-                    search_activity.append(make_activity(
-                        request_id, job_id, "DATASET_SEARCH", "completed",
-                        (f"Found {len(cands)} candidate datasets" if cands
-                         else "No candidate datasets found; preparing broader-search guidance"),
-                    ))
-                    search_activity.append(make_activity(request_id, job_id, "DATASET_EVALUATION", "running", "Comparing datasets"))
+                    dataset_step("DATASET_SEARCH", "completed", "Dataset search complete",
+                                 f"Found {len(cands)} candidate datasets")
+                    dataset_step("DATASET_EVALUATION", "running", "Inspecting and ranking candidates",
+                                 f"Checking metadata for {len(cands)} datasets")
                     comp = hf.compare_and_recommend(cands, research_goal, top_n=4)
                     rec = comp.get("recommendation")
-                    search_activity.append(make_activity(request_id, job_id, "DATASET_EVALUATION", "completed", "Dataset comparison complete"))
+                    dataset_step("DATASET_EVALUATION", "completed", "Dataset ranking complete",
+                                 f"Compared {len(comp.get('candidates') or [])} candidates")
 
                     decision = selection_decision(comp, effective_mode)
-                    search_activity.append(make_activity(request_id, job_id, "DATASET_SELECTED", "running", "Selecting a dataset"))
+                    dataset_step("DATASET_SELECTED", "running", "Selecting dataset", "Applying task-fit and sandbox-size checks")
 
                     # A deployment without the ML runtime (e.g. the Vercel
                     # serverless bundle) can search and compare datasets but
@@ -404,7 +457,7 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                             )
                         else:
                             summary = "I couldn't find a suitable dataset automatically."
-                        search_activity.append(make_activity(request_id, job_id, "WAITING_FOR_USER", "waiting", "Waiting for your dataset choice"))
+                        dataset_step("WAITING_FOR_USER", "waiting", "Waiting for dataset choice", "Training requires a dataset selection")
                         res.update({
                             "action": "RECOMMEND_DATASETS",
                             "researchQuery": research_goal,
@@ -419,9 +472,7 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                         # CONTINUE. The cards stay available as information, and
                         # the user can still override with another dataset.
                         chosen = decision["dataset"]
-                        search_activity.append(make_activity(
-                            request_id, job_id, "DATASET_SELECTED", "completed",
-                            f"Selected {chosen.get('repoId')}"))
+                        dataset_step("DATASET_SELECTED", "completed", "Dataset selected", chosen.get("repoId"))
                         try:
                             approved = _approve_dataset(chosen["repoId"], research_goal)
                             summary = (
@@ -443,7 +494,7 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                             })
                         except Exception as auto_err:
                             print(f"[AUTONOMOUS DATASET ERROR]: {auto_err}")
-                            search_activity.append(make_activity(request_id, job_id, "DATASET_SELECTED", "failed", "Could not load the selected dataset"))
+                            dataset_step("DATASET_SELECTED", "failed", "Dataset loading failed", str(auto_err))
                             res.update({
                                 "action": "NONE",
                                 "researchQuery": research_goal,
@@ -481,7 +532,7 @@ async def chat_endpoint(payload: dict, activity_callback=None):
                                 "\"optimize churn prediction for imbalanced data\"), or paste a dataset URL "
                                 "(https://huggingface.co/datasets/owner/name) and I'll load it directly."
                             )
-                        search_activity.append(make_activity(request_id, job_id, "WAITING_FOR_USER", "waiting", "Waiting for your dataset choice"))
+                        dataset_step("WAITING_FOR_USER", "waiting", "Waiting for dataset choice", "Select a candidate to continue")
                         res.update({
                             "action": "RECOMMEND_DATASETS",
                             "researchQuery": research_goal,
@@ -528,6 +579,7 @@ async def chat_endpoint(payload: dict, activity_callback=None):
         intent=res.get("intent"), topic=res.get("lastTopic"),
         research_id=res.get("projectId") or active_project_id,
         pending_action=res.get("pendingAction"),
+        activity=res.get("activity") or [],
         message_id=response_message_id,
     )
 

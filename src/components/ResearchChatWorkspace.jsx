@@ -7,7 +7,6 @@ import {
   fetchProjectLiterature,
   fetchProjectReport,
   sendControlSignal,
-  sendChatMessage,
   sendDeepResearchStream
 } from '../api';
 import ActivityPanel from './ActivityPanel';
@@ -129,10 +128,6 @@ export default function ResearchChatWorkspace({
     inFlightRequests.current.add(requestId);
     setProcessingCount(inFlightRequests.current.size);
     setIsProcessing(true);
-    const showResearchActivity = isLikelyDeepResearch(userText);
-    if (showResearchActivity) {
-      setActiveRequests(previous => ({ ...previous, [requestId]: { requestId, startedAt: Date.now(), activities: [] } }));
-    }
 
     // The response carries this id back; it is the stable UI/API association.
     const userMsg = { id: userMessageId, requestId, role: 'user', content: userText };
@@ -141,16 +136,14 @@ export default function ResearchChatWorkspace({
     try {
       // 2. Call backend Intent Router endpoint
       const onActivity = (event) => setActiveRequests(previous => {
-        const request = previous[requestId];
-        if (!request) return previous;
-        const existing = (request.activities || []).findIndex(step => step.stage === event.stage);
+        const request = previous[requestId] || { requestId, startedAt: Date.now(), activities: [] };
+        const existing = (request.activities || []).findIndex(step => step.id === event.id);
         const activities = existing >= 0
           ? request.activities.map((step, index) => index === existing ? { ...step, ...event, id: step.id || `${requestId}-${event.stage}` } : step)
           : [...(request.activities || []), { ...event, id: event.id || `${requestId}-${event.stage}` }];
         return { ...previous, [requestId]: { ...request, activities } };
       });
-      const send = showResearchActivity ? sendDeepResearchStream : sendChatMessage;
-      const res = await send(userText, projectId, conversationId, pendingAction, lastTopic, {
+      const res = await sendDeepResearchStream(userText, projectId, conversationId, pendingAction, lastTopic, {
         requestId,
         messageId: userMessageId
       }, [...chatMessages, userMsg], onActivity);

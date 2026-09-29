@@ -1741,30 +1741,19 @@ def _handle_intent_message_impl(
             r"^(?:please\s+)?(?:research|investigate|deep\s+dive\s+into|deep\s+dive|"
             r"find\s+out\s+about|look\s+into|do\s+some\s+research\s+on|do\s+research\s+on)\s+",
             "", goal, flags=re.IGNORECASE).strip() or goal
-        from backend.research_modes import make_activity
-        job_id = f"deep-research-{sid}"
-        activity = [
-            make_activity(None, job_id, "UNDERSTANDING", "completed", "Understood the research question", f"Research objective: {goal}"),
-        ]
-        if activity_callback:
-            activity_callback(activity[0])
+        research = None
+        dr_error = None
         try:
             from backend.deep_research import run_deep_research
-            research = run_deep_research(goal, progress=activity_callback)
+            research = run_deep_research(goal, progress_callback=activity_callback)
         except Exception as dr_err:
+            dr_error = str(dr_err)
             print(f"[DEEP RESEARCH WARNING]: {dr_err}")
             research = {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": []}
-        subquery_count = len(research.get("subqueries") or [])
-        if subquery_count:
-            activity.append(make_activity(None, job_id, "PLANNING", "completed", "Planned research", f"Created {subquery_count} focused research searches"))
+        # The persisted activity list is the REAL step trace collected during
+        # execution — never a re-derived summary of what should have happened.
+        activity = list(research.get("trace", {}).get("steps") or [])
         if research.get("status") == "ok" and research.get("report"):
-            activity.extend([
-                make_activity(None, job_id, "LITERATURE_SEARCH", "completed", "Searched literature", f"Collected {research['sourceCount']} unique source records"),
-                make_activity(None, job_id, "EVIDENCE_SYNTHESIS", "completed", "Synthesized source evidence", "Built findings only from retrieved source snippets"),
-                make_activity(None, job_id, "VERIFICATION", "completed", "Verified source set", "Deduplicated sources by URL before reporting"),
-                make_activity(None, job_id, "REPORT", "completed", "Generated research report", "Prepared the final sourced report"),
-                make_activity(None, job_id, "COMPLETED", "completed", "Research completed"),
-            ])
             resp_text = (
                 f"I ran a multi-step research pass on: {goal}\n\n"
                 f"{research['report']}\n\n"
@@ -1772,7 +1761,17 @@ def _handle_intent_message_impl(
                 f"search -> synthesis -> verification ({research['sourceCount']} sources)._"
             )
         else:
-            activity.append(make_activity(None, job_id, "LITERATURE_SEARCH", "failed", "No verifiable sources were available"))
+            if not activity:
+                # The pipeline itself failed to run (unexpected error): one
+                # honest failure row instead of a fabricated stage history.
+                activity = [{
+                    "id": f"deep-research-{sid}-error",
+                    "jobId": f"deep-research-{sid}",
+                    "stage": "PLANNING",
+                    "status": "failed",
+                    "label": "Deep research could not start",
+                    "detail": dr_error or "pipeline unavailable",
+                }]
             resp_text = (
                 f"You've asked me to research: {goal}.\n\n"
                 "I ran the deep-research pipeline (plan -> search -> synthesize -> verify) "
