@@ -10,6 +10,7 @@ import {
   sendChatMessage
 } from '../api';
 import ActivityPanel from './ActivityPanel';
+import ResearchWorkspace from './research/ResearchWorkspace';
 
 export default function ResearchChatWorkspace({
   activeProject,
@@ -23,7 +24,7 @@ export default function ResearchChatWorkspace({
   conversationId: propsConversationId,
   onOpenMenu
 }) {
-  const [activeTab, setActiveTab] = useState('research'); // 'research' | 'report'
+  const [activeTab, setActiveTab] = useState('chat'); // 'workspace' | 'chat' | 'report'
   const [datasetReport, setDatasetReport] = useState(null);
   const [baselines, setBaselines] = useState([]);
   const [treeNodes, setTreeNodes] = useState([]);
@@ -47,6 +48,23 @@ export default function ResearchChatWorkspace({
   const projectId = activeProject?.id;
   const isRunning = activeProject?.status === 'IN_PROGRESS' || activeProject?.status === 'QUEUED';
   const isCompleted = activeProject?.status === 'COMPLETED';
+
+  // When a research project becomes active, lead with the structured research
+  // workspace instead of the chat bubble. The user can still switch to the Chat
+  // or Report tabs; this only sets the initial view when the project changes.
+  useEffect(() => {
+    if (projectId) setActiveTab('workspace');
+  }, [projectId]);
+
+  // Real run-control action wired to the backend control signal (pause/stop/resume).
+  const handleControl = async (signal) => {
+    if (!projectId) return;
+    try {
+      await sendControlSignal(projectId, signal);
+    } catch (err) {
+      console.error('Control signal failed:', err);
+    }
+  };
 
   useEffect(() => {
     if (!projectId) return;
@@ -167,19 +185,6 @@ export default function ResearchChatWorkspace({
 
   const stageStates = activeProject?.stageStates || {};
 
-  // Pick the real best baseline (highest PR-AUC, the right metric under imbalance).
-  const completedBaselines = (baselines || []).filter(b => b.status === 'COMPLETED');
-  const bestBaseline = completedBaselines.length
-    ? completedBaselines.reduce((a, b) => {
-        const av = (a.metrics && (a.metrics.pr_auc ?? a.metrics.f1)) || 0;
-        const bv = (b.metrics && (b.metrics.pr_auc ?? b.metrics.f1)) || 0;
-        return bv > av ? b : a;
-      })
-    : null;
-  const bm = bestBaseline?.metrics || {};
-  const pct = (v) => (typeof v === 'number' ? `${(v * 100).toFixed(1)}%` : '—');
-  const isFraudTask = bestBaseline && (bm.pr_auc != null || bm.recall != null);
-
   // Honest completion summary built ONLY from real stored results: compare the
   // best follow-up experiment against the baseline instead of claiming a win.
   const expNodes = treeNodes.filter(n => n.parentId !== null && n.metricValue != null);
@@ -197,48 +202,6 @@ export default function ResearchChatWorkspace({
       completionSummary = `The best approach reached ${metricName} ${fmt(bestExp.metricValue)}.`;
     }
   }
-
-  // User-facing pipeline. A few milestones are derived from the artifacts the
-  // backend has actually persisted: the server does not create separate fake
-  // states just to make the timeline look complete.
-  const baselineState = stageStates.baseline_training || 'NOT_STARTED';
-  const baselineFinished = baselineState === 'COMPLETED';
-  const baselineActive = baselineState === 'RUNNING';
-  const datasetChosen = Boolean(activeProject?.datasetName && activeProject.datasetName !== 'Not selected');
-  const datasetValidated = Boolean(datasetReport);
-  const derivedState = (complete, active = false) => complete ? 'COMPLETED' : active ? 'RUNNING' : 'NOT_STARTED';
-  // Experiment-cycle rows are derived from REAL persisted artifacts (the
-  // experiment tree nodes and the report), not only from the shared stage
-  // keys: several checklist rows map to the same backend stage, and the
-  // client's copy of a stage key can go stale while artifacts prove the step
-  // actually happened. NOT_CONFIGURED sandbox = ran in the process sandbox.
-  const hypothesisState = stageStates.hypothesis_generation || 'NOT_STARTED';
-  const sandboxState = stageStates.sandboxed_execution || 'NOT_STARTED';
-  const expGenerated = expNodes.length > 0 || hypothesisState === 'COMPLETED';
-  const expRan = expNodes.length > 0;
-  const expRunning = sandboxState === 'RUNNING';
-  const expFailed = sandboxState === 'FAILED' && !expRan;
-  const reportDone = Boolean(reportMd) || stageStates.research_report === 'COMPLETED';
-  const reportRunning = stageStates.research_report === 'RUNNING';
-  const expRowState = () => expRan ? 'COMPLETED' : expRunning ? 'RUNNING' : expFailed ? 'FAILED' : 'NOT_STARTED';
-  const genRowState = () => expGenerated ? 'COMPLETED' : hypothesisState === 'RUNNING' ? 'RUNNING' : 'NOT_STARTED';
-
-  const progressItems = [
-    { key: 'dataset-selected', label: 'Dataset selected', state: derivedState(datasetChosen) },
-    { key: 'dataset-loaded', label: 'Load dataset', state: derivedState(datasetValidated, datasetChosen && !datasetValidated) },
-    { key: 'dataset-validated', label: 'Validate dataset', state: derivedState(datasetValidated) },
-    { key: 'target-identified', label: 'Identify target column', state: derivedState(Boolean(datasetReport?.targetCandidate)) },
-    { key: 'class-distribution', label: 'Analyze class distribution', state: derivedState(Boolean(datasetReport?.classDistribution?.length)) },
-    { key: 'preprocess-data', label: 'Preprocess data', state: derivedState(baselineFinished, baselineActive) },
-    { key: 'baseline-training', label: 'Train baseline', state: baselineState },
-    { key: 'evaluate-baseline', label: 'Evaluate', state: derivedState(baselineFinished) },
-    { key: 'generate-experiment', label: 'Generate experiment', state: genRowState() },
-    { key: 'run-experiment', label: 'Run experiment', state: expRowState() },
-    { key: 'error-analysis', label: 'Analyze errors', state: stageStates.error_diagnostics || 'NOT_STARTED' },
-    { key: 'generate-hypothesis', label: 'Generate hypothesis', state: genRowState() },
-    { key: 'next-experiment', label: 'Run next experiment', state: expRowState() },
-    { key: 'research-report', label: 'Research report', state: reportDone ? 'COMPLETED' : reportRunning ? 'RUNNING' : 'NOT_STARTED' },
-  ];
 
   return (
     <div className="flex-1 min-w-0 flex flex-col h-screen bg-[#0B0F17] overflow-hidden select-none">
@@ -293,29 +256,26 @@ export default function ResearchChatWorkspace({
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {activeProject && (
             <div className="flex items-center gap-1 bg-[#131822] p-1 rounded-xl border border-[#212B3B] text-xs font-medium">
-              <button
-                onClick={() => setActiveTab('research')}
-                aria-pressed={activeTab === 'research'}
-                className={`px-2 sm:px-3 py-1 rounded-lg transition-all min-h-[32px] ${
-                  activeTab === 'research'
-                    ? 'bg-[#1E293B] text-cyan-400 font-semibold shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Chat
-              </button>
-              <button
-                onClick={() => setActiveTab('report')}
-                aria-pressed={activeTab === 'report'}
-                className={`px-2 sm:px-3 py-1 rounded-lg transition-all min-h-[32px] ${
-                  activeTab === 'report'
-                    ? 'bg-[#1E293B] text-cyan-400 font-semibold shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <span className="hidden sm:inline">Research Report</span>
-                <span className="sm:hidden">Report</span> {reportMd ? '📄' : ''}
-              </button>
+              {[
+                { key: 'workspace', label: 'Workspace', short: 'Lab' },
+                { key: 'chat', label: 'Chat', short: 'Chat' },
+                { key: 'report', label: 'Report', short: 'Report', icon: reportMd ? '📄' : '' },
+              ].map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  aria-pressed={activeTab === t.key}
+                  className={`px-2 sm:px-3 py-1 rounded-lg transition-all min-h-[32px] whitespace-nowrap ${
+                    activeTab === t.key
+                      ? 'bg-[#1E293B] text-cyan-400 font-semibold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="hidden sm:inline">{t.label}</span>
+                  <span className="sm:hidden">{t.short}</span>
+                  {t.icon ? ` ${t.icon}` : ''}
+                </button>
+              ))}
             </div>
           )}
 
@@ -376,8 +336,22 @@ export default function ResearchChatWorkspace({
           </div>
         )}
 
-        {/* CONVERSATIONAL CHAT FEED */}
-        {activeTab === 'research' && (
+        {/* STRUCTURED RESEARCH WORKSPACE — primary view for an active study */}
+        {activeTab === 'workspace' && activeProject && (
+          <ResearchWorkspace
+            project={activeProject}
+            datasetReport={datasetReport}
+            baselines={baselines}
+            treeNodes={treeNodes}
+            errorAnalysis={errorAnalysis}
+            literature={literature}
+            reportMd={reportMd}
+            onControl={handleControl}
+          />
+        )}
+
+        {/* CONVERSATIONAL CHAT FEED (intake + follow-ups) */}
+        {activeTab === 'chat' && (
           <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:p-6 space-y-6 max-w-3xl mx-auto w-full min-w-0 font-sans">
 
             {/* INITIAL WELCOME MESSAGE IF BRAND NEW CHAT */}
@@ -455,158 +429,38 @@ export default function ResearchChatWorkspace({
               </div>
             ))}
 
-            {/* ACTIVE RESEARCH PROGRESS BLOCK IF PROJECT IS RUNNING */}
+            {/* SLIM POINTER TO THE STRUCTURED WORKSPACE. The full pipeline,
+                experiment cards, analysis and report live in the Workspace tab
+                (ResearchWorkspace) — not in a giant chat bubble. */}
             {activeProject && (
-              <div className="w-full min-w-0 bg-[#121722] border border-[#1E293B] rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 overflow-wrap-anywhere">
-
-                {/* INLINE CONVERSATIONAL PROGRESS TRACKER */}
-                <div className="bg-[#0B0F17] border border-[#1E293B] rounded-xl p-3 sm:p-4 space-y-3">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-200 border-b border-[#1E293B] pb-2">
-                    <span className="flex items-center gap-2">
-                      <span>🔬</span>
-                      <span>{isCompleted ? 'Research Completed' : 'Researching...'}</span>
-                    </span>
-                    {isRunning && <span className="text-cyan-400 animate-pulse text-[11px]">Executing...</span>}
-                  </div>
-                  <div className="space-y-1 text-xs" aria-label="Research pipeline progress">
-                    {progressItems.map((item, index) => (
-                      <React.Fragment key={item.key}>
-                        <div className="flex items-center gap-2.5 min-h-5">
-                          {item.state === 'COMPLETED' ? (
-                            <span className="text-emerald-400 font-bold" aria-label="completed">✓</span>
-                          ) : item.state === 'RUNNING' ? (
-                            <span className="text-cyan-400 animate-spin font-bold" aria-label="running">●</span>
-                          ) : item.state === 'FAILED' ? (
-                            <span className="text-rose-400 font-bold" aria-label="failed">!</span>
-                          ) : (
-                            <span className="text-slate-600" aria-label="waiting">○</span>
-                          )}
-                          <span className={item.state === 'COMPLETED' ? 'text-slate-200' : item.state === 'RUNNING' ? 'text-cyan-400 font-semibold' : item.state === 'FAILED' ? 'text-rose-300' : 'text-slate-500'}>
-                            {item.label}
-                          </span>
-                        </div>
-                        {index < progressItems.length - 1 && <div className="pl-1.5 h-3 text-slate-600 leading-3" aria-hidden="true">↓</div>}
-                      </React.Fragment>
-                    ))}
+              <div className="w-full min-w-0 bg-[#121722] border border-[#1E293B] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3 overflow-wrap-anywhere">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-lg shrink-0">🔬</span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-200">
+                      {isCompleted ? 'Research complete' : isRunning ? 'Research in progress…' : 'Research paused'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 break-words overflow-wrap-anywhere">
+                      {completionSummary}
+                    </div>
                   </div>
                 </div>
-
-                {/* STEP 1: DATASET ANALYSIS DISCOVERY */}
-                {datasetReport && (
-                  <div className="space-y-2 border-b border-[#1E293B]/60 pb-4 text-xs text-slate-300 leading-relaxed min-w-0">
-                    <p>
-                      I've loaded the dataset{' '}
-                      <span className="font-semibold text-slate-100 break-all">{datasetReport.repoId || datasetReport.filename}</span>.
-                      It contains about{' '}
-                      <span className="font-semibold text-slate-100">{(datasetReport.rowCount || 0).toLocaleString()}</span> records
-                      with <span className="font-semibold text-slate-100">{(datasetReport.columnCount || 0) - 1}</span> features.
-                    </p>
-                    {datasetReport.targetCandidate && (
-                      <p>
-                        The thing I'm predicting is{' '}
-                        <span className="font-semibold text-slate-100 break-all">{datasetReport.targetCandidate}</span>.
-                        {datasetReport.minorityClassPct != null && (
-                          <> The positive class makes up only{' '}
-                            <span className="font-semibold text-amber-300">{datasetReport.minorityClassPct}%</span> of the data.</>
-                        )}
-                      </p>
-                    )}
-                    {datasetReport.isImbalanced && (
-                      <p className="text-slate-400">
-                        That's highly imbalanced, so plain accuracy would be misleading — I'll judge the models on
-                        recall and PR-AUC instead.
-                      </p>
-                    )}
-                    {(datasetReport.license || datasetReport.sourceUrl) && (
-                      <p className="text-[11px] text-slate-500 break-all">
-                        Source: {datasetReport.source || 'dataset'}
-                        {datasetReport.license && <> · License: {datasetReport.license}</>}
-                        {datasetReport.revision && <> · Version: {String(datasetReport.revision).slice(0, 8)}</>}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* STEP 2: BASELINE RESULTS CARD */}
-                {bestBaseline && (
-                  <div className="space-y-3 border-b border-[#1E293B]/60 pb-4 min-w-0">
-                    <p className="text-xs text-slate-300">
-                      I've tested the first models. The strongest starting point was{' '}
-                      <span className="font-semibold text-slate-100 break-all">{bestBaseline.name}</span>.
-                    </p>
-
-                    <div className="bg-[#0B0F17] border border-[#1E293B] rounded-xl p-3 sm:p-4 space-y-3">
-                      <div className="text-xs font-semibold text-slate-300">First model results</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                        <MetricTile label="Precision" value={pct(bm.precision)} />
-                        <MetricTile label="Recall" value={pct(bm.recall)} highlight />
-                        <MetricTile label="F1 Score" value={pct(bm.f1)} />
-                        <MetricTile label="PR-AUC" value={pct(bm.pr_auc)} />
-                      </div>
-                      {isFraudTask && (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
-                          <MetricTile label="ROC-AUC" value={pct(bm.roc_auc)} />
-                          <MetricTile label="False Positive Rate" value={pct(bm.fpr)} />
-                          <MetricTile label="False Negative Rate" value={pct(bm.fnr)} />
-                        </div>
-                      )}
-                      <div className="text-[11px] text-slate-400 pt-1 italic space-y-1">
-                        <p>💡 <span className="font-medium text-slate-300">Recall</span> = how many of the actual fraud cases the model caught. <span className="font-medium text-slate-300">Precision</span> = how many of its fraud alerts were real.</p>
-                        <p>Because fraud is rare here, plain accuracy would look deceptively high — so I focus on PR-AUC and recall instead.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 3: EXPERIMENTS */}
-                {treeNodes.length > 1 && (
-                  <div className="space-y-2 border-b border-[#1E293B]/60 pb-4 text-xs text-slate-300 min-w-0">
-                    <p className="font-semibold text-slate-200">
-                      I've tested {treeNodes.length - 1} additional research approaches:
-                    </p>
-                    <div className="space-y-1.5 min-w-0">
-                      {treeNodes.filter(n => n.parentId !== null).map((node, idx) => (
-                        <div key={node.id} className="p-3 rounded-xl bg-[#0B0F17] border border-[#1E293B] flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 min-w-0">
-                          <span className="min-w-0 break-words">Approach #{idx + 1}: {node.title}</span>
-                          <span className="text-emerald-400 font-semibold shrink-0">{node.metricName} = {node.metricValue}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* FINAL COMPLETION SUMMARY */}
-                {isCompleted && (
-                  <div className="bg-[#0D1520] border border-cyan-500/30 rounded-xl p-3 sm:p-4 space-y-3">
-                    <p className="text-xs text-slate-200 leading-relaxed">
-                      Research complete. {completionSummary} I've prepared the complete research report for you.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        onClick={() => setShowTechnicalDetails(true)}
-                        className="px-3.5 py-2 min-h-[38px] rounded-xl bg-[#1A2232] hover:bg-[#253147] text-slate-200 border border-[#2B364A] font-semibold text-xs transition-all cursor-pointer"
-                      >
-                        🔍 View findings
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('report')}
-                        className="px-3.5 py-2 min-h-[38px] rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md transition-all cursor-pointer"
-                      >
-                        📄 View report
-                      </button>
-                      <button
-                        onClick={() => {
-                          const input = document.querySelector('input[placeholder*="Ask AI Scientist"]');
-                          if (input) input.focus();
-                        }}
-                        className="px-3.5 py-2 min-h-[38px] rounded-xl bg-[#131822] hover:bg-[#1C2536] text-slate-300 border border-[#212B3B] text-xs transition-all cursor-pointer"
-                      >
-                        💬 Ask a follow-up
-                      </button>
-                    </div>
-                  </div>
-                )}
-
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setActiveTab('workspace')}
+                    className="px-3.5 py-2 min-h-[38px] rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md transition-all cursor-pointer"
+                  >
+                    Open workspace
+                  </button>
+                  {isCompleted && (
+                    <button
+                      onClick={() => setActiveTab('report')}
+                      className="px-3.5 py-2 min-h-[38px] rounded-xl bg-[#1A2232] hover:bg-[#253147] text-slate-200 border border-[#2B364A] font-semibold text-xs transition-all cursor-pointer"
+                    >
+                      📄 Report
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -648,8 +502,9 @@ export default function ResearchChatWorkspace({
           </div>
         )}
 
-        {/* BOTTOM CHAT INPUT BAR */}
-        {activeTab === 'research' && (
+        {/* BOTTOM CHAT INPUT BAR — available in both the Workspace and Chat tabs
+            so follow-up questions never require leaving the research view. */}
+        {(activeTab === 'chat' || activeTab === 'workspace') && (
           <div
             className="px-3 py-3 sm:p-4 border-t border-[#1E293B] bg-[#0D111A] shrink-0 min-w-0"
             style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
@@ -799,15 +654,6 @@ function Meta({ label, value }) {
     <div className="p-2 rounded-lg bg-[#121722] border border-[#212B3B] min-w-0">
       <div className="text-slate-500 text-[9px] uppercase tracking-wide">{label}</div>
       <div className="text-slate-200 font-medium truncate" title={String(value)}>{value}</div>
-    </div>
-  );
-}
-
-function MetricTile({ label, value, highlight }) {
-  return (
-    <div className="p-2.5 rounded-lg bg-[#121722] border border-[#212B3B] min-w-0">
-      <div className="text-slate-400 text-[10px] truncate" title={label}>{label}</div>
-      <div className={`text-sm font-bold ${highlight ? 'text-cyan-400' : 'text-slate-100'}`}>{value}</div>
     </div>
   );
 }
