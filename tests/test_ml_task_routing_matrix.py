@@ -63,3 +63,22 @@ def test_borderline_ml_request_answers_and_offers_dataset_search(isolate_store):
     assert response["action"] == "NONE"
     assert "Want me to search for datasets for this?" in response["response"]
     assert "I'll look for datasets" not in response["response"]
+
+
+@pytest.mark.parametrize("goal,expected_terms", [
+    ("Improve credit-card fraud detection", ("fraud-risk", "PR-AUC", "baseline")),
+    ("Predict customer churn", ("future time window", "prediction date", "time-aware")),
+    ("predict house prices", ("regression", "sale or listing price", "MAE")),
+    ("detect spam emails", ("text-classification", "TF-IDF", "F1")),
+])
+def test_research_start_gives_goal_specific_answer_before_dataset_search(isolate_store, goal, expected_terms):
+    """Regression for the former one-line RESEARCH_START dataset stub."""
+    result = handle_intent_message(goal, session_id=f"research-brief-{goal}")
+    assert result["intent"] == "RESEARCH_START"
+    assert result["action"] == "NONE"
+    assert result["pendingAction"]["type"] == "START_RESEARCH"
+    assert "Want me to search for datasets for this?" in result["response"]
+    assert "I'll look for datasets that could help" not in result["response"]
+    assert all(term in result["response"] for term in expected_terms)
+    # Guidance has several meaningful sentences before the follow-up offer.
+    assert result["response"].count(". ") >= 3

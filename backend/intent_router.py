@@ -252,6 +252,63 @@ def _grounded_followup(message: str, best_metric: str, completed: List[Dict[str,
         f"makes, or the next experiment and I'll answer from those results."
     )
 
+
+def _research_start_brief(goal: str) -> str:
+    """Return a goal-specific first-step answer before dataset discovery.
+
+    This is intentionally deterministic so RESEARCH_START stays substantive
+    when an LLM provider is unavailable.
+    """
+    text = (goal or "").lower()
+    if any(term in text for term in ("fraud", "anomaly", "fraudulent")):
+        return (
+            "This is a binary fraud-risk task: the target is whether a transaction or account is truly fraudulent. "
+            "Fraud is usually rare, so check label quality and leakage, use a stratified split, and prioritize PR-AUC plus recall at an operational threshold. "
+            "Start with a logistic-regression or tree baseline before tuning more complex models. "
+            "Want me to search for datasets for this?"
+        )
+    if any(term in text for term in ("churn", "retention", "customer attrition")):
+        return (
+            "Customer churn means predicting whether a customer will leave within a clearly defined future time window. "
+            "Set that horizon first, exclude information recorded after the prediction date, and inspect class balance and missingness across customer segments. "
+            "Start with a time-aware split and a simple baseline using tenure, usage, support, and billing features. "
+            "Want me to search for datasets for this?"
+        )
+    if any(term in text for term in ("house price", "housing price", "real estate", "price prediction", "pricing")):
+        return (
+            "This is a regression task whose target is the sale or listing price for each property. "
+            "Check skewed prices, location effects, missing property attributes, and whether a log transform stabilizes errors. "
+            "Begin with a median-price baseline, then compare regularized linear and tree models with MAE and RMSE. "
+            "Want me to search for datasets for this?"
+        )
+    if any(term in text for term in ("spam", "email", "text", "nlp", "sentiment")):
+        return (
+            "This is a text-classification task: the target is the message label, such as spam versus legitimate email. "
+            "Deduplicate near-identical messages before splitting and inspect label balance and leakage in headers or metadata. "
+            "A strong first baseline is TF-IDF features with logistic regression, measured with precision, recall, and F1. "
+            "Want me to search for datasets for this?"
+        )
+    if any(term in text for term in ("forecast", "time series", "demand", "sales", "temperature")):
+        return (
+            "This is a forecasting task: the target is a future value at a defined prediction horizon. "
+            "Keep data ordered in time, use only information available at prediction time, and validate with rolling time-based splits. "
+            "Compare a seasonal-naive forecast with a simple regression or gradient-boosting baseline using lagged features. "
+            "Want me to search for datasets for this?"
+        )
+    if any(term in text for term in ("classif", "detect", "predict", "label")):
+        return (
+            "This appears to be a supervised classification task, where the target is the outcome label you want to predict. "
+            "Define that label and its decision cost, then check data quality, class balance, and leakage before making a stratified validation split. "
+            "Use a simple interpretable baseline to establish a reliable metric before trying more complex models. "
+            "Want me to search for datasets for this?"
+        )
+    return (
+        f"For “{goal}”, first define the prediction target, the unit of observation, and how success will be measured. "
+        "Check data quality and leakage, then create a validation split that matches how the model will be used. "
+        "A simple baseline should establish a trustworthy reference point before tuning or complex modeling. "
+        "Want me to search for datasets for this?"
+    )
+
 CONFIRMATION_PHRASES = [
     "yes", "yes do it", "do it", "go ahead", "sure", "okay", "ok",
     "continue", "continue please", "let's do it", "lets do it", "start",
@@ -2000,18 +2057,39 @@ def _handle_intent_message_impl(
             "lastTopic": last_topic
         }
 
-    # 8. RESEARCH_START / DATASET_RESEARCH. Both reuse the established
-    # dataset-selection flow, while preserving why the capability was selected.
-    elif intent in ("RESEARCH_START", "DATASET_RESEARCH"):
+    # 8. RESEARCH_START: provide a useful modeling answer before asking for
+    # permission to begin discovery. This makes the core research path as
+    # substantive as every other intent, even without an LLM provider.
+    elif intent == "RESEARCH_START":
+        from backend.hf_datasets import parse_hf_reference
+        topic = message.strip()
+        hf_ref = parse_hf_reference(message)
+        clean_goal = re.sub(r"https?://\S+", "", topic).strip() or topic
+        store.set_pending_action(sid, "START_RESEARCH", topic=clean_goal, query=clean_goal)
+
+        resp_text = _research_start_brief(clean_goal)
+        store.update_session(sid, {"last_assistant_message": resp_text})
+
+        return {
+            "intent": intent,
+            "response": resp_text,
+            "action": "NONE",
+            "researchQuery": clean_goal,
+            "hfRef": hf_ref,
+            "projectId": None,
+            "pendingAction": store.get_session(sid).get("pending_action"),
+            "lastTopic": clean_goal
+        }
+
+    # A direct dataset request is already explicit approval to search.
+    elif intent == "DATASET_RESEARCH":
         from backend.hf_datasets import parse_hf_reference
         topic = message.strip()
         hf_ref = parse_hf_reference(message)
         clean_goal = re.sub(r"https?://\S+", "", topic).strip() or topic
         store.update_session(sid, {"last_topic": clean_goal, "pending_action": None})
-
         resp_text = f"I'll look for datasets that could help with: {clean_goal}"
         store.update_session(sid, {"last_assistant_message": resp_text})
-
         return {
             "intent": intent,
             "response": resp_text,

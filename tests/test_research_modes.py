@@ -165,15 +165,34 @@ def _stub_launch(monkeypatch, pid="proj-autotest"):
     monkeypatch.setattr("backend.main._approve_dataset", fake_approve)
 
 
+def _confirm_research_start(api_client, conversation_id, mode):
+    """RESEARCH_START gives goal-specific guidance before discovery runs."""
+    offer = api_client.post("/api/chat", json={
+        "message": "Train a fraud detection model", "conversationId": conversation_id,
+        "requestId": f"req-{conversation_id}-offer", "messageId": f"msg-{conversation_id}-offer",
+        "researchMode": mode,
+    })
+    assert offer.status_code == 200
+    offer_body = offer.json()
+    assert offer_body["intent"] == "RESEARCH_START"
+    assert offer_body["action"] == "NONE"
+    assert "binary fraud-risk task" in offer_body["response"]
+    assert "Want me to search for datasets for this?" in offer_body["response"]
+    assert offer_body["pendingAction"]["type"] == "START_RESEARCH"
+
+    confirmed = api_client.post("/api/chat", json={
+        "message": "yes", "conversationId": conversation_id,
+        "requestId": f"req-{conversation_id}-confirm", "messageId": f"msg-{conversation_id}-confirm",
+        "researchMode": mode,
+    })
+    assert confirmed.status_code == 200
+    return confirmed
+
+
 def test_autonomous_mode_selects_and_continues(api_client, monkeypatch):
     _stub_hf(monkeypatch, scores=(62, 30))
     _stub_launch(monkeypatch, pid="proj-autotest")
-    r = api_client.post("/api/chat", json={
-        "message": "Train a fraud detection model", "conversationId": "conv-auto",
-        "requestId": "req-auto-1", "messageId": "msg-auto-1",
-        "researchMode": "AUTONOMOUS",
-    })
-    assert r.status_code == 200
+    r = _confirm_research_start(api_client, "conv-auto", "AUTONOMOUS")
     body = r.json()
     # NOT stopped at the recommendation gate — the pipeline actually launched.
     assert body["action"] == "START_RESEARCH"
@@ -187,20 +206,16 @@ def test_autonomous_mode_selects_and_continues(api_client, monkeypatch):
     assert ("DATASET_SEARCH", "completed") in stages
     assert ("DATASET_EVALUATION", "completed") in stages
     assert ("DATASET_SELECTED", "completed") in stages
-    assert all(("WAITING_FOR_USER",) != (e["stage"],) for e in body["activity"])
+    assert all(e["stage"] != "WAITING_FOR_USER" for e in body["activity"])
     for e in body["activity"]:
-        assert e["requestId"] == "req-auto-1"
+        assert e["requestId"] == "req-conv-auto-confirm"
         assert e["jobId"]
         assert e["label"] and e["timestamp"]
 
 
 def test_guided_mode_still_pauses_for_approval(api_client, monkeypatch):
     _stub_hf(monkeypatch, scores=(62, 30))
-    r = api_client.post("/api/chat", json={
-        "message": "Train a fraud detection model", "conversationId": "conv-guided",
-        "requestId": "req-guided-1", "messageId": "msg-guided-1",
-        "researchMode": "GUIDED",
-    })
+    r = _confirm_research_start(api_client, "conv-guided", "GUIDED")
     body = r.json()
     assert body["action"] == "RECOMMEND_DATASETS"
     # Guided pause = dataset cards awaiting explicit user approval; the
@@ -213,11 +228,7 @@ def test_guided_mode_still_pauses_for_approval(api_client, monkeypatch):
 
 def test_autonomous_mode_asks_when_candidates_are_close(api_client, monkeypatch):
     _stub_hf(monkeypatch, scores=(55, 53))
-    r = api_client.post("/api/chat", json={
-        "message": "Train a fraud detection model", "conversationId": "conv-tie",
-        "requestId": "req-tie-1", "messageId": "msg-tie-1",
-        "researchMode": "AUTONOMOUS",
-    })
+    r = _confirm_research_start(api_client, "conv-tie", "AUTONOMOUS")
     body = r.json()
     # §14: no arbitrary selection on a near-tie — pause with the comparison.
     assert body["action"] == "RECOMMEND_DATASETS"
@@ -229,11 +240,7 @@ def test_autonomous_mode_asks_when_candidates_are_close(api_client, monkeypatch)
 def test_dataset_search_failure_is_honest(api_client, monkeypatch):
     from backend import hf_datasets as hf
     monkeypatch.setattr(hf, "search_datasets", lambda goal, limit=6: (_ for _ in ()).throw(RuntimeError("HF unreachable")))
-    r = api_client.post("/api/chat", json={
-        "message": "Train a fraud detection model", "conversationId": "conv-fail",
-        "requestId": "req-fail-1", "messageId": "msg-fail-1",
-        "researchMode": "AUTONOMOUS",
-    })
+    r = _confirm_research_start(api_client, "conv-fail", "AUTONOMOUS")
     body = r.json()
     assert "Dataset search failed" in body["response"]
     assert body["action"] != "START_RESEARCH"
