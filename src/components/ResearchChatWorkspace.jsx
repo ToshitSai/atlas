@@ -23,6 +23,7 @@ export default function ResearchChatWorkspace({
   onApproveDataset,
   isApproving,
   conversationId: propsConversationId,
+  onConversationUpdated,
   onOpenMenu
 }) {
   const [activeTab, setActiveTab] = useState('chat'); // 'workspace' | 'chat' | 'report'
@@ -173,6 +174,7 @@ export default function ResearchChatWorkspace({
         { id: `${userMessageId}-error`, requestId, responseToMessageId: userMessageId, role: 'assistant', content: `Sorry, I ran into an error: ${err.message}` }
       ]);
     } finally {
+      await onConversationUpdated?.();
       inFlightRequests.current.delete(requestId);
       setActiveRequests(previous => {
         const next = { ...previous };

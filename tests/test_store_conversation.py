@@ -48,3 +48,27 @@ def test_sessions_are_isolated(isolate_store):
     assert isolate_store.get_messages("a")[0]["content"] == "hello A"
     assert isolate_store.get_messages("b")[0]["content"] == "hello B"
     assert len(isolate_store.get_messages("a")) == 1
+
+
+def test_conversation_list_is_persisted_and_titled_from_first_user_message(isolate_store):
+    """Regression: a completed exchange is a durable sidebar chat after reload."""
+    sid = "conv-sidebar"
+    isolate_store.record_message(sid, "user", "Improve fraud detection with a robust baseline")
+    isolate_store.record_message(sid, "assistant", "Start with a stratified validation split.")
+
+    chats = isolate_store.list_conversations()
+    assert len(chats) == 1
+    assert chats[0]["id"] == sid
+    assert chats[0]["title"] == "Improve fraud detection with a robust baseline"
+    assert chats[0]["messageCount"] == 2
+
+    # The file backend is the same persistent storage read by a new page/tab.
+    # The shared fixture disables automatic file writes, so persist explicitly.
+    isolate_store._save_file()
+    from database.store import ResearchStore
+    reloaded = ResearchStore(isolate_store.filepath)
+    assert reloaded.list_conversations()[0]["id"] == sid
+    assert [m["content"] for m in reloaded.get_messages(sid)] == [
+        "Improve fraud detection with a robust baseline",
+        "Start with a stratified validation split.",
+    ]

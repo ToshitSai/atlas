@@ -63,6 +63,14 @@ export async function fetchConversationMessages(conversationId) {
   }
 }
 
+export async function fetchConversations() {
+  try {
+    return await safeFetchJson(`${API_BASE}/conversations`);
+  } catch (err) {
+    return [];
+  }
+}
+
 export async function fetchProjects() {
   try {
     return await safeFetchJson(`${API_BASE}/projects`);

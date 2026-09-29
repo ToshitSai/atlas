@@ -11,8 +11,11 @@ import AutoMLScientistLogo from './AutoMLScientistLogo';
  */
 export default function Sidebar({
   projects,
+  conversations = [],
   activeProject,
   setActiveProject,
+  activeConversationId,
+  onSelectConversation,
   onNewResearch,
   onOpenSettings,
   isMobileOpen = false,
@@ -23,6 +26,9 @@ export default function Sidebar({
   const filteredProjects = projects.filter(p =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.objective.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredConversations = conversations.filter(c =>
+    (c.title || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Group projects by recency
@@ -89,6 +95,22 @@ export default function Sidebar({
     );
   };
 
+  const renderConversationItem = (conversation) => {
+    const isSelected = activeConversationId === conversation.id && !activeProject;
+    return (
+      <button
+        key={conversation.id}
+        onClick={() => onSelectConversation?.(conversation)}
+        className={`w-full text-left px-3 py-2.5 min-h-[44px] rounded-lg transition-all text-xs flex items-center justify-between gap-2 ${
+          isSelected ? 'bg-[#1E293B] text-slate-100 border border-slate-700/60 font-medium' : 'text-slate-400 hover:text-slate-200 hover:bg-[#161B26]'
+        }`}
+      >
+        <span className="truncate min-w-0 flex-1" title={conversation.title}>{conversation.title || 'Untitled research chat'}</span>
+        <span className="shrink-0 text-[10px] text-slate-500">{conversation.messageCount || 0}</span>
+      </button>
+    );
+  };
+
   const sidebarBody = (
     <>
       {/* Top Header & Actions */}
@@ -140,12 +162,18 @@ export default function Sidebar({
 
       {/* Scrollable Project History */}
       <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-4">
-        {projects.length === 0 ? (
+        {projects.length === 0 && filteredConversations.length === 0 ? (
           <div className="py-12 text-center text-xs text-slate-500 italic">
             No research chats yet
           </div>
         ) : (
           <>
+            {filteredConversations.length > 0 && (
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold px-2 mb-1.5">Research chats</div>
+                <div className="space-y-1">{filteredConversations.map(renderConversationItem)}</div>
+              </div>
+            )}
             {['today', 'yesterday', 'earlier'].map((g) =>
               groups[g].length > 0 ? (
                 <div key={g}>

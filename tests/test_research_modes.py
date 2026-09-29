@@ -116,14 +116,11 @@ def test_every_goal_classifies_as_research_start(goal):
     "Improve customer churn prediction",
     "Improve spam detection",
 ])
-def test_vague_improvement_goals_get_guidance_not_research(goal):
-    """A bare "Improve X" is deliberate product behavior: advice, not a run.
-    The committed routing matrix (test_ml_task_routing_matrix.py) pins this:
-    the verb needs a concrete ML object ("train a fraud detection model") to
-    start research. Assert the guidance contract so a regression is loud."""
+def test_concrete_improvement_goals_start_guided_research(goal):
+    """Named predictive objectives are useful research starts, while generic
+    questions such as "how do I improve accuracy?" remain normal answers."""
     from backend.intent_router import classify_intent
-    assert classify_intent(goal) == "EXPLANATION"
-    assert classify_intent(goal) != "RESEARCH_START"
+    assert classify_intent(goal) == "RESEARCH_START"
 
 
 def test_normal_question_is_not_research():

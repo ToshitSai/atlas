@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import ResearchStartScreen from './components/ResearchStartScreen';
 import ResearchChatWorkspace from './components/ResearchChatWorkspace';
 import SettingsModal from './components/SettingsModal';
-import { fetchProjects, fetchProjectDetails, sendChatMessage, fetchSettings, approveDataset, fetchConversationMessages } from './api';
+import { fetchProjects, fetchProjectDetails, sendChatMessage, fetchSettings, approveDataset, fetchConversationMessages, fetchConversations } from './api';
 
 // One conversation per project so the FIRST message (sent from the start
 // screen) and every workspace follow-up share the same server-side memory.
@@ -25,6 +25,7 @@ function getConversationId(projectId) {
 
 export default function App() {
   const [projects, setProjects] = useState([]);
+  const [conversations, setConversations] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -67,6 +68,11 @@ export default function App() {
     setProjects(list);
   };
 
+  const loadConversations = async () => {
+    const list = await fetchConversations();
+    setConversations(list);
+  };
+
   const loadSysSettings = async () => {
     const s = await fetchSettings();
     setDockerReady(s.dockerAvailable || false);
@@ -76,8 +82,9 @@ export default function App() {
 
   useEffect(() => {
     loadProjects();
+    loadConversations();
     loadSysSettings();
-    const interval = setInterval(loadProjects, 3000);
+    const interval = setInterval(() => { loadProjects(); loadConversations(); }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -107,6 +114,7 @@ export default function App() {
     // id so follow-ups keep the same memory.
     const convId = conversationId || createConversationId();
     setConversationId(convId);
+    try { localStorage.setItem('ai-scientist-active-conversation', convId); } catch (e) { /* private mode */ }
 
     try {
       const res = await sendChatMessage(userText, activeProject?.id, convId, null, null, {
@@ -145,6 +153,7 @@ export default function App() {
         { id: userMessageId + '-error', requestId, responseToMessageId: userMessageId, role: 'assistant', content: `Error: ${err.message}` }
       ]);
     } finally {
+      await loadConversations();
       setIsLaunching(false);
     }
   };
@@ -162,9 +171,6 @@ export default function App() {
       if (res.project) {
         const projId = res.project.id;
         setActiveProject(res.project);
-        // Rebind the conversation to the new project so follow-ups about the
-        // study share the pre-approval chat context.
-        setConversationId(getConversationId(projId));
         await loadProjects();
       }
     } catch (err) {
@@ -173,7 +179,25 @@ export default function App() {
         { id: Date.now() + 2, role: 'assistant', content: `Sorry, I couldn't load that dataset: ${err.message}` }
       ]);
     } finally {
+      await loadConversations();
       setIsApproving(false);
+    }
+  };
+
+  const handleSelectConversation = async (conversation) => {
+    setActiveProject(null);
+    setIsInChatWorkspace(true);
+    setConversationId(conversation.id);
+    try { localStorage.setItem('ai-scientist-active-conversation', conversation.id); } catch (e) { /* private mode */ }
+    setChatMessages([]);
+    try {
+      const msgs = await fetchConversationMessages(conversation.id);
+      setChatMessages((msgs || []).map(m => ({
+        id: m.id, role: m.role, content: m.content, intent: m.intent,
+        datasets: null, recommendation: null, researchQuery: null, activity: []
+      })));
+    } catch (e) {
+      setChatMessages([]);
     }
   };
 
@@ -207,7 +231,18 @@ export default function App() {
     setChatMessages([]);
     setIsInChatWorkspace(false);
     setConversationId(null);
+    try { localStorage.removeItem('ai-scientist-active-conversation'); } catch (e) { /* private mode */ }
   };
+
+  // Reopen the last selected persisted chat after a refresh. The list itself
+  // remains the source of truth, so a deleted/unavailable id is ignored.
+  useEffect(() => {
+    if (conversationId || activeProject || !conversations.length) return;
+    let savedId = null;
+    try { savedId = localStorage.getItem('ai-scientist-active-conversation'); } catch (e) { /* private mode */ }
+    const saved = conversations.find(item => item.id === savedId);
+    if (saved) handleSelectConversation(saved);
+  }, [conversations, conversationId, activeProject]);
 
   return (
     <div className="flex h-screen bg-[#0B0F17] text-slate-100 font-sans overflow-hidden">
@@ -215,8 +250,11 @@ export default function App() {
       {/* Sakana Chat Style Left Sidebar — desktop rail / mobile drawer */}
       <Sidebar
         projects={projects}
+        conversations={conversations}
         activeProject={activeProject}
         setActiveProject={handleSelectProject}
+        activeConversationId={conversationId}
+        onSelectConversation={handleSelectConversation}
         onNewResearch={handleNewResearchClick}
         onOpenSettings={() => setIsSettingsOpen(true)}
         dockerReady={dockerReady}
@@ -246,6 +284,7 @@ export default function App() {
             onApproveDataset={handleApproveDataset}
             isApproving={isApproving}
             conversationId={conversationId || getConversationId(activeProject?.id || 'general')}
+            onConversationUpdated={loadConversations}
             onOpenMenu={() => setIsSidebarOpen(true)}
           />
         )}

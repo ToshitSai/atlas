@@ -605,6 +605,48 @@ class ResearchStore:
         sess = self.get_session(sid)
         return sess.get("messages", [])
 
+    def list_conversations(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Return durable chat summaries, deriving a useful title when needed."""
+        if self.repo is not None and self._db_healthy:
+            try:
+                conversations = self.repo.list_conversations(limit=limit)
+                result = []
+                for conversation in conversations:
+                    if not conversation.get("messageCount"):
+                        continue
+                    messages = self.repo.get_messages(conversation["id"], limit=200)
+                    first_user = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
+                    result.append({**conversation, "title": conversation.get("title") or self._conversation_title(first_user)})
+                return result
+            except Exception as e:
+                print(f"[STORE DB WARNING]: {e}")
+                self._db_healthy = False
+
+        with self.lock:
+            summaries = []
+            for sid, session in self.data.get("sessions", {}).items():
+                messages = session.get("messages", [])
+                if not messages:
+                    continue
+                first_user = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
+                summaries.append({
+                    "id": sid,
+                    "title": self._conversation_title(first_user),
+                    "status": session.get("status"),
+                    "createdAt": messages[0].get("timestamp"),
+                    "updatedAt": messages[-1].get("timestamp"),
+                    "messageCount": len(messages),
+                })
+            summaries.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
+            return summaries[:limit]
+
+    @staticmethod
+    def _conversation_title(first_user_message: str) -> str:
+        compact = " ".join((first_user_message or "").split())
+        if not compact:
+            return "Untitled research chat"
+        return compact[:77].rstrip() + ("…" if len(compact) > 77 else "")
+
     def reconcile_stale_runs(self) -> List[str]:
         """Mark runs stuck in a non-terminal state as FAILED (startup reconciliation).
 

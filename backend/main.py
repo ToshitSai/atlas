@@ -500,29 +500,11 @@ async def chat_endpoint(payload: dict):
                     "response": f"I couldn't start that dataset run: {approve_err}",
                 })
 
-    # A safe, compact post-hoc work summary. It contains only completed,
-    # observable application actions — never model reasoning, prompts, or keys.
-    # Mode-aware discovery above may have already built REAL activity events
-    # (with stage/status per the event contract); those take precedence.
-    labels = None
-    if not res.get("activity"):
-        activity_by_intent = {
-            "MATHEMATICS": ["Understanding the problem", "Solving with the math tool", "Checking the result", "Preparing the explanation"],
-            "CURRENT_INFORMATION": ["Checking current information", "Verifying the result", "Preparing the answer"],
-            "CODING": ["Understanding requirements", "Writing the code", "Preparing the answer"],
-            "EXPLANATION": ["Understanding your question", "Preparing the answer"],
-            "ENTITY_INFORMATION": ["Understanding your question", "Preparing the answer"],
-        }
-        labels = activity_by_intent.get(res.get("intent"), ["Understanding your question", "Preparing the answer"])
-        if res.get("action") == "RECOMMEND_DATASETS":
-            labels = ["Understanding the research objective", "Searching datasets", "Preparing dataset options"]
-        elif res.get("action") == "START_RESEARCH":
-            labels = ["Understanding the research goal", "Selecting the dataset", "Starting the research pipeline"]
-    if labels:
-        res["activity"] = [{"id": f"{request_id or 'request'}-{i}", "label": label, "status": "completed"} for i, label in enumerate(labels)]
-    else:
-        for i, ev in enumerate(res.get("activity") or []):
-            ev.setdefault("id", f"{request_id or 'request'}-{i}")
+    # Activity is deliberately opt-in: it is shown only when this request
+    # produced observable pipeline/router events (for example dataset search).
+    # Do not fabricate a generic two-step "worked" log for a normal answer.
+    for i, ev in enumerate(res.get("activity") or []):
+        ev.setdefault("id", f"{request_id or 'request'}-{i}")
 
     store.record_message(
         conversation_id, "assistant", res.get("response", ""),
@@ -696,6 +678,12 @@ def datasets_approve(payload: dict):
 def get_conversation_messages(conversation_id: str):
     """Return the stored per-message history for a conversation (section 3)."""
     return store.get_messages(conversation_id)
+
+
+@app.get("/api/conversations")
+def list_conversations():
+    """List saved chats that have exchanged at least one message."""
+    return store.list_conversations()
 
 
 @app.post("/api/files/analyze")
