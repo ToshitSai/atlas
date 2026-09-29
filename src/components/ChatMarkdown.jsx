@@ -32,10 +32,11 @@ export default function ChatMarkdown({ content }) {
     flushBullets();
     if (!line.trim()) {
       nodes.push(<div className="h-2" key={`space-${index}`} />);
-    } else if (line.startsWith('### ')) {
-      nodes.push(<h5 className="font-semibold text-slate-100" key={index}>{inlineMarkdown(line.slice(4))}</h5>);
-    } else if (line.startsWith('## ')) {
-      nodes.push(<h4 className="font-semibold text-slate-100" key={index}>{inlineMarkdown(line.slice(3))}</h4>);
+    } else if (/^#{2,6}\s+/.test(line)) {
+      const heading = line.replace(/^#{2,6}\s+/, '');
+      const level = (line.match(/^#+/) || [''])[0].length;
+      const className = level <= 2 ? 'text-base' : level === 3 ? 'text-sm' : 'text-sm';
+      nodes.push(<h4 className={`${className} font-semibold text-slate-100`} key={index}>{inlineMarkdown(heading)}</h4>);
     } else if (/^-{3,}\s*$/.test(line)) {
       nodes.push(<hr className="my-3 border-slate-700" key={index} />);
     } else {
