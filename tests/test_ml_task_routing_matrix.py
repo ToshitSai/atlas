@@ -69,6 +69,7 @@ def test_borderline_ml_request_answers_and_offers_dataset_search(isolate_store):
     ("Improve credit-card fraud detection", ("transaction or account fraud", "PR-AUC", "Class-weighted")),
     ("Predict customer churn", ("future window", "post-churn leakage", "tenure")),
     ("predict house prices", ("regression", "sale or listing price", "MAE")),
+    ("predict employee attrition", ("supervised classification", "outcome label", "F1")),
     ("detect spam emails", ("text classification", "TF-IDF", "F1")),
 ])
 def test_research_start_gives_goal_specific_answer_before_dataset_search(isolate_store, goal, expected_terms):
