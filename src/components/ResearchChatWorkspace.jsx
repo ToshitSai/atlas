@@ -11,6 +11,7 @@ import {
 } from '../api';
 import ActivityPanel from './ActivityPanel';
 import ResearchWorkspace from './research/ResearchWorkspace';
+import { API_ORIGIN } from '../api';
 
 export default function ResearchChatWorkspace({
   activeProject,
@@ -478,7 +479,7 @@ export default function ResearchChatWorkspace({
                 </h3>
                 {reportMd && (
                   <a
-                    href={`/api/projects/${projectId}/report/download?fmt=md`}
+                    href={`${API_ORIGIN}/api/projects/${projectId}/report/download?fmt=md`}
                     download={`Research_Report_${projectId}.md`}
                     className="px-3 py-2 min-h-[36px] rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-medium transition-all inline-flex items-center"
                   >

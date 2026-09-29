@@ -1,4 +1,10 @@
-const API_BASE = '/api';
+// Backend origin. Same-origin '/api' by default (the Vercel rewrite -> the
+// serverless function). When VITE_API_BASE_URL is set (build-time), the UI
+// calls an always-on FastAPI host instead — required for full research runs,
+// because the serverless bundle deliberately excludes pandas/sklearn and a
+// 30s function limit cannot host a multi-minute training pipeline.
+const API_BASE = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api`;
+export const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 async function safeFetchJson(url, options = {}) {
   try {
