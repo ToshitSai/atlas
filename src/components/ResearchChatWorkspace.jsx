@@ -24,6 +24,7 @@ export default function ResearchChatWorkspace({
   isApproving,
   conversationId: propsConversationId,
   onConversationUpdated,
+  initialRequestStartedAt,
   onOpenMenu
 }) {
   const [activeTab, setActiveTab] = useState('chat'); // 'workspace' | 'chat' | 'report'
@@ -431,6 +432,12 @@ export default function ResearchChatWorkspace({
                 <ActivityPanel running startedAt={request.startedAt} />
               </div>
             ))}
+
+            {initialRequestStartedAt && (
+              <div className="w-full">
+                <ActivityPanel running startedAt={initialRequestStartedAt} />
+              </div>
+            )}
 
             {/* SLIM POINTER TO THE STRUCTURED WORKSPACE. The full pipeline,
                 experiment cards, analysis and report live in the Workspace tab

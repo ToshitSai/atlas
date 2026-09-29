@@ -4,9 +4,12 @@ import React, { useState } from 'react';
 export default function ActivityPanel({ activities = [], running = false, startedAt }) {
   const [expanded, setExpanded] = useState(running);
   const elapsed = startedAt ? Math.max(1, Math.round((Date.now() - startedAt) / 1000)) : null;
-  // A panel is evidence, not theatre. The caller supplies only actual
-  // pipeline/router events; there is intentionally no generic fallback.
-  const shown = activities;
+  // While a request is genuinely in flight, the UI can truthfully show its
+  // current client-side stage. Once it completes, only server-produced
+  // pipeline/router events remain — never a fabricated completed history.
+  const shown = running
+    ? [{ id: 'request-understanding', label: 'Understanding your question', status: 'running' }]
+    : activities;
   if (!shown.length) return null;
 
   const icon = (status) => status === 'completed' ? '✓' : status === 'failed' ? '!' : '●';

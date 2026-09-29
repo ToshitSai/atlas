@@ -30,6 +30,7 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [launchStartedAt, setLaunchStartedAt] = useState(null);
   const [isApproving, setIsApproving] = useState(false);
   const [dockerReady, setDockerReady] = useState(false);
   const [llmConfigured, setLlmConfigured] = useState(false);
@@ -103,6 +104,7 @@ export default function App() {
   const handleSendInitialChatMessage = async (userText) => {
     if (!userText.trim()) return;
     setIsLaunching(true);
+    setLaunchStartedAt(Date.now());
 
     const requestId = createConversationId();
     const userMessageId = createConversationId();
@@ -155,6 +157,7 @@ export default function App() {
     } finally {
       await loadConversations();
       setIsLaunching(false);
+      setLaunchStartedAt(null);
     }
   };
 
@@ -285,6 +288,7 @@ export default function App() {
             isApproving={isApproving}
             conversationId={conversationId || getConversationId(activeProject?.id || 'general')}
             onConversationUpdated={loadConversations}
+            initialRequestStartedAt={isLaunching ? launchStartedAt : null}
             onOpenMenu={() => setIsSidebarOpen(true)}
           />
         )}
