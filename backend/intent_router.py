@@ -1742,7 +1742,7 @@ def _handle_intent_message_impl(
         from backend.research_modes import make_activity
         job_id = f"deep-research-{sid}"
         activity = [
-            make_activity(None, job_id, "UNDERSTANDING", "completed", "Understood the research question"),
+            make_activity(None, job_id, "UNDERSTANDING", "completed", "Understood the research question", f"Research objective: {goal}"),
         ]
         try:
             from backend.deep_research import run_deep_research
@@ -1752,11 +1752,13 @@ def _handle_intent_message_impl(
             research = {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": []}
         subquery_count = len(research.get("subqueries") or [])
         if subquery_count:
-            activity.append(make_activity(None, job_id, "PLANNING", "completed", f"Planned {subquery_count} research searches"))
+            activity.append(make_activity(None, job_id, "PLANNING", "completed", "Planned research", f"Created {subquery_count} focused research searches"))
         if research.get("status") == "ok" and research.get("report"):
             activity.extend([
-                make_activity(None, job_id, "LITERATURE_SEARCH", "completed", f"Collected {research['sourceCount']} verifiable sources"),
-                make_activity(None, job_id, "REPORT", "completed", "Generated a sourced research report"),
+                make_activity(None, job_id, "LITERATURE_SEARCH", "completed", "Searched literature", f"Collected {research['sourceCount']} unique source records"),
+                make_activity(None, job_id, "EVIDENCE_SYNTHESIS", "completed", "Synthesized source evidence", "Built findings only from retrieved source snippets"),
+                make_activity(None, job_id, "VERIFICATION", "completed", "Verified source set", "Deduplicated sources by URL before reporting"),
+                make_activity(None, job_id, "REPORT", "completed", "Generated research report", "Prepared the final sourced report"),
                 make_activity(None, job_id, "COMPLETED", "completed", "Research completed"),
             ])
             resp_text = (

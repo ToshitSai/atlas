@@ -71,9 +71,12 @@ def test_deep_research_activity_contains_only_executed_stages(isolate_store, mon
     assert ("UNDERSTANDING", "completed") in stages
     assert ("PLANNING", "completed") in stages
     assert ("LITERATURE_SEARCH", "completed") in stages
+    assert ("EVIDENCE_SYNTHESIS", "completed") in stages
+    assert ("VERIFICATION", "completed") in stages
     assert ("REPORT", "completed") in stages
     assert ("COMPLETED", "completed") in stages
     assert not any(stage in {"BASELINE", "EVALUATION", "ERROR_ANALYSIS"} for stage, _ in stages)
+    assert all(event.get("detail") for event in result["activity"] if event["stage"] != "COMPLETED")
 
 
 def test_deep_research_failure_is_visible_not_fabricated(isolate_store, monkeypatch):
