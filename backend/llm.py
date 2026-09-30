@@ -15,7 +15,7 @@ import backend.config  # Auto-loads .env into os.environ
 # Per-provider socket timeout. ``LLM_TIMEOUT_SECONDS`` is the production name;
 # ``LLM_TIMEOUT`` remains a backwards-compatible development alias.
 _DEFAULT_TIMEOUT = max(1, int(os.environ.get(
-    "LLM_TIMEOUT_SECONDS", os.environ.get("LLM_TIMEOUT", "60"))))
+    "LLM_TIMEOUT_SECONDS", os.environ.get("LLM_TIMEOUT", "12"))))
 
 # A local model process normally handles only one or a few generations at a
 # time. Admission control is intentionally process-wide: a per-request pool
@@ -23,7 +23,7 @@ _DEFAULT_TIMEOUT = max(1, int(os.environ.get(
 # arrive at once. The pool is bounded too, so timed-out sockets cannot create
 # an unbounded number of Python threads.
 _MAX_CONCURRENT_REQUESTS = max(1, int(os.environ.get("MAX_CONCURRENT_LLM_REQUESTS", "2")))
-_QUEUE_TIMEOUT = max(0.05, float(os.environ.get("LLM_QUEUE_TIMEOUT_SECONDS", str(_DEFAULT_TIMEOUT))))
+_QUEUE_TIMEOUT = max(0.05, float(os.environ.get("LLM_QUEUE_TIMEOUT_SECONDS", "2")))
 _MAX_RETRIES = max(0, int(os.environ.get("MAX_RETRIES", "1")))
 _RETRY_BACKOFF = max(0.0, float(os.environ.get("LLM_RETRY_BACKOFF_SECONDS", "0.25")))
 _LLM_ADMISSION = threading.BoundedSemaphore(_MAX_CONCURRENT_REQUESTS)
@@ -344,10 +344,46 @@ _PROVIDER_KEY_ENV = {
     "mistral": "MISTRAL_API_KEY",
 }
 
+_selected_provider: contextvars.ContextVar = contextvars.ContextVar("selected_llm_provider", default="auto")
+
+
+def provider_from_setting(value: str) -> str:
+    """Map the UI's human-readable provider label to the dispatcher value."""
+    text = str(value or "").lower()
+    if "openai" in text:
+        return "openai"
+    if "anthropic" in text or "claude" in text:
+        return "anthropic"
+    if "gemini" in text:
+        return "gemini"
+    if "mistral" in text:
+        return "mistral"
+    return "auto"
+
+
+def set_selected_provider(value: str) -> None:
+    """Set this request's explicit provider without mutating global process state."""
+    _selected_provider.set(provider_from_setting(value))
+
+
+def configured_provider_names() -> List[str]:
+    return [name for name, env_name in _PROVIDER_KEY_ENV.items() if os.environ.get(env_name)]
+
+
+def effective_provider_label(setting: str = "") -> str:
+    """Secret-free, truthful label for the engine that the next request uses."""
+    selected = provider_from_setting(setting)
+    configured = configured_provider_names()
+    if selected != "auto":
+        return f"{selected.title()} (selected)" if selected in configured else f"{selected.title()} (selected, key unavailable)"
+    if configured:
+        return "Auto (" + ", ".join(name.title() for name in configured) + " configured)"
+    return "Rule-Based Synthesizer (no provider configured)"
+
 
 def any_provider_configured() -> bool:
     """True when at least one supported LLM provider has an API key in the env."""
-    return any(os.environ.get(env_name) for env_name in _PROVIDER_KEY_ENV.values())
+    return bool(configured_provider_names())
 
 
 # Per-request engine trace (Bug 5 disclosure): handlers that call query_llm and
@@ -419,6 +455,8 @@ def query_llm(
     _increment_telemetry(submitted=1)
     _trace_attempted()
     provider = (provider or "auto").lower()
+    if provider == "auto":
+        provider = _selected_provider.get() or "auto"
     if provider != "auto":
         # Explicit selection is strict (§15): only the requested provider is
         # called — no silent cross-provider fallback. Built at call time so

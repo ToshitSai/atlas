@@ -12,7 +12,6 @@ export default function SettingsModal({ isOpen, onClose }) {
     researchMode: 'GUIDED'
   });
 
-  const [apiKeyInput, setApiKeyInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -33,10 +32,7 @@ export default function SettingsModal({ isOpen, onClose }) {
     setMsg('');
 
     try {
-      const payload = {
-        ...settings,
-        apiKeySet: apiKeyInput.trim().length > 0 ? true : settings.apiKeySet
-      };
+      const payload = { ...settings };
       const res = await updateSettings(payload);
       if (res.settings) {
         setSettings(res.settings);
@@ -114,6 +110,9 @@ export default function SettingsModal({ isOpen, onClose }) {
               <option value="Anthropic Claude 3.5">Anthropic Claude 3.5 Sonnet</option>
               <option value="Ollama Local">Local Ollama LLM Endpoint</option>
             </select>
+            <p className="text-[10px] text-cyan-300 leading-relaxed">
+              Effective for the next request: {settings.llmEffectiveProvider || settings.llmProvider}
+            </p>
           </div>
 
           {/* OpenAI API Key */}
@@ -124,13 +123,9 @@ export default function SettingsModal({ isOpen, onClose }) {
                 {settings.apiKeySet ? '✓ Key Configured' : 'Not Configured'}
               </span>
             </label>
-            <input
-              type="password"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder={settings.apiKeySet ? '••••••••••••••••' : 'sk-...'}
-              className="w-full bg-[#0D111A] border border-[#212B3B] text-slate-200 rounded-lg p-2.5 font-mono focus:outline-none focus:border-cyan-500/50"
-            />
+            <p className="rounded-lg border border-[#212B3B] bg-[#0D111A] p-2.5 font-mono text-[10px] text-slate-400">
+              API keys are managed in the secure deployment environment. This screen never stores or transmits a key.
+            </p>
           </div>
 
           {/* Docker & Sandbox Info */}

@@ -175,15 +175,22 @@ def get_settings():
     from backend import llm as llm_mod
     env_keys = llm_mod.any_provider_configured()
     st["apiKeySet"] = bool(st.get("apiKeySet")) or env_keys
-    if env_keys and (not st.get("llmProvider") or st.get("llmProvider") == "Not configured"):
-        st["llmProvider"] = "Auto (provider API key detected)"
+    st["llmEffectiveProvider"] = llm_mod.effective_provider_label(st.get("llmProvider", ""))
     st["mlRuntimeAvailable"] = not hf.ml_runtime_missing()
     return st
 
 @app.post("/api/settings")
 def update_settings(payload: dict):
+    # A provider choice is stored as a preference; secrets remain deployment
+    # environment variables and are never accepted or persisted through this
+    # endpoint. Each chat applies the saved choice through a request-local
+    # context, so concurrent users cannot change one another's engine.
+    from backend import llm as llm_mod
     store.update_settings(payload)
-    return {"status": "ok", "settings": store.get_settings()}
+    st = store.get_settings()
+    st["apiKeySet"] = bool(st.get("apiKeySet")) or llm_mod.any_provider_configured()
+    st["llmEffectiveProvider"] = llm_mod.effective_provider_label(st.get("llmProvider", ""))
+    return {"status": "ok", "settings": st}
 
 @app.post("/api/chat")
 async def chat_endpoint(payload: dict, activity_callback=None):
@@ -227,6 +234,7 @@ async def chat_endpoint(payload: dict, activity_callback=None):
         mode_requested_in_message, selection_decision,
     )
     from backend import step_trace
+    llm_mod.set_selected_provider(store.get_settings().get("llmProvider", ""))
     llm_mod.begin_engine_trace()
 
     # Open the live step trace for this request. Real flows (deep research,
