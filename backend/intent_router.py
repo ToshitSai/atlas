@@ -754,6 +754,44 @@ _WEB_SEARCH_TRIGGERS = (
     "score of", "current affairs", "what happened today",
 )
 
+# A link to a major consumer platform is neither a research request nor a web
+# search.  Resolving these locally avoids accidental title matches such as
+# "Give Me Everything" when the user simply asks for YouTube.
+_KNOWN_SITE_LINKS = {
+    "github": ("GitHub", "https://github.com", "It is where people host and collaborate on code."),
+    "instagram": ("Instagram", "https://www.instagram.com", "It is a social platform for photos and short videos."),
+    "youtube": ("YouTube", "https://www.youtube.com", "It is a platform for watching and sharing videos."),
+    "google": ("Google", "https://www.google.com", "It is a search engine and web-services platform."),
+    "wikipedia": ("Wikipedia", "https://www.wikipedia.org", "It is a free online encyclopedia."),
+    "facebook": ("Facebook", "https://www.facebook.com", "It is a social-networking platform."),
+    "twitter": ("X", "https://x.com", "It is the social platform formerly known as Twitter."),
+    "x.com": ("X", "https://x.com", "It is the social platform formerly known as Twitter."),
+    "linkedin": ("LinkedIn", "https://www.linkedin.com", "It is a professional networking platform."),
+    "amazon": ("Amazon", "https://www.amazon.com", "It is an online shopping and cloud-services company."),
+    "netflix": ("Netflix", "https://www.netflix.com", "It is a streaming service for films and television."),
+    "reddit": ("Reddit", "https://www.reddit.com", "It is a collection of community discussion forums."),
+}
+_SITE_LINK_LANGUAGE_RE = re.compile(
+    r"\b(?:url|link|website|site|open|take me to|go to|visit)\b", re.IGNORECASE
+)
+
+
+def _known_site_link_request(message: str) -> Optional[tuple]:
+    """Return a curated official site triple for natural link-request wording."""
+    text = (message or "").lower()
+    if not _SITE_LINK_LANGUAGE_RE.search(text):
+        return None
+    for alias, site in _KNOWN_SITE_LINKS.items():
+        if re.search(rf"(?<![\w.-]){re.escape(alias)}(?![\w.-])", text):
+            return site
+    return None
+
+
+def _official_site_answer(site: tuple) -> str:
+    name, url, description = site
+    display = url.removeprefix("https://").removeprefix("www.")
+    return f"The official URL for {name} is [{display}]({url}). {description}"
+
 # --------------------------------------------------------------------------- #
 # Safe arithmetic calculator. Uses an AST whitelist (never eval) so only numeric
 # + - * / // % ** expressions can be computed. Returns a formatted string for a
@@ -928,6 +966,11 @@ def classify_intent(
     from backend.project_identity import is_identity_intent
     if is_identity_intent(message):
         return "PROJECT_IDENTITY"
+
+    # Common-site link requests are direct, stable answers.  This must run
+    # before the generic "google" / "open" web-search trigger.
+    if _known_site_link_request(message):
+        return "EXPLANATION"
 
     # General named-entity Q&A is a normal assistant capability. Specific
     # current-fact and explicit research requests have already taken priority.
@@ -1617,6 +1660,20 @@ def _handle_intent_message_impl(
 
     # 2. EXPLANATION (general Q&A) — answer the question, nothing else.
     elif intent == "EXPLANATION":
+        site_link = _known_site_link_request(message)
+        if site_link:
+            answer = _official_site_answer(site_link)
+            store.clear_pending_action(sid)
+            store.update_session(sid, {"last_assistant_message": answer, "last_topic": site_link[0].lower()})
+            return {
+                "intent": intent,
+                "taskType": "official_site_link",
+                "response": answer,
+                "action": "NONE",
+                "projectId": active_project_id,
+                "pendingAction": None,
+                "lastTopic": site_link[0].lower(),
+            }
         # Dataset recommendations are an informational answer, not a hidden
         # search-and-select workflow.  Give curated, direct links and say
         # plainly that no dataset or pipeline was started.
@@ -1990,40 +2047,25 @@ def _handle_intent_message_impl(
             r"what(?:'s| is) the (latest|newest|current)( news| version| versions| features| updates| developments)?( about| on| for| in)?)\s+",
             "", msg_clean, flags=re.IGNORECASE).strip() or msg_clean
         try:
-            from backend.web_search import search_web
+            from backend.web_search import clean_snippet, search_web
             results = search_web(query, limit=5)
         except Exception as ws_err:
             print(f"[WEB SEARCH WARNING]: {ws_err}")
             results = []
         if results:
-            # Honest source framing (fixes F7/F9): a keyed provider (Tavily/Serper/
-            # Brave) returns genuinely current web results, but the keyless
-            # DuckDuckGo/Wikipedia fallback is topic reference material that may be
-            # stale. Label each case truthfully instead of claiming "live web".
-            _KEYED_SOURCES = {"Tavily", "Google (Serper)", "Brave"}
-            sources = {(r.get("source") or "") for r in results}
-            only_keyless = bool(sources) and not (sources & _KEYED_SOURCES)
-            if only_keyless:
-                lines = [
-                    f"No live web-search provider is configured, so here's "
-                    f"reference background on **{query}**:", "",
-                ]
-                footer = ("_Keyless reference sources (DuckDuckGo/Wikipedia) — this "
-                          "may not reflect the very latest; open the links to check._")
-            else:
-                lines = [f"Here's what I found on the live web for **{query}**:", ""]
-                footer = "_Live web results — open the links for full details._"
+            # Keep source mechanics internal. Consumer-facing answers state
+            # what was found, never which credentials or fallback provider are
+            # configured in this deployment.
+            lines = [f"Here are the most relevant results for **{query}**:", ""]
             for i, r in enumerate(results, 1):
-                snippet = r.get("snippet") or "(no snippet — open the link)"
+                snippet = clean_snippet(r.get("snippet") or "(Open the source for details.)")
                 lines.append(f"{i}. **{r.get('title') or r.get('url')}** — {snippet}")
-                lines.append(f"   {r.get('url')}")
-            lines += ["", footer]
+                lines.append(f"   Source: {r.get('url')}")
             resp_text = "\n".join(lines)
         else:
             resp_text = (
-                f"I tried to search for \"{query}\" but couldn't reach any search "
-                "provider right now, and I won't invent current facts. Please try "
-                "again later, or ask me something I can answer offline."
+                f"I couldn't find a reliable result for \"{query}\" right now. "
+                "Try a more specific name or URL."
             )
         store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": query.lower()[:80]})
         return {

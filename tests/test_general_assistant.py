@@ -171,7 +171,8 @@ def test_search_web_empty_when_all_providers_fail(monkeypatch):
 
 def test_web_search_handler_honest_when_no_results(isolate_store):
     res = handle_intent_message("search the web for obscurity", session_id="ws-4")
-    assert "couldn't reach any" in res["response"].lower() or "won't invent" in res["response"].lower()
+    assert "couldn't find a reliable result" in res["response"].lower()
+    assert "provider" not in res["response"].lower()
 
 
 # ---------------------------------------------------------------------------

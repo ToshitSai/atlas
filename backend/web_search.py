@@ -23,6 +23,29 @@ _TIMEOUT = 10
 _USER_AGENT = "AI-Scientist-Assistant/1.0 (web research tool)"
 
 
+def clean_snippet(value: str, limit: int = 400) -> str:
+    """Normalize provider text and cut only at a sentence or word boundary."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    candidate = text[:limit].rstrip()
+    sentence_end = max(candidate.rfind(". "), candidate.rfind("! "), candidate.rfind("? "))
+    if sentence_end >= max(80, limit // 2):
+        return candidate[:sentence_end + 1].rstrip()
+    word_end = candidate.rfind(" ")
+    return (candidate[:word_end] if word_end > 0 else candidate).rstrip(" ,;:-") + "..."
+
+
+def result_matches_query(query: str, result: Dict[str, str]) -> bool:
+    """Reject obvious title/snippet mismatches before presenting a hit."""
+    ignored = {"a", "an", "and", "for", "from", "give", "get", "in", "link", "me", "of", "on", "open", "please", "site", "the", "to", "url", "website", "with"}
+    terms = [word for word in re.findall(r"[a-z0-9]{3,}", (query or "").lower()) if word not in ignored]
+    if not terms:
+        return True
+    haystack = " ".join(str(result.get(key) or "") for key in ("title", "url", "snippet")).lower()
+    return any(re.search(rf"\b{re.escape(term)}\b", haystack) for term in terms)
+
+
 def _http_json(url: str, data: Dict[str, Any] = None, headers: Dict[str, str] = None,
                timeout: int = _TIMEOUT) -> Any:
     body = json.dumps(data).encode("utf-8") if data is not None else None
@@ -40,7 +63,7 @@ def _search_tavily(query: str, limit: int) -> List[Dict[str, str]]:
     return [{
         "title": r.get("title") or "",
         "url": r.get("url") or "",
-        "snippet": (r.get("content") or "")[:400],
+        "snippet": clean_snippet(r.get("content") or ""),
         "source": "Tavily",
     } for r in data.get("results", [])]
 
@@ -54,7 +77,7 @@ def _search_serper(query: str, limit: int) -> List[Dict[str, str]]:
     return [{
         "title": r.get("title") or "",
         "url": r.get("link") or "",
-        "snippet": (r.get("snippet") or "")[:400],
+        "snippet": clean_snippet(r.get("snippet") or ""),
         "source": "Google (Serper)",
     } for r in data.get("organic", [])]
 
@@ -69,7 +92,7 @@ def _search_brave(query: str, limit: int) -> List[Dict[str, str]]:
     return [{
         "title": r.get("title") or "",
         "url": r.get("url") or "",
-        "snippet": (r.get("description") or "")[:400],
+        "snippet": clean_snippet(r.get("description") or ""),
         "source": "Brave",
     } for r in (data.get("web") or {}).get("results", [])]
 
@@ -123,7 +146,7 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
             out.append({
                 "title": data.get("Heading") or variant,
                 "url": data.get("AbstractURL") or "",
-                "snippet": data["AbstractText"][:400],
+                "snippet": clean_snippet(data["AbstractText"]),
                 "source": "DuckDuckGo",
             })
         for rt in data.get("RelatedTopics", []):
@@ -138,7 +161,7 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
                 out.append({
                     "title": title[:120],
                     "url": rt["FirstURL"],
-                    "snippet": snippet[:400],
+                    "snippet": clean_snippet(snippet),
                     "source": "DuckDuckGo",
                 })
             if len(out) >= limit:
@@ -171,7 +194,7 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
                 out.append({
                     "title": data.get("title") or resolved_title,
                     "url": data.get("content_urls", {}).get("desktop", {}).get("page") or summary_url,
-                    "snippet": extract[:400],
+                    "snippet": clean_snippet(extract),
                     "source": "Wikipedia",
                 })
                 break
@@ -213,7 +236,7 @@ def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
         except Exception as exc:
             print(f"[WEB SEARCH WARNING] {name}: {exc}")
             results = []
-        results = [r for r in results if r.get("url") or r.get("snippet")]
+        results = [r for r in results if (r.get("url") or r.get("snippet")) and result_matches_query(query, r)]
         if results:
             return results[:limit]
     return []
