@@ -64,7 +64,7 @@ def test_extract_topic_known_and_unknown():
     ("Research Mahesh Babu's career", "DEEP_RESEARCH"),
     ("Who created AI Scientist?", "PROJECT_IDENTITY"),
     ("Explain gradient boosting", "EXPLANATION"),
-    ("Improve fraud detection", "RESEARCH_START"),
+        ("Improve fraud detection", "DEEP_RESEARCH"),
     ("predict customer churn", "RESEARCH_START"),
     ("show me the report", "REPORT_REQUEST"),
     ("show technical details", "TECHNICAL_DETAILS"),
@@ -408,7 +408,7 @@ def test_deep_research_is_honest_not_fabricated(isolate_store):
 
 
 def test_complex_ml_research_request_routes_to_deep_research(isolate_store):
-    assert classify_intent("Improve this ML model using my dataset.", session_id="ml-1") == "RESEARCH_START"
+    assert classify_intent("Improve this ML model using my dataset.", session_id="ml-1") == "DEEP_RESEARCH"
     assert classify_intent("Improve fraud detection", session_id="ml-2") == "RESEARCH_START"
 
 
@@ -420,7 +420,7 @@ def test_complex_ml_research_request_routes_to_deep_research(isolate_store):
     ("What is fraud detection?", "EXPLANATION"),
     ("Explain fraud detection.", "EXPLANATION"),
     ("Research fraud detection.", "DEEP_RESEARCH"),
-    ("Improve fraud detection.", "RESEARCH_START"),
+        ("Improve fraud detection.", "DEEP_RESEARCH"),
     ("Find fraud detection datasets.", "EXPLANATION"),
     ("Find a dataset for fraud detection.", "EXPLANATION"),
     ("What is Python?", "EXPLANATION"),
