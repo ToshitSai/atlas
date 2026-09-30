@@ -408,26 +408,6 @@ export default function App() {
               </div>
             </div>
           </main>
-
-          {/* 3. Right Context Sidebar (~290px wide on Desktop) */}
-          <div className="hidden xl:block">
-            <RightSidebar
-              context={{
-                researchType: activeProject?.objective ? 'ML Optimization' : null,
-                domain: activeProject?.dataset_name ? 'Tabular ML' : null,
-                complexity: isDeepResearch ? 'High' : 'Standard',
-                validatedSourcesCount: validatedSources.length,
-                experimentsCount: experiments.length,
-                currentStage: sessionState === 'IN_PROGRESS' ? 'Running experiment' : sessionState === 'COMPLETE' ? 'Report compiled' : 'Idle',
-              }}
-              sources={validatedSources}
-              latestInsight={latestInsight}
-              nextHypothesis={nextHypothesis}
-              nextExperiment={nextExperiment}
-              hasRealRunAction={false}
-            />
-          </div>
-
         </div>
       </div>
 

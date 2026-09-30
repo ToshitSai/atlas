@@ -52,20 +52,6 @@ export default function Header({
         </div>
       </div>
 
-      {/* Actual Session Status & Mode */}
-      <div className="flex items-center gap-2 shrink-0 text-xs">
-        {/* AUTO Mode Badge */}
-        <span className="px-2 py-0.5 rounded bg-[#141416] border border-[#242424] text-[11px] font-mono text-[#8A8F98] flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#FF6500]" />
-          {routingMode}
-        </span>
-
-        {/* Status Pill */}
-        <span className={`px-2.5 py-0.5 rounded-full border text-[11px] font-mono flex items-center gap-1.5 ${st.bg} ${st.color} ${st.border}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-          {st.label}
-        </span>
-      </div>
     </header>
   );
 }
