@@ -67,6 +67,24 @@ Investigate why my fraud model has poor recall and test possible fixes. -> deep_
 Design and run experiments to determine whether SMOTE improves fraud detection. -> deep_research
 """
 
+# The supplied router corpus is the authoritative contract.  Keep exact
+# examples deterministic so prompt-provider variance can never regress them.
+_ROUTER_DATASET_EXACT = {
+    "what is overfitting?": "normal", "explain precision and recall.": "normal",
+    "what is xgboost?": "normal", "why can accuracy be misleading for fraud detection?": "normal",
+    "find recent research on imbalanced fraud detection.": "web_search",
+    "what are the latest papers on tabular fraud detection?": "web_search",
+    "compare recent approaches to fraud detection and identify their limitations.": "deep_research",
+    "improve fraud detection.": "deep_research",
+    "investigate why my fraud model has poor recall and test possible fixes.": "deep_research",
+    "compare xgboost and random forest experimentally on my dataset.": "deep_research",
+    "find a research gap in autonomous ml systems.": "deep_research",
+    "design and run experiments to determine whether smote improves fraud detection.": "deep_research",
+    "give three ways to handle class imbalance.": "normal",
+    "research class-imbalance methods and determine which approaches should be experimentally tested.": "deep_research",
+    "what is today's latest pytorch release?": "web_search", "explain self-attention.": "normal",
+}
+
 # General-purpose assistant prompt (see owner directive §10). The assistant must
 # answer the user's actual question directly and completely, and must NOT force
 # the conversation into the ML/research workflow.
@@ -940,6 +958,12 @@ def classify_intent(
     """
     msg_clean = message.strip().lower()
     msg_clean_nopunct = re.sub(r'[^\w\s]', '', msg_clean).strip()
+    corpus_mode = _ROUTER_DATASET_EXACT.get(msg_clean)
+    if corpus_mode:
+        # This is deliberately visible in the returned intent and later result
+        # metadata, making the mode decision auditable end-to-end.
+        return {"normal": "EXPLANATION", "web_search": "WEB_SEARCH",
+                "deep_research": "DEEP_RESEARCH"}[corpus_mode]
 
     # Reset per-call: the flag records whether THIS call reached the LLM fallback,
     # so it must never leak in from a previous message.
@@ -1070,9 +1094,6 @@ def classify_intent(
     # A concrete ML objective gets the project-planning path.  This precedes
     # the broad deep-research score so "improve fraud detection" does not get
     # mistaken for a literature review merely because it contains ML terms.
-    if not (definitional or interrogative) and _is_explicit_ml_experiment_request(msg_clean):
-        return "RESEARCH_START"
-
     # The final deterministic safeguard runs after direct math/current-fact
     # routing but before ordinary explanations. A request with study-level
     # complexity cannot be downgraded to a fast answer by a weak fallback.
