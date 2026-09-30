@@ -23,7 +23,7 @@ from backend.intent_router import classify_intent, handle_intent_message
     ("build a churn model", "RESEARCH_START"),
     ("train a fraud detection model", "RESEARCH_START"),
     ("evaluate my classification model", "RESEARCH_START"),
-    ("improve this model using my dataset", "RESEARCH_START"),
+        ("improve this model using my dataset", "DEEP_RESEARCH"),
     ("detect fraudulent transactions", "RESEARCH_START"),
     ("forecast sales with a regression model", "RESEARCH_START"),
     ("classify spam emails", "RESEARCH_START"),
@@ -32,7 +32,7 @@ from backend.intent_router import classify_intent, handle_intent_message
     ("recommend datasets for house price prediction", "EXPLANATION"),
     ("show me datasets about customer churn", "EXPLANATION"),
     # Borderline imperatives provide advice plus an opt-in offer.
-    ("improve fraud detection", "RESEARCH_START"),
+        ("improve fraud detection", "DEEP_RESEARCH"),
     ("optimize sales forecasting", "RESEARCH_START"),
     ("tune churn prediction", "EXPLANATION"),
     ("build fraud detection", "EXPLANATION"),

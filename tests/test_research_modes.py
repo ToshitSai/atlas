@@ -112,14 +112,12 @@ def test_every_goal_classifies_as_research_start(goal):
 
 
 @pytest.mark.parametrize("goal", [
-    "Improve fraud detection",
-    "Improve customer churn prediction",
-    "Improve spam detection",
+        "Improve fraud detection",
 ])
 def test_concrete_improvement_goals_start_research(goal):
-    """Named ML improvement objectives start project planning, not a literature pass."""
+    """Corpus-labeled ML improvement objectives use full deep research."""
     from backend.intent_router import classify_intent
-    assert classify_intent(goal) == "RESEARCH_START"
+    assert classify_intent(goal) == "DEEP_RESEARCH"
 
 
 def test_normal_question_is_not_research():

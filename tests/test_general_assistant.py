@@ -230,7 +230,7 @@ def test_deep_research_handler_reports_failure_honestly(isolate_store, monkeypat
     monkeypatch.setattr(dr, "search_literature", lambda *a, **k: [])
     res = handle_intent_message("research the latest developments in quantum computing", session_id="dr-h")
     assert res["intent"] == "DEEP_RESEARCH"
-    assert "couldn't reach any" in res["response"].lower()
+    assert "couldn't reach a web search provider" in res["response"].lower()
 
 
 def test_deep_research_handler_returns_report(isolate_store, monkeypatch):

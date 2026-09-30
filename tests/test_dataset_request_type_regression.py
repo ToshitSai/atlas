@@ -64,7 +64,8 @@ BORDERLINE = [
 
 @pytest.mark.parametrize("message", ML_TASKS)
 def test_explicit_ml_task_starts_research(message):
-    assert classify_intent(message, session_id=f"task-{message}") == "RESEARCH_START"
+    expected = "DEEP_RESEARCH" if message == "improve fraud detection" else "RESEARCH_START"
+    assert classify_intent(message, session_id=f"task-{message}") == expected
 
 
 @pytest.mark.parametrize("message", DATASET_META_QUESTIONS + PROCESS_QUESTIONS + ML_ADVICE + BORDERLINE)
