@@ -59,7 +59,7 @@ def test_conversation_list_is_persisted_and_titled_from_first_user_message(isola
     chats = isolate_store.list_conversations()
     assert len(chats) == 1
     assert chats[0]["id"] == sid
-    assert chats[0]["title"] == "Improve fraud detection with a robust baseline"
+    assert chats[0]["title"] == "Fraud detection model design"
     assert chats[0]["messageCount"] == 2
 
     # The file backend is the same persistent storage read by a new page/tab.

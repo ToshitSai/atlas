@@ -116,10 +116,10 @@ def test_every_goal_classifies_as_research_start(goal):
     "Improve customer churn prediction",
     "Improve spam detection",
 ])
-def test_concrete_improvement_goals_start_deep_research(goal):
-    """Named ML improvement objectives are investigations; broad advice stays normal."""
+def test_concrete_improvement_goals_start_research(goal):
+    """Named ML improvement objectives start project planning, not a literature pass."""
     from backend.intent_router import classify_intent
-    assert classify_intent(goal) == "DEEP_RESEARCH"
+    assert classify_intent(goal) == "RESEARCH_START"
 
 
 def test_normal_question_is_not_research():

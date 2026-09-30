@@ -180,7 +180,7 @@ def test_web_search_handler_honest_when_no_results(isolate_store):
 def test_deep_research_full_pipeline(monkeypatch):
     monkeypatch.setattr(dr, "query_llm", lambda *a, **k: None)  # deterministic planning
     monkeypatch.setattr(dr, "search_web", lambda q, limit=3: [
-        {"title": f"Result for {q}", "url": f"https://example.com/{q.replace(' ', '-')}",
+            {"title": f"Result for {q}", "url": f"https://en.wikipedia.org/wiki/{q.replace(' ', '_')}",
          "snippet": f"Evidence about {q}", "source": "DuckDuckGo"}])
     monkeypatch.setattr(dr, "search_literature", lambda q, limit=2: [])
 
@@ -191,7 +191,7 @@ def test_deep_research_full_pipeline(monkeypatch):
     assert report.startswith("# Deep Research Report")
     assert "## Research Plan" in report and "## Findings" in report
     assert "## Verification" in report and "## Sources" in report
-    assert "https://example.com/" in report
+    assert "https://en.wikipedia.org/wiki/" in report
 
 
 def test_deep_research_reports_no_sources_honestly(monkeypatch):
@@ -206,7 +206,7 @@ def test_deep_research_reports_no_sources_honestly(monkeypatch):
 def test_deep_research_deduplicates_sources(monkeypatch):
     monkeypatch.setattr(dr, "query_llm", lambda *a, **k: None)
     monkeypatch.setattr(dr, "search_web", lambda q, limit=3: [
-        {"title": "Same page", "url": "https://example.com/same", "snippet": f"{q}", "source": "DDG"}])
+            {"title": "Same page", "url": "https://en.wikipedia.org/wiki/Example", "snippet": f"{q}", "source": "DDG"}])
     monkeypatch.setattr(dr, "search_literature", lambda q, limit=2: [])
 
     res = dr.run_deep_research("topic with duplicated results")
@@ -235,7 +235,7 @@ def test_deep_research_handler_reports_failure_honestly(isolate_store, monkeypat
 def test_deep_research_handler_returns_report(isolate_store, monkeypatch):
     monkeypatch.setattr(dr, "query_llm", lambda *a, **k: None)
     monkeypatch.setattr(dr, "search_web", lambda q, limit=3: [
-        {"title": f"About {q}", "url": f"https://e.com/{abs(hash(q))}", "snippet": f"Evidence: {q}", "source": "DDG"}])
+            {"title": f"About {q}", "url": f"https://en.wikipedia.org/wiki/{abs(hash(q))}", "snippet": f"Evidence: {q}", "source": "DDG"}])
     monkeypatch.setattr(dr, "search_literature", lambda q, limit=2: [])
     res = handle_intent_message("research how JavaScript evolved", session_id="dr-r")
     assert res["intent"] == "DEEP_RESEARCH"

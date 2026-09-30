@@ -392,9 +392,9 @@ _ML_SIGNALS = (
 # a user to ask us to optimise/train/evaluate an ML task.  Merely mentioning
 # fraud, models, data, or machine learning must stay in general Q&A.
 _ML_EXPERIMENT_REQUEST_RE = re.compile(
-    r"^(?:please\s+|can you\s+|could you\s+|help me\s+|i want to\s+)?"
+    r"^(?:please\s+|can you\s+|could you\s+|help me\s+|i want to\s+|i need to\s+|i'd like to\s+|i would like to\s+)?"
     r"(?:improve|optimi[sz]e|train|predict|forecast|classify|detect|tune|"
-    r"experiment with|test|evaluate|build)\b",
+    r"experiment with|test|evaluate|build|create|develop)\b",
     re.IGNORECASE,
 )
 _DATASET_REQUEST_RE = re.compile(
@@ -414,6 +414,72 @@ def _is_how_what_why_explain_question(msg_clean: str) -> bool:
         r"what(?:\s+is|\s+are|\s+does|\s+should)?|why|explain\b)",
         msg_clean,
     ))
+
+
+def _is_dataset_information_request(msg_clean: str) -> bool:
+    """True when datasets are the subject of a question, not a job to run.
+
+    This deliberately reads the request structure first.  Dataset/data words
+    are common in ordinary questions, recommendations, and capability checks;
+    they cannot by themselves grant permission to launch discovery or training.
+    """
+    if not re.search(r"\b(?:datasets?|data\s+sets?|data)\b", msg_clean):
+        return False
+    # A multi-step ML operation remains a task even if it asks for data too.
+    if re.search(r"\b(?:train|build|create|develop|evaluate|benchmark|experiment|"
+                 r"research|run)\b.*\b(?:model|classifier|regressor|pipeline|baseline|experiment)\b", msg_clean):
+        return False
+    return bool(
+        _is_how_what_why_explain_question(msg_clean)
+        or re.match(r"^(?:give|list|recommend|suggest|show|which|where|find|can you list)\b", msg_clean)
+        or re.match(r"^(?:i have|i found|my)\b", msg_clean)
+        or re.search(r"\b(?:best|popular|beginner|licensed|public|practice|portfolio)\b", msg_clean)
+    )
+
+
+def _is_dataset_catalog_request(msg_clean: str) -> bool:
+    """Whether an informational dataset request benefits from a curated list."""
+    return _is_dataset_information_request(msg_clean) and bool(re.search(
+        r"\b(?:datasets?|data\s+sets?)\b.*\b(?:best|popular|good|recommend|list|show|"
+        r"find|where|which|public|beginner|practice|portfolio|licensed)\b|"
+        r"\b(?:give|list|recommend|suggest|show|which|where|find)\b.*\b(?:datasets?|data\s+sets?)\b",
+        msg_clean,
+    ))
+
+
+def _curated_dataset_answer(message: str) -> str:
+    """Offline, human-readable starting points for informational requests.
+
+    These are established dataset cards, not search results and never an
+    implicit approval to start an ML pipeline.  Links make the answer useful
+    even when a live provider is unavailable.
+    """
+    text = message.lower()
+    if any(term in text for term in ("nlp", "sentiment", "text", "language", "review")):
+        picks = [
+            ("IMDB Reviews", "stanfordnlp/imdb", "A standard binary sentiment-classification benchmark."),
+            ("GLUE", "nyu-mll/glue", "A collection of language-understanding benchmark tasks."),
+            ("SQuAD", "rajpurkar/squad", "A widely used reading-comprehension dataset."),
+            ("WikiText", "wikitext", "Cleaned Wikipedia text for language-model practice."),
+        ]
+    elif any(term in text for term in ("vision", "image", "computer vision")):
+        picks = [
+            ("MNIST", "ylecun/mnist", "A small, approachable handwritten-digit benchmark."),
+            ("CIFAR-10", "cifar10", "A classic ten-class image-classification benchmark."),
+            ("ImageNet-1k", "imagenet-1k", "A large image benchmark; check access and terms before use."),
+        ]
+    else:
+        picks = [
+            ("MNIST", "ylecun/mnist", "A compact first image-classification project."),
+            ("IMDB Reviews", "stanfordnlp/imdb", "A well-known text-classification project."),
+            ("GLUE", "nyu-mll/glue", "A suite of language benchmarks rather than one opaque meta-dataset."),
+            ("Yelp Reviews", "yelp_review_full", "A larger text-classification practice set."),
+        ]
+    lines = ["Here are established Hugging Face dataset cards to explore:", ""]
+    for name, repo, reason in picks:
+        lines.append(f"- **[{name}](https://huggingface.co/datasets/{repo})** — {reason}")
+    lines += ["", "Before using one beyond practice, check its dataset card for the current license, access conditions, size, and intended use. I have not started a research run or selected a dataset for you."]
+    return "\n".join(lines)
 
 
 def assess_research_complexity(message: str) -> Dict[str, Any]:
@@ -498,17 +564,18 @@ def _is_explicit_ml_experiment_request(msg_clean: str) -> bool:
     A verb alone is deliberately insufficient: ``improve fraud detection`` is
     a request for advice, while ``train a fraud detection model`` is concrete.
     """
-    if _is_how_what_why_explain_question(msg_clean):
+    if _is_how_what_why_explain_question(msg_clean) or _is_dataset_information_request(msg_clean):
         return False
     match = _ML_EXPERIMENT_REQUEST_RE.search(msg_clean)
     if not match:
         return False
     verb = match.group(0).split()[-1]
-    has_signal = any(signal in msg_clean for signal in _ML_SIGNALS)
+    has_signal = any(signal in msg_clean for signal in _ML_SIGNALS) or bool(re.search(
+        r"\b(?:defect\w*|phishing|email|image|movie|taxi|demand|load|energy|credit|ticket|review)\b", msg_clean))
     has_model_object = bool(re.search(
         r"\b(?:model|classifier|regressor|pipeline|dataset|data\s*set|"
         r"training|experiment|baseline)\b", msg_clean))
-    if verb in {"improve", "optimize", "optimise", "tune", "build", "train", "test", "evaluate", "experiment"}:
+    if verb in {"improve", "optimize", "optimise", "tune", "build", "train", "test", "evaluate", "experiment", "create", "develop"}:
         # A named predictive outcome is a concrete ML objective even before the
         # user names a particular library or model ("improve fraud detection",
         # "improve image classification").  This keeps the research workspace
@@ -923,6 +990,18 @@ def classify_intent(
             and not re.search(r"\b(?:research|investigate|deep dive|survey)\b", msg_clean)
             and not (active_project_id and project_ref)):
         return "WEB_SEARCH"
+
+    # Decide from request type before measuring research complexity.  A user
+    # asking to list, recommend, explain, or locate datasets is asking for
+    # information, not authorising an autonomous dataset search.
+    if _is_dataset_information_request(msg_clean):
+        return "EXPLANATION"
+
+    # A concrete ML objective gets the project-planning path.  This precedes
+    # the broad deep-research score so "improve fraud detection" does not get
+    # mistaken for a literature review merely because it contains ML terms.
+    if not (definitional or interrogative) and _is_explicit_ml_experiment_request(msg_clean):
+        return "RESEARCH_START"
 
     # The final deterministic safeguard runs after direct math/current-fact
     # routing but before ordinary explanations. A request with study-level
@@ -1538,6 +1617,22 @@ def _handle_intent_message_impl(
 
     # 2. EXPLANATION (general Q&A) — answer the question, nothing else.
     elif intent == "EXPLANATION":
+        # Dataset recommendations are an informational answer, not a hidden
+        # search-and-select workflow.  Give curated, direct links and say
+        # plainly that no dataset or pipeline was started.
+        if _is_dataset_catalog_request(msg_clean):
+            answer = _curated_dataset_answer(message)
+            store.clear_pending_action(sid)
+            store.update_session(sid, {"last_assistant_message": answer, "last_topic": "datasets"})
+            return {
+                "intent": intent,
+                "taskType": "dataset_information",
+                "response": answer,
+                "action": "NONE",
+                "projectId": active_project_id,
+                "pendingAction": None,
+                "lastTopic": "datasets",
+            }
         # A short ML imperative without a concrete model/dataset task is
         # ambiguous. Give useful guidance and make dataset discovery opt-in.
         if _is_borderline_ml_request(msg_clean):
