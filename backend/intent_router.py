@@ -1218,6 +1218,13 @@ def classify_intent(
     if not msg_clean_nopunct:
         return "CASUAL_CHAT"
 
+    # There is no model available to improve this last-resort classification.
+    # Returning the safe general-answer route avoids a pointless provider race
+    # (and a long visible "Sending" state) for valid non-English or unusual
+    # questions on an offline deployment.
+    if not any_provider_configured():
+        return "EXPLANATION"
+
     # 12. LLM Intent Fallback — runs ONLY when no rule-based stage matched.
     #     Bounded by the request budget: skips entirely when it is exhausted.
     try:
