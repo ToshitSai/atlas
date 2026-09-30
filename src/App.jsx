@@ -23,6 +23,26 @@ function getConversationId(projectId) {
   return conv;
 }
 
+const CONVERSATION_INDEX_KEY = 'ai-scientist-conversation-index';
+const conversationMessagesKey = (conversationId) => `ai-scientist-conversation-${conversationId}`;
+
+function readStoredJson(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch (e) { return fallback; }
+}
+
+function conversationTitle(messages) {
+  const generic = new Set(['hi', 'hello', 'hey', 'hello there', 'hi there', 'good morning', 'good evening']);
+  const turns = messages.filter(m => m.role === 'user').map(m => String(m.content || '').trim());
+  const topic = turns.find(text => text.split(/\s+/).length >= 3 && !generic.has(text.toLowerCase().replace(/[!?.]+$/, '')))
+    || turns.find(text => !generic.has(text.toLowerCase().replace(/[!?.]+$/, '')))
+    || 'Untitled research chat';
+  if (/fraud/i.test(topic) && /train|model|detect|predict/i.test(topic)) return 'Fraud detection model design';
+  return topic.length > 77 ? `${topic.slice(0, 76).trimEnd()}…` : topic;
+}
+
 function isLikelyDeepResearch(text) {
   const value = String(text || '').toLowerCase();
   return !/\b(just answer briefly|brief answer|don't research|do not research)\b/.test(value)
@@ -81,8 +101,32 @@ export default function App() {
 
   const loadConversations = async () => {
     const list = await fetchConversations();
-    setConversations(list);
+    const cached = readStoredJson(CONVERSATION_INDEX_KEY, []);
+    // A serverless instance can be replaced between requests. Merge the
+    // browser's durable recent-chat index as a fallback rather than making a
+    // saved conversation disappear during that handoff.
+    const merged = new Map((cached || []).map(item => [item.id, item]));
+    (list || []).forEach(item => merged.set(item.id, item));
+    const values = Array.from(merged.values());
+    setConversations(values);
+    try { localStorage.setItem(CONVERSATION_INDEX_KEY, JSON.stringify(values)); } catch (e) { /* private mode */ }
   };
+
+  useEffect(() => {
+    if (!conversationId || !chatMessages.length) return;
+    const summary = {
+      id: conversationId,
+      title: conversationTitle(chatMessages),
+      updatedAt: new Date().toISOString(),
+      messageCount: chatMessages.length,
+    };
+    try { localStorage.setItem(conversationMessagesKey(conversationId), JSON.stringify(chatMessages)); } catch (e) { /* private mode */ }
+    setConversations(previous => {
+      const updated = [summary, ...previous.filter(item => item.id !== conversationId)];
+      try { localStorage.setItem(CONVERSATION_INDEX_KEY, JSON.stringify(updated)); } catch (e) { /* private mode */ }
+      return updated;
+    });
+  }, [conversationId, chatMessages]);
 
   const loadSysSettings = async () => {
     const s = await fetchSettings();
@@ -217,7 +261,8 @@ export default function App() {
     setChatMessages([]);
     try {
       const msgs = await fetchConversationMessages(conversation.id);
-      setChatMessages((msgs || []).map(m => ({
+      const recovered = msgs?.length ? msgs : readStoredJson(conversationMessagesKey(conversation.id), []);
+      setChatMessages((recovered || []).map(m => ({
         id: m.id, role: m.role, content: m.content, intent: m.intent,
         datasets: null, recommendation: null, researchQuery: null, activity: m.activity || []
       })));
