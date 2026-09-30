@@ -2205,8 +2205,10 @@ def _handle_intent_message_impl(
         advice_trace.complete_step(Stages.PLANNING, "ML objective identified", "Selected a planning approach for this goal")
 
         resp_text = None
+        generation_started = False
         if any_provider_configured():
             advice_trace.start_step(Stages.SYNTHESIS, "Generating model plan", "Using the configured assistant model")
+            generation_started = True
             resp_text = query_llm(
                 f"The user's ML goal is: {clean_goal}\n\n"
                 "Give a genuinely useful, goal-specific response. Infer the likely task and target, "
@@ -2219,15 +2221,17 @@ def _handle_intent_message_impl(
                 "to the actual goal; do not force a generic sentence template. Be accurate, practical, and concise.",
                 timeout=15,
             )
-            advice_trace.complete_step(Stages.SYNTHESIS, "Model plan generated", "Generated goal-specific ML guidance")
         if not resp_text or not resp_text.strip():
-            advice_trace.start_step(Stages.SYNTHESIS, "Building model plan", "Using the built-in planning template")
+            if not generation_started:
+                advice_trace.start_step(Stages.SYNTHESIS, "Building model plan", "Using the built-in planning template")
             resp_text = _research_start_brief(clean_goal)
             advice_trace.complete_step(Stages.SYNTHESIS, "Model plan generated", "Generated built-in goal-specific guidance")
         elif "dataset" not in resp_text.lower():
             resp_text = resp_text.rstrip() + "\n\nWant me to search for relevant datasets?"
+            advice_trace.complete_step(Stages.SYNTHESIS, "Model plan generated", "Generated goal-specific ML guidance")
         else:
             resp_text = resp_text.strip()
+            advice_trace.complete_step(Stages.SYNTHESIS, "Model plan generated", "Generated goal-specific ML guidance")
         store.update_session(sid, {"last_assistant_message": resp_text})
 
         return {
