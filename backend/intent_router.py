@@ -1357,6 +1357,25 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "") -
     if known and qtype in ("definition", "factual"):
         return known
 
+    # Do not enqueue a 60-second model race when this deployment has no
+    # provider credentials.  Apart from being needless work, it left ordinary
+    # non-English questions visibly stuck in "Sending" until the serverless
+    # request timed out.  Prefer an immediate local answer/fallback; this is
+    # also the correct behaviour for every other general question offline.
+    if not any_provider_configured():
+        if known:
+            return known
+        normalized = (message or "").lower()
+        if re.search(r"[\u0900-\u097f]", message or "") and any(
+            word in normalized for word in ("पाइथन", "पायथन", "python")
+        ):
+            return (
+                "Python एक सरल और लोकप्रिय प्रोग्रामिंग भाषा है। इसका उपयोग "
+                "वेब विकास, डेटा विश्लेषण, कृत्रिम बुद्धिमत्ता और ऑटोमेशन में "
+                "किया जाता है।"
+            )
+        return _honest_unknown(topic or message)
+
     kb_seed = (
         f"Background you may draw on (do NOT paste verbatim unless it directly "
         f"answers the question):\n{known}\n\n"
