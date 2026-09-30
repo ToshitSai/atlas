@@ -261,6 +261,8 @@ def _research_start_brief(goal: str) -> str:
     """
     def structured(task, target, watch_out, evaluation, models):
         return (
+            "**In plain English:** We will first make a simple, trustworthy prediction system, "
+            "then compare stronger options using a score that matches the real-world decision.\n\n"
             f"**Task type:** {task}\n"
             f"**Target:** {target}\n"
             f"**Watch out for:** {watch_out}\n"
@@ -2191,21 +2193,37 @@ def _handle_intent_message_impl(
         clean_goal = re.sub(r"https?://\S+", "", topic).strip() or topic
         store.set_pending_action(sid, "START_RESEARCH", topic=clean_goal, query=clean_goal)
 
+        # These rows describe real router work: the ML goal is classified and
+        # then either an LLM or the deterministic planning template generates
+        # the advice. This makes ML planning visible without inventing a trace
+        # for simple chat answers.
+        from backend.step_trace import create_trace, Stages
+        advice_trace = create_trace("ml_advice")
+        if activity_callback:
+            advice_trace.add_callback(activity_callback)
+        advice_trace.start_step(Stages.PLANNING, "Identifying the ML objective", clean_goal)
+        advice_trace.complete_step(Stages.PLANNING, "ML objective identified", "Selected a planning approach for this goal")
+
         resp_text = None
         if any_provider_configured():
+            advice_trace.start_step(Stages.SYNTHESIS, "Generating model plan", "Using the configured assistant model")
             resp_text = query_llm(
                 f"The user's ML goal is: {clean_goal}\n\n"
                 "Give a genuinely useful, goal-specific response. Infer the likely task and target, "
                 "call out domain-specific risks, recommend an evaluation metric, and suggest 2-3 sensible "
-                "first models or approaches. Use concise Markdown with bold labels and bullets. Do not claim "
+                "first models or approaches. Start with a one- or two-sentence plain-English summary, "
+                "and define unfamiliar abbreviations the first time they appear. Use concise Markdown with bold labels and bullets. Do not claim "
                 "that you searched for data or ran an experiment. End by asking whether the user wants help "
                 "finding a relevant dataset.",
                 "You are an experienced ML engineer helping plan a new project. Vary the depth and examples "
                 "to the actual goal; do not force a generic sentence template. Be accurate, practical, and concise.",
                 timeout=15,
             )
+            advice_trace.complete_step(Stages.SYNTHESIS, "Model plan generated", "Generated goal-specific ML guidance")
         if not resp_text or not resp_text.strip():
+            advice_trace.start_step(Stages.SYNTHESIS, "Building model plan", "Using the built-in planning template")
             resp_text = _research_start_brief(clean_goal)
+            advice_trace.complete_step(Stages.SYNTHESIS, "Model plan generated", "Generated built-in goal-specific guidance")
         elif "dataset" not in resp_text.lower():
             resp_text = resp_text.rstrip() + "\n\nWant me to search for relevant datasets?"
         else:
@@ -2220,7 +2238,8 @@ def _handle_intent_message_impl(
             "hfRef": hf_ref,
             "projectId": None,
             "pendingAction": store.get_session(sid).get("pending_action"),
-            "lastTopic": clean_goal
+            "lastTopic": clean_goal,
+            "activity": advice_trace.to_dict()["steps"],
         }
 
     # A direct dataset request is already explicit approval to search.

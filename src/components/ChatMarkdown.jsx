@@ -1,48 +1,49 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
-function inlineMarkdown(text) {
-  const parts = String(text || '').split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong className="font-semibold text-slate-100" key={index}>{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Small safe Markdown subset for assistant messages: headings, bold, bullets, and paragraphs. */
+/**
+ * Renders assistant output with a standards-compliant Markdown parser.
+ * Raw HTML is deliberately not enabled; links are limited to http(s) and open
+ * in a separate tab, so generated or sourced content cannot inject markup.
+ */
 export default function ChatMarkdown({ content }) {
-  const lines = String(content || '').split('\n');
-  const nodes = [];
-  let bullets = [];
-  const flushBullets = () => {
-    if (!bullets.length) return;
-    nodes.push(<ul className="list-disc pl-5 space-y-1.5" key={`list-${nodes.length}`}>
-      {bullets.map((item, index) => <li key={index}>{inlineMarkdown(item)}</li>)}
-    </ul>);
-    bullets = [];
-  };
-
-  lines.forEach((line, index) => {
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    if (bullet) {
-      bullets.push(bullet[1]);
-      return;
-    }
-    flushBullets();
-    if (!line.trim()) {
-      nodes.push(<div className="h-2" key={`space-${index}`} />);
-    } else if (/^#{2,6}\s+/.test(line)) {
-      const heading = line.replace(/^#{2,6}\s+/, '');
-      const level = (line.match(/^#+/) || [''])[0].length;
-      const className = level <= 2 ? 'text-base' : level === 3 ? 'text-sm' : 'text-sm';
-      nodes.push(<h4 className={`${className} font-semibold text-slate-100`} key={index}>{inlineMarkdown(heading)}</h4>);
-    } else if (/^-{3,}\s*$/.test(line)) {
-      nodes.push(<hr className="my-3 border-slate-700" key={index} />);
-    } else {
-      nodes.push(<p key={index}>{inlineMarkdown(line)}</p>);
-    }
-  });
-  flushBullets();
-  return <div className="space-y-1.5">{nodes}</div>;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      skipHtml
+      components={{
+        h1: ({ children }) => <h2 className="text-lg font-bold text-slate-100 mt-1 mb-3">{children}</h2>,
+        h2: ({ children }) => <h3 className="text-base font-semibold text-slate-100 mt-4 mb-2">{children}</h3>,
+        h3: ({ children }) => <h4 className="text-sm font-semibold text-slate-100 mt-3 mb-1.5">{children}</h4>,
+        p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+        ul: ({ children }) => <ul className="list-disc pl-5 my-2 space-y-1.5">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1.5">{children}</ol>,
+        strong: ({ children }) => <strong className="font-semibold text-slate-100">{children}</strong>,
+        em: ({ children }) => <em className="italic text-slate-300">{children}</em>,
+        a: ({ href, children }) => {
+          const safeHref = safeHttpUrl(href || '');
+          return safeHref ? (
+            <a href={safeHref} target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline underline-offset-2 hover:text-cyan-300 break-words">
+              {children}
+            </a>
+          ) : <span>{children}</span>;
+        },
+        code: ({ children, className }) => <code className={className ? `block overflow-x-auto rounded-lg bg-[#0B1018] p-3 text-xs ${className}` : 'rounded bg-[#0B1018] px-1.5 py-0.5 text-xs text-cyan-200'}>{children}</code>,
+        blockquote: ({ children }) => <blockquote className="border-l-2 border-cyan-500/60 pl-3 text-slate-400 italic my-3">{children}</blockquote>,
+        hr: () => <hr className="my-4 border-slate-700" />,
+      }}
+    >
+      {String(content || '')}
+    </ReactMarkdown>
+  );
 }

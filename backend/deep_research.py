@@ -7,6 +7,7 @@ collected source, and if no source can be reached it reports that instead of
 inventing content.
 """
 import datetime
+import re
 from typing import Any, Dict, List, Optional
 
 import backend.config  # auto-loads .env into os.environ
@@ -19,10 +20,41 @@ _SYNTH_SYSTEM_PROMPT = (
     "You are a rigorous research synthesizer. Write ONLY from the evidence "
     "snippets provided, citing sources inline like [1]. Never state a fact that "
     "is not present in the evidence. If the evidence is insufficient, say so "
-    "explicitly."
+    "explicitly. Begin each technical finding with a plain-English sentence, "
+    "and briefly define any specialist term on its first use."
 )
 
 _FILLER_ABSTRACT_PREFIXES = ("research paper on", "academic research indexed")
+_QUERY_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "for", "from", "how",
+    "in", "improve", "is", "it", "latest", "of", "on", "or", "the", "this", "to", "what",
+    "with", "why", "will", "would", "your",
+}
+
+
+def _topic_terms(text: str) -> List[str]:
+    """Meaning-bearing terms used to reject accidental one-word retrieval."""
+    return [word for word in re.findall(r"[a-z0-9]{3,}", (text or "").lower())
+            if word not in _QUERY_STOPWORDS]
+
+
+def _usable_query(query: str, goal: str) -> bool:
+    terms = _topic_terms(query)
+    goal_terms = set(_topic_terms(goal))
+    # A web query needs a coherent phrase and must retain the actual topic.
+    return len(terms) >= 3 and bool(set(terms) & goal_terms)
+
+
+def _source_is_relevant(hit: Dict[str, Any], goal: str, query: str) -> bool:
+    """Require source evidence to mention the research topic, not just a query word."""
+    haystack = " ".join(str(hit.get(key) or "") for key in ("title", "snippet", "url")).lower()
+    topic = set(_topic_terms(goal))
+    query_terms = set(_topic_terms(query))
+    topic_matches = sum(1 for term in topic if re.search(rf"\b{re.escape(term)}\b", haystack))
+    query_matches = sum(1 for term in query_terms if re.search(rf"\b{re.escape(term)}\b", haystack))
+    # One unmistakable topic term (e.g. fraud) is enough for a focused goal;
+    # broader goals require two overlapping terms to avoid unrelated hits.
+    return topic_matches >= (1 if len(topic) <= 3 else 2) or query_matches >= 2
 
 
 def plan_subqueries(goal: str, max_subqueries: int = 3, trace: Optional[StepTrace] = None) -> List[str]:
@@ -46,7 +78,8 @@ def plan_subqueries(goal: str, max_subqueries: int = 3, trace: Optional[StepTrac
         for line in llm.splitlines():
             clean = line.strip().strip("-•").strip()
             clean = clean.lstrip("0123456789. ").strip()
-            if 5 < len(clean) < 120 and clean.lower() not in (s.lower() for s in subs):
+            if (5 < len(clean) < 120 and _usable_query(clean, goal)
+                    and clean.lower() not in (s.lower() for s in subs)):
                 subs.append(clean)
             if len(subs) >= max_subqueries:
                 break
@@ -96,7 +129,7 @@ def _paper_to_source(paper: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
-def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int = 2, trace: Optional[StepTrace] = None) -> List[Dict[str, Any]]:
+def _collect_sources(goal: str, subqueries: List[str], per_query: int, papers_on_first: int = 2, trace: Optional[StepTrace] = None) -> List[Dict[str, Any]]:
     """Run web + academic searches per sub-query and deduplicate by URL.
 
     A paper hit without real evidence (empty snippet after dropping the
@@ -132,6 +165,8 @@ def _collect_sources(subqueries: List[str], per_query: int, papers_on_first: int
             if hit.get("syntheticAbstract"):
                 continue
             if title.lower().startswith("untitled"):
+                continue
+            if not _source_is_relevant(hit, goal, sq):
                 continue
             # An academic record without an abstract remains a real, citeable
             # bibliographic source.  It is clearly labelled as metadata-only
@@ -224,13 +259,13 @@ def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional
         return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": [], "trace": trace.to_dict()}
 
     try:
-        sources = _collect_sources(subqueries, per_query, trace=trace)
+        sources = _collect_sources(goal, subqueries, per_query, trace=trace)
     except TypeError as exc:
         # Compatibility for integrations that provide the original two-argument
         # collector. Built-in collection always receives the progress callback.
         if "progress" not in str(exc):
             raise
-        sources = _collect_sources(subqueries, per_query, trace=trace)
+        sources = _collect_sources(goal, subqueries, per_query, trace=trace)
     if not sources:
         trace.fail_step(Stages.LITERATURE_SEARCH, "Literature search failed", "No verifiable sources were retrieved")
         return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": subqueries, "trace": trace.to_dict()}

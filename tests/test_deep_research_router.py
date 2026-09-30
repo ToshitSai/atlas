@@ -173,3 +173,24 @@ def test_deep_research_trace_registry_roundtrip(monkeypatch):
     assert final == polled["steps"]
     assert st.poll_trace("req-roundtrip")["status"] == "completed"
     assert st.poll_trace("unknown-request") is None
+
+
+def test_deep_research_drops_irrelevant_results(monkeypatch):
+    """A generic title such as a TV programme must never enter a fraud report."""
+    import backend.deep_research as deep
+
+    monkeypatch.setattr(deep, "plan_subqueries", lambda *args, **kwargs: [
+        "improve credit card fraud detection model",
+    ])
+    monkeypatch.setattr(deep, "search_web", lambda *args, **kwargs: [
+        {"title": "How (TV series)", "url": "https://example.test/how", "snippet": "British television programme"},
+        {"title": "Credit card fraud detection methods", "url": "https://example.test/fraud", "snippet": "Fraud detection model evaluation"},
+    ])
+    monkeypatch.setattr(deep, "search_literature", lambda *args, **kwargs: [])
+    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
+
+    result = deep.run_deep_research("Improve credit card fraud detection")
+
+    assert result["status"] == "ok"
+    sources = result["trace"]  # report inputs are captured through the collector path
+    assert result["sourceCount"] == 1

@@ -52,6 +52,16 @@ export default function Sidebar({
 
   const groups = groupProjects(filteredProjects);
 
+  const relativeTime = (value) => {
+    const then = new Date(value || Date.now());
+    const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (seconds < 60) return 'now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 172800) return 'Yesterday';
+    return `${Math.floor(seconds / 86400)}d ago`;
+  };
+
   const renderProjectItem = (proj) => {
     const isSelected = activeProject?.id === proj.id;
     const isRunning = proj.status === 'IN_PROGRESS' || proj.status === 'QUEUED';
@@ -105,7 +115,10 @@ export default function Sidebar({
           isSelected ? 'bg-[#1E293B] text-slate-100 border border-slate-700/60 font-medium' : 'text-slate-400 hover:text-slate-200 hover:bg-[#161B26]'
         }`}
       >
-        <span className="truncate min-w-0 flex-1" title={conversation.title}>{conversation.title || 'Untitled research chat'}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate" title={conversation.title}>{conversation.title || 'Untitled research chat'}</span>
+          <span className="block text-[10px] text-slate-500 mt-0.5">{relativeTime(conversation.updatedAt || conversation.createdAt)}</span>
+        </span>
         <span className="shrink-0 text-[10px] text-slate-500">{conversation.messageCount || 0}</span>
       </button>
     );
