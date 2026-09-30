@@ -99,18 +99,9 @@ export default function QuestionComposer({
           className="flex-1 bg-transparent text-sm text-[#F4F4F6] placeholder-[#71717A] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[120px] py-0.5"
         />
 
-        {/* Right Stack: Quiet AUTO badge + White/Orange Action Button (Image 2 style) */}
+        {/* Right Stack: Action Button (Image 2 style) */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Subtle AUTO mode indicator */}
-          <span
-            title="Automatic routing mode enabled"
-            className="hidden sm:flex text-[10px] font-mono text-[#A1A1AA] bg-[#242429] border border-[#303036] px-2 py-0.5 rounded-full items-center gap-1.5 shrink-0"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#FF6500]" />
-            AUTO
-          </span>
-
-          {/* Action Button (Image 2 style: clean rounded white button) */}
+          {/* Action Button (Image 2 style: clean rounded white button with orange mic icon) */}
           <button
             type="submit"
             disabled={!text.trim() || isPending}
@@ -119,7 +110,7 @@ export default function QuestionComposer({
             className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
               text.trim() && !isPending
                 ? 'bg-[#FF6500] hover:bg-[#FF302A] text-white cursor-pointer shadow-md scale-105'
-                : 'bg-white hover:bg-slate-200 text-black cursor-pointer shadow'
+                : 'bg-white hover:bg-slate-200 cursor-pointer shadow'
             }`}
           >
             {isPending ? (
@@ -130,8 +121,8 @@ export default function QuestionComposer({
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             ) : (
-              /* Microphone icon matching Image 2 reference */
-              <svg className="w-4.5 h-4.5 text-black" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+              /* Microphone icon in orange (#FF6500) */
+              <svg className="w-4.5 h-4.5 text-[#FF6500]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                 <line x1="12" y1="19" x2="12" y2="22" />
