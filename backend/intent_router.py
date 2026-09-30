@@ -2027,7 +2027,7 @@ def _handle_intent_message_impl(
                              else "I can also help plan a dataset and model workflow.")
             resp_text = (
                 f"Researching: {goal}.\n\n"
-                "I couldn't reach a web search provider right now, so I can't pull live sources for this. "
+                "I couldn't reach a web search provider right now, so I can't pull live sources for this and won't pretend otherwise. "
                 "Please try again shortly, or ask directly and I'll answer from what I know without citations. "
                 + runtime_offer
             )
