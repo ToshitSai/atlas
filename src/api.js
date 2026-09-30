@@ -111,21 +111,26 @@ export async function sendDeepResearchStream(message, projectId = null, conversa
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = ''; let finalResult = null;
+  const consumeFrame = (frame) => {
+    const kind = (frame.match(/^event:\s*(.+)$/m) || [])[1];
+    const raw = (frame.match(/^data:\s*([\s\S]+)$/m) || [])[1];
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (kind === 'activity') onActivity(data);
+    else if (kind === 'final') finalResult = data;
+    else if (kind === 'error') throw new Error(data.error || 'Research stream failed');
+  };
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const frames = buffer.split('\n\n'); buffer = frames.pop() || '';
-    frames.forEach(frame => {
-      const kind = (frame.match(/^event:\s*(.+)$/m) || [])[1];
-      const raw = (frame.match(/^data:\s*(.+)$/m) || [])[1];
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      if (kind === 'activity') onActivity(data);
-      else if (kind === 'final') finalResult = data;
-      else if (kind === 'error') throw new Error(data.error || 'Research stream failed');
-    });
+    frames.forEach(consumeFrame);
   }
+  // A proxy/serverless runtime can close immediately after the final event;
+  // consume a valid unterminated final frame instead of reporting a false error.
+  buffer += decoder.decode();
+  if (buffer.trim()) consumeFrame(buffer);
   if (!finalResult) throw new Error('Research stream ended without a final response.');
   return finalResult;
 }
