@@ -399,6 +399,18 @@ def extract_topic(message: str) -> Optional[str]:
     return None
 
 
+def extract_research_topic(message: str) -> str:
+    """Remove conversational commands before issuing research queries."""
+    raw = (message or "").strip()
+    match = re.search(r"(?:do\s+)?(?:deep\s+)?research\s+(?:for|on|about)?\s*(.+?)(?:\s+(?:and\s+)?tell\s+me|\s+please)?[.!?]*$", raw, re.I)
+    if not match:
+        match = re.search(r"(?:look\s+into|investigate|research)\s+(.+?)[.!?]*$", raw, re.I)
+    topic = (match.group(1) if match else raw).strip(" .?!")
+    if topic.lower() == "rag":
+        return "Retrieval-Augmented Generation (RAG)"
+    return topic or raw
+
+
 # --------------------------------------------------------------------------- #
 # Task-type detection (owner directive §1, §7). These helpers classify the SHAPE
 # of the request so the router can pick general Q&A vs coding vs research, etc.
@@ -1970,7 +1982,7 @@ def _handle_intent_message_impl(
     #    verify -> cited report. Honest fallback when no source is reachable.
     elif intent == "DEEP_RESEARCH":
         store.clear_pending_action(sid)
-        goal = re.sub(r"https?://\S+", "", message).strip() or message.strip()
+        goal = extract_research_topic(re.sub(r"https?://\S+", "", message).strip() or message.strip())
         # The goal must be a TOPIC, not an imperative sentence: strip leading
         # research verbs so search queries are not polluted with them.
         goal = re.sub(
@@ -2008,14 +2020,16 @@ def _handle_intent_message_impl(
                     "label": "Deep research could not start",
                     "detail": dr_error or "pipeline unavailable",
                 }]
+            print(f"[DEEP RESEARCH PROVIDER FAILURE] {dr_error or 'no sources returned'}")
+            from backend.hf_datasets import ml_runtime_missing
+            runtime_offer = ("I can still help search and inspect dataset metadata here; full model training "
+                             "requires running the app locally." if ml_runtime_missing()
+                             else "I can also help plan a dataset and model workflow.")
             resp_text = (
-                f"You've asked me to research: {goal}.\n\n"
-                "I ran the deep-research pipeline (plan -> search -> synthesize -> verify) "
-                "but couldn't reach any web or academic source from this deployment, so I "
-                "won't pretend to have found sources. Check the search provider configuration "
-                "(TAVILY_API_KEY / SERPER_API_KEY / BRAVE_API_KEY) and network access, then "
-                "try again. If your goal is a machine-learning problem, I can instead run the "
-                "real ML workflow — find a dataset, train and compare models with verified metrics."
+                f"Researching: {goal}.\n\n"
+                "I couldn't reach a web search provider right now, so I can't pull live sources for this. "
+                "Please try again shortly, or ask directly and I'll answer from what I know without citations. "
+                + runtime_offer
             )
         store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": goal.lower()[:80]})
         return {
