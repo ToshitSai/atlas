@@ -1,76 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    --bg-main: #080808;
+    --bg-left-nav: #050505;
+    --bg-right-panel: #030303;
+    --bg-card: #0B0B0B;
+    --bg-card-alt: #101012;
+    --bg-composer: #141416;
+    --border-subtle: #242424;
+    --border-emphasis: #343434;
+    --text-main: #F4F4F6;
+    --text-secondary: #8A8F98;
+    --accent-orange: #FF6500;
+    --accent-red: #FF302A;
+    --accent-crimson: #DF223A;
+    --text-failure: #F87171;
+  }
+
   body {
-    background-color: #0B0F17;
-    color: #F1F5F9;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    font-family: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
     overflow-x: hidden;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'Roboto Mono', monospace;
   }
 }
 
-/* Custom scrollbar for technical logs & research stream */
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0D111A;
+  background: #050505;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1E293B;
+  background: #242424;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #343434;
 }
 
-/* Long tokens (URLs, IDs, metric dumps, code) wrap inside chat cards, dataset
-   cards, the report and the telemetry panel instead of stretching the page.
-   The PAGE itself never scrolls horizontally: containers use min-w-0 and let
-   content break, while only intentional internal areas (telemetry panel,
-   sidebar history) scroll. */
+/* Panel Entrance & Keyframe Motion */
+@keyframes panel-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-panel-entrance {
+  animation: panel-entrance 300ms ease-out both;
+}
+
+@keyframes gentle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.animate-running-pulse {
+  animation: gentle-pulse 1.8s ease-in-out infinite;
+}
+
+/* Specific Transitions as per Spec */
+.nav-item-transition {
+  transition: background-color 175ms ease, color 175ms ease, border-color 175ms ease;
+}
+
+.btn-transition {
+  transition: background-color 175ms ease, color 175ms ease, border-color 175ms ease, box-shadow 175ms ease;
+}
+
+.card-hover-lift {
+  transition: transform 175ms ease, border-color 175ms ease, box-shadow 175ms ease;
+}
+.card-hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+.input-focus-orange {
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.input-focus-orange:focus {
+  border-color: #FF6500 !important;
+  box-shadow: 0 0 0 2px rgba(255, 101, 0, 0.2) !important;
+}
+
+/* Text Wrapping & Safety */
 .overflow-wrap-anywhere {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-/* Code / pre content may scroll INTERNALLY but must never expand the page. */
 pre, code {
   max-width: 100%;
   overflow-x: auto;
   overflow-wrap: anywhere;
 }
 
-/* Responsive tables (any future technical tables) scroll inside their own
-   container — the page never scrolls horizontally because of a table. */
-.table-responsive {
-  display: block;
-  width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* On very small phones the brand row of the start screen needs a little more
-   breathing room so the title never feels clipped. */
-@media (max-width: 359px) {
-  .overflow-wrap-anywhere { word-break: break-word; }
-}
-
-.glow-cyan {
-  box-shadow: 0 0 25px -5px rgba(0, 240, 255, 0.25);
-}
-
-.glow-cyan-sm {
-  box-shadow: 0 0 12px -2px rgba(0, 240, 255, 0.3);
-}
-
-/* Animations */
-@keyframes pulse-slow {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(0.98); }
-}
-
-.animate-pulse-slow {
-  animation: pulse-slow 4s ease-in-out infinite;
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .card-hover-lift:hover {
+    transform: none !important;
+  }
+  .animate-running-pulse {
+    animation: none !important;
+    opacity: 1 !important;
+  }
 }

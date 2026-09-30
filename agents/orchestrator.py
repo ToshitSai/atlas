@@ -4,7 +4,7 @@ import tempfile
 import threading
 import json
 import traceback
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from database.store import store
 from backend.dataset_analyzer import analyze_dataset
@@ -15,6 +15,7 @@ from backend.literature_search import search_literature
 from backend.report_generator import generate_research_report
 from backend.llm import generate_hypothesis_llm, generate_research_question, query_llm, query_critic_llm, any_provider_configured
 from backend.tracker import tracker
+from backend.step_trace import StepTrace, Stages, create_trace, get_trace
 
 def get_experiments_dir():
     local_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "experiments")

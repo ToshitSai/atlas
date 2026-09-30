@@ -1,374 +1,442 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
-import ResearchStartScreen from './components/ResearchStartScreen';
-import ResearchChatWorkspace from './components/ResearchChatWorkspace';
+import Header from './components/Header';
+import QuestionComposer from './components/QuestionComposer';
+import ScientificInquiryCard from './components/ScientificInquiryCard';
+import RightSidebar from './components/RightSidebar';
+import NormalAnswerView from './components/NormalAnswerView';
+import ResearchWorkspaceView from './components/ResearchWorkspaceView';
+import ExperimentsView from './components/ExperimentsView';
+import SourcesView from './components/SourcesView';
+import HypothesesView from './components/HypothesesView';
+import ReportsView from './components/ReportsView';
+import HistoryView from './components/HistoryView';
 import SettingsModal from './components/SettingsModal';
-import { fetchProjects, fetchProjectDetails, sendDeepResearchStream, fetchSettings, approveDataset, fetchConversationMessages, fetchConversations } from './api';
 
-// One conversation per project so the FIRST message (sent from the start
-// screen) and every workspace follow-up share the same server-side memory.
+import {
+  fetchHealth,
+  fetchSettings,
+  fetchProjects,
+  fetchProjectDetails,
+  sendDeepResearchStream,
+  sendChatMessage,
+  fetchProjectReport,
+  fetchProjectBaselines,
+  fetchProjectLiterature,
+} from './api';
+
 function createConversationId() {
   return 'conv-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
 }
 
-function getConversationId(projectId) {
-  if (!projectId) return createConversationId();
-  const key = 'ai-scientist-conv-' + projectId;
-  let conv = null;
-  try { conv = localStorage.getItem(key); } catch (e) { /* private mode */ }
-  if (!conv) {
-    conv = 'conv-' + projectId + '-' + Math.random().toString(36).substring(2, 9);
-    try { localStorage.setItem(key, conv); } catch (e) { /* ignore */ }
-  }
-  return conv;
-}
-
-const CONVERSATION_INDEX_KEY = 'ai-scientist-conversation-index';
-const conversationMessagesKey = (conversationId) => `ai-scientist-conversation-${conversationId}`;
-
-function readStoredJson(key, fallback) {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
-  } catch (e) { return fallback; }
-}
-
-function conversationTitle(messages) {
-  const generic = new Set(['hi', 'hello', 'hey', 'hello there', 'hi there', 'good morning', 'good evening']);
-  const turns = messages.filter(m => m.role === 'user').map(m => String(m.content || '').trim());
-  const topic = turns.find(text => text.split(/\s+/).length >= 3 && !generic.has(text.toLowerCase().replace(/[!?.]+$/, '')))
-    || turns.find(text => !generic.has(text.toLowerCase().replace(/[!?.]+$/, '')))
-    || 'Untitled research chat';
-  if (/fraud/i.test(topic) && /train|model|detect|predict/i.test(topic)) return 'Fraud detection model design';
-  return topic.length > 77 ? `${topic.slice(0, 76).trimEnd()}…` : topic;
-}
-
 function isLikelyDeepResearch(text) {
   const value = String(text || '').toLowerCase();
-  return !/\b(just answer briefly|brief answer|don't research|do not research)\b/.test(value)
-    && (/\b(deep research|investigate|literature review|research gap|analyze multiple papers|recent papers|design experiments|run experiments|error analysis|reproduce|benchmark|autonomous ml research|determine whether|statistically significant|significantly improve|performance degradation|experimentally|try several)\b/.test(value)
-      || /\b(improve|optimi[sz]e|diagnose|figure out|find out)\b.*\b(model|fraud|recall|minority.class|detection|performance|overfitting|features?)\b/.test(value)
-      || (/\b(dataset|datasets)\b.*\b(evaluate|experiment|test|benchmark)\b/.test(value) || /\bcompare\b.*\b(xgboost|random forest|models?|dataset|approach)\b/.test(value)));
+  return (
+    !/\b(just answer briefly|brief answer|don't research|do not research)\b/.test(value) &&
+    (/\b(deep research|investigate|literature review|research gap|analyze multiple papers|recent papers|design experiments|run experiments|error analysis|reproduce|benchmark|autonomous ml research|determine whether|statistically significant|significantly improve|performance degradation|experimentally|try several)\b/.test(value) ||
+      /\b(improve|optimi[sz]e|diagnose|figure out|find out)\b.*\b(model|fraud|recall|minority.class|detection|performance|overfitting|features?)\b/.test(value) ||
+      (/\b(dataset|datasets)\b.*\b(evaluate|experiment|test|benchmark)\b/.test(value) || /\bcompare\b.*\b(xgboost|random forest|models?|dataset|approach)\b/.test(value)))
+  );
 }
 
+// Stage mapping to 13 Scientific Inquiry stages
+const STAGE_NAME_MAP = {
+  PLANNING: 2,
+  DATASET_SEARCH: 5,
+  DATASET_EVALUATION: 5,
+  DATASET_SELECTED: 5,
+  WAITING_FOR_USER: 6,
+  HYPOTHESIS_GEN: 11,
+  EXPERIMENT_DESIGN: 7,
+  EXPERIMENT_EXEC: 8,
+  ERROR_ANALYSIS: 10,
+  REPORT_GEN: 13,
+};
+
 export default function App() {
-  const [projects, setProjects] = useState([]);
-  const [conversations, setConversations] = useState([]);
-  const [activeProject, setActiveProject] = useState(null);
-  const [chatMessages, setChatMessages] = useState([]);
+  // Navigation & Active View
+  const [activeNav, setActiveNav] = useState('research'); // 'research' | 'experiments' | 'sources' | 'hypotheses' | 'reports' | 'history'
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isLaunching, setIsLaunching] = useState(false);
-  const [launchStartedAt, setLaunchStartedAt] = useState(null);
-  const [launchShowsResearchActivity, setLaunchShowsResearchActivity] = useState(false);
-  const [initialRequestActivities, setInitialRequestActivities] = useState([]);
-  const [isApproving, setIsApproving] = useState(false);
-  const [dockerReady, setDockerReady] = useState(false);
-  const [llmConfigured, setLlmConfigured] = useState(false);
-  // Research mode (AUTONOMOUS/GUIDED/MANUAL). Seeded from persisted app
-  // settings; per-chat switches via the chat endpoint stay server-side.
-  const [researchMode, setResearchMode] = useState('GUIDED');
-  const [isInChatWorkspace, setIsInChatWorkspace] = useState(false);
-  const [conversationId, setConversationId] = useState(null);
-  // Mobile sidebar drawer (<1024px): overlays the chat instead of squeezing it.
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Escape closes the drawer (and the settings modal keeps its own handling).
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') setIsSidebarOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // System & Connection State
+  const [backendConnected, setBackendConnected] = useState(false);
+  const [sysSettings, setSysSettings] = useState({});
 
-  // Resizing up to the desktop breakpoint closes the drawer so the state never
-  // goes stale (the drawer is CSS-hidden on desktop anyway).
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const onChange = (e) => { if (e.matches) setIsSidebarOpen(false); };
-    if (mq.addEventListener) mq.addEventListener('change', onChange);
-    else mq.addListener(onChange);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
-      else mq.removeListener(onChange);
-    };
-  }, []);
+  // Active Session & Research State
+  const [conversationId, setConversationId] = useState(createConversationId());
+  const [activeProject, setActiveProject] = useState(null);
+  const [userQuestion, setUserQuestion] = useState('');
+  const [routingMode, setRoutingMode] = useState('AUTO');
+  const [isDeepResearch, setIsDeepResearch] = useState(false);
+  const [sessionState, setSessionState] = useState('IDLE'); // 'IDLE' | 'QUEUED' | 'IN_PROGRESS' | 'COMPLETE' | 'FAILED' | 'CANCELLED'
+  const [isPending, setIsPending] = useState(false);
+  const [errorFeedback, setErrorFeedback] = useState(null);
 
-  const loadProjects = async () => {
-    const list = await fetchProjects();
-    setProjects(list);
-  };
+  // Answer & Data Payload
+  const [normalAnswer, setNormalAnswer] = useState('');
+  const [normalSources, setNormalSources] = useState([]);
+  const [isBuiltInExplanation, setIsBuiltInExplanation] = useState(false);
 
-  const loadConversations = async () => {
-    const list = await fetchConversations();
-    const cached = readStoredJson(CONVERSATION_INDEX_KEY, []);
-    // A serverless instance can be replaced between requests. Merge the
-    // browser's durable recent-chat index as a fallback rather than making a
-    // saved conversation disappear during that handoff.
-    const merged = new Map((cached || []).map(item => [item.id, item]));
-    (list || []).forEach(item => merged.set(item.id, item));
-    const values = Array.from(merged.values());
-    setConversations(values);
-    try { localStorage.setItem(CONVERSATION_INDEX_KEY, JSON.stringify(values)); } catch (e) { /* private mode */ }
+  // Deep Research Workspace Data
+  const [stageEvents, setStageEvents] = useState([]);
+  const [experiments, setExperiments] = useState([]);
+  const [currentExperiment, setCurrentExperiment] = useState(null);
+  const [validatedSources, setValidatedSources] = useState([]);
+  const [latestInsight, setLatestInsight] = useState(null);
+  const [nextHypothesis, setNextHypothesis] = useState(null);
+  const [nextExperiment, setNextExperiment] = useState(null);
+  const [reportMd, setReportMd] = useState(null);
+
+  // Session History List
+  const [historyItems, setHistoryItems] = useState([]);
+
+  // Check Backend Connection on Mount & Periodically
+  const checkBackend = async () => {
+    try {
+      const health = await fetchHealth();
+      setBackendConnected(health && health.status === 'healthy');
+      const settings = await fetchSettings();
+      setSysSettings(settings);
+    } catch (e) {
+      setBackendConnected(false);
+    }
   };
 
   useEffect(() => {
-    if (!conversationId || !chatMessages.length) return;
-    const summary = {
-      id: conversationId,
-      title: conversationTitle(chatMessages),
-      updatedAt: new Date().toISOString(),
-      messageCount: chatMessages.length,
-    };
-    try { localStorage.setItem(conversationMessagesKey(conversationId), JSON.stringify(chatMessages)); } catch (e) { /* private mode */ }
-    setConversations(previous => {
-      const updated = [summary, ...previous.filter(item => item.id !== conversationId)];
-      try { localStorage.setItem(CONVERSATION_INDEX_KEY, JSON.stringify(updated)); } catch (e) { /* private mode */ }
-      return updated;
-    });
-  }, [conversationId, chatMessages]);
-
-  const loadSysSettings = async () => {
-    const s = await fetchSettings();
-    setDockerReady(s.dockerAvailable || false);
-    setLlmConfigured(s.apiKeySet || false);
-    if (s.researchMode) setResearchMode(s.researchMode);
-  };
-
-  useEffect(() => {
-    loadProjects();
-    loadConversations();
-    loadSysSettings();
-    const interval = setInterval(() => { loadProjects(); loadConversations(); }, 3000);
+    checkBackend();
+    const interval = setInterval(checkBackend, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // Sync active project state
-  useEffect(() => {
-    if (!activeProject?.id) return;
-    const interval = setInterval(async () => {
-      const updated = await fetchProjectDetails(activeProject.id);
-      if (updated) {
-        setActiveProject(updated);
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [activeProject?.id]);
+  // Handle New Question / Reset State
+  const handleNewQuestion = () => {
+    setUserQuestion('');
+    setNormalAnswer('');
+    setNormalSources([]);
+    setIsDeepResearch(false);
+    setSessionState('IDLE');
+    setErrorFeedback(null);
+    setStageEvents([]);
+    setExperiments([]);
+    setCurrentExperiment(null);
+    setValidatedSources([]);
+    setLatestInsight(null);
+    setNextHypothesis(null);
+    setNextExperiment(null);
+    setReportMd(null);
+    setActiveProject(null);
+    setConversationId(createConversationId());
+    setActiveNav('research');
+  };
 
-  const handleSendInitialChatMessage = async (userText) => {
-    if (!userText.trim()) return;
-    setIsLaunching(true);
-    setLaunchStartedAt(Date.now());
-    setLaunchShowsResearchActivity(false);
-    setInitialRequestActivities([]);
+  // Main Question Submission Handler
+  const handleSendQuestion = async (queryText, onSuccess) => {
+    if (!queryText.trim()) return;
 
-    const requestId = createConversationId();
-    const userMessageId = createConversationId();
-    const userMsg = { id: userMessageId, requestId, role: 'user', content: userText };
-    setChatMessages([userMsg]);
-    setIsInChatWorkspace(true);
+    setUserQuestion(queryText);
+    setIsPending(true);
+    setErrorFeedback(null);
+    setActiveNav('research');
 
-    // A fresh chat without an active project still gets its own conversation
-    // id so follow-ups keep the same memory.
-    const convId = conversationId || createConversationId();
-    setConversationId(convId);
-    try { localStorage.setItem('ai-scientist-active-conversation', convId); } catch (e) { /* private mode */ }
+    // Disconnected Backend Guard (Req §1 & §15)
+    if (!backendConnected) {
+      setIsPending(false);
+      setSessionState('FAILED');
+      setErrorFeedback('Research service not configured. No investigation or experiment has started.');
+      return;
+    }
+
+    // Determine initial routing intention
+    const deepCheck = isLikelyDeepResearch(queryText);
+    setIsDeepResearch(deepCheck);
+    setRoutingMode(deepCheck ? 'AUTO: Deep Research' : 'AUTO: Normal Answer');
+    setSessionState(deepCheck ? 'QUEUED' : 'IN_PROGRESS');
+
+    // Create history item entry
+    const newHistoryEntry = {
+      id: Date.now(),
+      question: queryText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isDeep: deepCheck,
+    };
+    setHistoryItems((prev) => [newHistoryEntry, ...prev]);
+
+    // Initial Stage 1 Event: Understanding research problem
+    const initialEvents = [
+      { stageIndex: 1, status: 'running', detail: 'Analyzing research inquiry and routing requirement', timestamp: new Date().toLocaleTimeString() },
+    ];
+    setStageEvents(initialEvents);
 
     try {
-      const onActivity = (event) => {
-        setLaunchShowsResearchActivity(true);
-        setInitialRequestActivities(previous => {
-        const existing = previous.findIndex(step => step.id === event.id);
-        if (existing >= 0) return previous.map((step, index) => index === existing ? { ...step, ...event, id: step.id || `${requestId}-${event.stage}` } : step);
-        return [...previous, { ...event, id: event.id || `${requestId}-${event.stage}` }];
-      });
-      };
-      const res = await sendDeepResearchStream(userText, activeProject?.id, convId, null, null, {
-        requestId,
-        messageId: userMessageId,
-        researchMode
-      }, [userMsg], onActivity);
-      if (res.requestId !== requestId || res.responseToMessageId !== userMessageId) {
-        throw new Error('The response could not be matched to the submitted message. Please retry.');
-      }
-      const assistantMsg = {
-        id: res.messageId,
-        conversationId: res.conversationId,
-        requestId,
-        responseToMessageId: res.responseToMessageId,
-        role: 'assistant',
-        content: res.response,
-        intent: res.intent,
-        action: res.action,
-        datasets: res.candidates || null,
-        recommendation: res.recommendation || null,
-        researchQuery: res.researchQuery || null,
-        selectionMode: res.selectionMode || null,
-        selectedDataset: res.selectedDataset || null,
-        activity: res.activity || []
-      };
-      setChatMessages(prev => [...prev, assistantMsg]);
+      if (deepCheck) {
+        // Deep Research Path - Stream activities
+        setSessionState('IN_PROGRESS');
+        
+        const onActivity = (activity) => {
+          const idx = STAGE_NAME_MAP[activity.stage] || 2;
+          setStageEvents((prev) => {
+            const updated = [...prev];
+            const existing = updated.findIndex((e) => e.stageIndex === idx);
+            const evtObj = {
+              stageIndex: idx,
+              status: activity.status === 'completed' ? 'completed' : activity.status === 'failed' ? 'failed' : 'running',
+              detail: activity.detail || activity.label,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            };
+            if (existing >= 0) updated[existing] = evtObj;
+            else updated.push(evtObj);
+            return updated;
+          });
+        };
 
-      if (res.action === 'START_RESEARCH' && res.project) {
-        setActiveProject(res.project);
-        await loadProjects();
+        const res = await sendDeepResearchStream(
+          queryText,
+          activeProject?.id,
+          conversationId,
+          null,
+          null,
+          { requestId: createConversationId() },
+          [],
+          onActivity
+        );
+
+        if (res) {
+          setSessionState('COMPLETE');
+          // Complete stage 1 & 13
+          setStageEvents((prev) => [
+            { stageIndex: 1, status: 'completed', detail: 'Research problem analyzed and scoped', timestamp: new Date().toLocaleTimeString() },
+            ...prev.filter((e) => e.stageIndex !== 1 && e.stageIndex !== 13),
+            { stageIndex: 13, status: 'completed', detail: 'Final research report compiled', timestamp: new Date().toLocaleTimeString() },
+          ]);
+
+          if (res.response) {
+            setReportMd(res.response);
+            setLatestInsight(res.response.slice(0, 240) + '…');
+          }
+
+          if (res.project) {
+            setActiveProject(res.project);
+          }
+
+          if (onSuccess) onSuccess();
+        }
+      } else {
+        // Simple Question / Normal Answer Path
+        const res = await sendChatMessage(
+          queryText,
+          activeProject?.id,
+          conversationId
+        );
+
+        setSessionState('COMPLETE');
+        setNormalAnswer(res.response || 'No response returned.');
+        setIsBuiltInExplanation(res.action === 'NONE' || !sysSettings.apiKeySet);
+
+        if (res.citationPolicy === 'required' && res.sources) {
+          setNormalSources(res.sources);
+        }
+
+        if (onSuccess) onSuccess();
       }
     } catch (err) {
-      setChatMessages(prev => [
-        ...prev,
-        { id: userMessageId + '-error', requestId, responseToMessageId: userMessageId, role: 'assistant', content: `Error: ${err.message}` }
-      ]);
+      setSessionState('FAILED');
+      setErrorFeedback(`Submission failed: ${err.message}`);
     } finally {
-      await loadConversations();
-      setIsLaunching(false);
-      setLaunchStartedAt(null);
-      setLaunchShowsResearchActivity(false);
-      setInitialRequestActivities([]);
+      setIsPending(false);
     }
   };
 
-  const handleApproveDataset = async (repoId, researchQuery) => {
-    if (!repoId || isApproving) return;
-    setIsApproving(true);
-    setIsInChatWorkspace(true);
-    try {
-      const res = await approveDataset(repoId, researchQuery || `Improve modeling on ${repoId}`);
-      setChatMessages(prev => [
-        ...prev,
-        { id: Date.now() + 2, role: 'assistant', content: res.response || `Loading ${repoId}...` }
-      ]);
-      if (res.project) {
-        const projId = res.project.id;
-        setActiveProject(res.project);
-        await loadProjects();
-      }
-    } catch (err) {
-      setChatMessages(prev => [
-        ...prev,
-        { id: Date.now() + 2, role: 'assistant', content: `Sorry, I couldn't load that dataset: ${err.message}` }
-      ]);
-    } finally {
-      await loadConversations();
-      setIsApproving(false);
-    }
+  // Download Report as Markdown (.md) file
+  const handleDownloadReport = () => {
+    if (!reportMd) return;
+    const blob = new Blob([reportMd], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `AI_Scientist_Research_Report_${Date.now()}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  const handleSelectConversation = async (conversation) => {
-    setActiveProject(null);
-    setIsInChatWorkspace(true);
-    setConversationId(conversation.id);
-    try { localStorage.setItem('ai-scientist-active-conversation', conversation.id); } catch (e) { /* private mode */ }
-    setChatMessages([]);
-    try {
-      const msgs = await fetchConversationMessages(conversation.id);
-      const recovered = msgs?.length ? msgs : readStoredJson(conversationMessagesKey(conversation.id), []);
-      setChatMessages((recovered || []).map(m => ({
-        id: m.id, role: m.role, content: m.content, intent: m.intent,
-        datasets: null, recommendation: null, researchQuery: null, activity: m.activity || []
-      })));
-    } catch (e) {
-      setChatMessages([]);
-    }
+  // Title for top header based on active navigation item
+  const navTitles = {
+    research: 'Research Workspace',
+    experiments: 'Experiments Directory',
+    sources: 'Primary Sources',
+    hypotheses: 'Scientific Hypotheses',
+    reports: 'Scientific Reports',
+    history: 'Session History',
   };
-
-  // Clicking a project in the sidebar: load its conversation history so the
-  // chat survives page refreshes and switching between studies.
-  const handleSelectProject = async (proj) => {
-    setActiveProject(proj);
-    setIsInChatWorkspace(true);
-    const convId = getConversationId(proj.id);
-    setConversationId(convId);
-    setChatMessages([]);
-    try {
-      const msgs = await fetchConversationMessages(convId);
-      const mapped = (msgs || []).map(m => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        intent: m.intent,
-        datasets: null,
-        recommendation: null,
-        researchQuery: null,
-        activity: m.activity || []
-      }));
-      setChatMessages(mapped);
-    } catch (e) {
-      setChatMessages([]);
-    }
-  };
-
-  const handleNewResearchClick = () => {
-    setActiveProject(null);
-    setChatMessages([]);
-    setIsInChatWorkspace(false);
-    setConversationId(null);
-    try { localStorage.removeItem('ai-scientist-active-conversation'); } catch (e) { /* private mode */ }
-  };
-
-  // Reopen the last selected persisted chat after a refresh. The list itself
-  // remains the source of truth, so a deleted/unavailable id is ignored.
-  useEffect(() => {
-    if (conversationId || activeProject || !conversations.length) return;
-    let savedId = null;
-    try { savedId = localStorage.getItem('ai-scientist-active-conversation'); } catch (e) { /* private mode */ }
-    const saved = conversations.find(item => item.id === savedId);
-    if (saved) handleSelectConversation(saved);
-  }, [conversations, conversationId, activeProject]);
 
   return (
-    <div className="flex h-screen bg-[#0B0F17] text-slate-100 font-sans overflow-hidden">
-
-      {/* Sakana Chat Style Left Sidebar — desktop rail / mobile drawer */}
+    <div className="flex h-screen w-screen bg-[#080808] text-[#F4F4F6] font-sans overflow-hidden select-none">
+      
+      {/* 1. Left Navigation Column (~210px wide) */}
       <Sidebar
-        projects={projects}
-        conversations={conversations}
-        activeProject={activeProject}
-        setActiveProject={handleSelectProject}
-        activeConversationId={conversationId}
-        onSelectConversation={handleSelectConversation}
-        onNewResearch={handleNewResearchClick}
+        activeNav={activeNav}
+        onSelectNav={setActiveNav}
+        onNewQuestion={handleNewQuestion}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        dockerReady={dockerReady}
-        llmConfigured={llmConfigured}
-        isMobileOpen={isSidebarOpen}
-        onMobileClose={() => setIsSidebarOpen(false)}
+        isMobileOpen={isMobileNavOpen}
+        onMobileClose={() => setIsMobileNavOpen(false)}
+        backendConnected={backendConnected}
       />
 
-      {/* Main Screen: Research Start Composer or Conversational Workspace.
-          min-w-0 is essential: without it the flex child cannot shrink below
-          its content width and the page overflows horizontally on phones. */}
-      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden bg-[#0B0F17]">
-        {!isInChatWorkspace && !activeProject ? (
-          <ResearchStartScreen
-            onSendChatMessage={handleSendInitialChatMessage}
-            isLaunching={isLaunching}
-            onOpenMenu={() => setIsSidebarOpen(true)}
-          />
-        ) : (
-          <ResearchChatWorkspace
-            activeProject={activeProject}
-            setActiveProject={setActiveProject}
-            onNewResearch={handleNewResearchClick}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            chatMessages={chatMessages}
-            setChatMessages={setChatMessages}
-            onApproveDataset={handleApproveDataset}
-            isApproving={isApproving}
-            conversationId={conversationId || getConversationId(activeProject?.id || 'general')}
-            onConversationUpdated={loadConversations}
-            initialRequestStartedAt={isLaunching && launchShowsResearchActivity ? launchStartedAt : null}
-            initialRequestActivities={initialRequestActivities}
-            onOpenMenu={() => setIsSidebarOpen(true)}
-          />
-        )}
-      </main>
+      {/* Main Workspace Stack (Center Column + Right Context Sidebar) */}
+      <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
+        
+        {/* Compact Top Header */}
+        <Header
+          sessionStatus={sessionState}
+          routingMode={routingMode}
+          backendConnected={backendConnected}
+          onOpenMobileNav={() => setIsMobileNavOpen(true)}
+          activeNavTitle={navTitles[activeNav] || 'Research Workspace'}
+        />
 
-      {/* Settings Modal */}
+        {/* 3-Column Content Body */}
+        <div className="flex-1 min-w-0 flex overflow-hidden relative">
+          
+          {/* 2. Center Workspace Area (Flexible width) */}
+          <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative bg-[#080808]">
+            
+            {/* View Switching based on activeNav destination */}
+            {activeNav === 'research' && (
+              <>
+                {!userQuestion && sessionState === 'IDLE' ? (
+                  // Initial Welcome / Guidance View
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-xl mx-auto space-y-4 animate-panel-entrance">
+                    <div className="w-12 h-12 rounded-xl bg-[#FF6500]/10 border border-[#FF6500]/40 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-[#FF6500]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M12 3a9 9 0 0 1 9 9" />
+                        <path d="M3 12a9 9 0 0 1 9-9" />
+                        <path d="M12 21a9 9 0 0 1-9-9" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      <h2 className="text-base font-semibold text-[#F4F4F6] font-mono tracking-tight">
+                        AI Scientist Workspace
+                      </h2>
+                      <p className="text-xs text-[#8A8F98] leading-relaxed">
+                        Ask a simple question for a concise explanation, or enter a complex machine learning query to trigger an autonomous scientific research pipeline.
+                      </p>
+                    </div>
+
+                    {!backendConnected && (
+                      <div className="p-3 rounded bg-[#F87171]/10 border border-[#F87171]/30 text-xs font-mono text-[#F87171] w-full">
+                        Research service not configured. No investigation or experiment has started.
+                      </div>
+                    )}
+                  </div>
+                ) : !isDeepResearch ? (
+                  // Simple Question Normal Answer View
+                  <NormalAnswerView
+                    userQuestion={userQuestion}
+                    answer={normalAnswer}
+                    routingMode={routingMode}
+                    isBuiltInExplanation={isBuiltInExplanation}
+                    sources={normalSources}
+                  />
+                ) : (
+                  // Deep Research Workspace View (Activity Card, Experiments, Report)
+                  <ResearchWorkspaceView
+                    userQuestion={userQuestion}
+                    routingMode={routingMode}
+                    sessionState={sessionState}
+                    stageEvents={stageEvents}
+                    experiments={experiments}
+                    currentExperiment={currentExperiment}
+                    latestFinding={latestInsight}
+                    reportMd={reportMd}
+                    backendConnected={backendConnected}
+                    canRetry={sessionState === 'FAILED'}
+                    onRetryStage={() => handleSendQuestion(userQuestion)}
+                    onDownloadReport={handleDownloadReport}
+                  />
+                )}
+              </>
+            )}
+
+            {activeNav === 'experiments' && (
+              <ExperimentsView
+                experiments={experiments}
+                currentExperiment={currentExperiment}
+              />
+            )}
+
+            {activeNav === 'sources' && (
+              <SourcesView sources={validatedSources} />
+            )}
+
+            {activeNav === 'hypotheses' && (
+              <HypothesesView
+                hypotheses={[]}
+                nextHypothesis={nextHypothesis}
+                nextExperiment={nextExperiment}
+                hasRealRunAction={false}
+              />
+            )}
+
+            {activeNav === 'reports' && (
+              <ReportsView
+                reportMd={reportMd}
+                onDownloadReport={handleDownloadReport}
+                userQuestion={userQuestion}
+              />
+            )}
+
+            {activeNav === 'history' && (
+              <HistoryView
+                historyItems={historyItems}
+                onSelectHistoryItem={(item) => handleSendQuestion(item.question)}
+              />
+            )}
+
+            {/* Anchored Bottom Command Composer (Reserved padding prevents covering content) */}
+            <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#080808] via-[#080808]/95 to-transparent z-20">
+              <div className="max-w-3xl mx-auto w-full">
+                <QuestionComposer
+                  onSubmit={handleSendQuestion}
+                  isPending={isPending}
+                  backendConnected={backendConnected}
+                  errorFeedback={errorFeedback}
+                />
+              </div>
+            </div>
+          </main>
+
+          {/* 3. Right Context Sidebar (~290px wide on Desktop) */}
+          <div className="hidden xl:block">
+            <RightSidebar
+              context={{
+                researchType: activeProject?.objective ? 'ML Optimization' : null,
+                domain: activeProject?.dataset_name ? 'Tabular ML' : null,
+                complexity: isDeepResearch ? 'High' : 'Standard',
+                validatedSourcesCount: validatedSources.length,
+                experimentsCount: experiments.length,
+                currentStage: sessionState === 'IN_PROGRESS' ? 'Running experiment' : sessionState === 'COMPLETE' ? 'Report compiled' : 'Idle',
+              }}
+              sources={validatedSources}
+              latestInsight={latestInsight}
+              nextHypothesis={nextHypothesis}
+              nextExperiment={nextExperiment}
+              hasRealRunAction={false}
+            />
+          </div>
+
+        </div>
+      </div>
+
+      {/* Research Settings & Telemetry Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        settings={sysSettings}
       />
-
     </div>
   );
 }

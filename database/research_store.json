@@ -266,6 +266,968 @@
         "last_intent": "EXPLANATION",
         "turns_seen": 1
       }
+    },
+    "test-general-knowledge": {
+      "session_id": "test-general-knowledge",
+      "last_user_message": "Explain recursion",
+      "last_assistant_message": "Recursion is a programming technique where a function calls *itself* to solve a problem by breaking it down into smaller, similar subproblems. Here\u2019s how it works in practice:\n\n1. **Base Case**: The simplest, smallest version of the problem that can be solved directly\u2014this stops the recursion from continuing indefinitely. Without it, the function would keep calling itself forever (or until it runs out of memory).\n\n2. **Recursive Case**: The function calls itself with a modified version of the problem, moving closer to the base case. Each call processes a smaller piece until the base case is reached.\n\n**Why it\u2019s useful**:\n- It simplifies problems that naturally repeat themselves (e.g., tree structures, mathematical sequences like factorials or Fibonacci numbers).\n- For example, calculating `5!` (5 factorial) recursively looks like:\n  `5! = 5 \u00d7 4!`, `4! = 4 \u00d7 3!`, ..., until reaching `1! = 1`.\n  The recursion unwinds, multiplying the results back up.\n\n**Trade-offs**:\n- **Clarity**: Recursive solutions often mirror the problem\u2019s logic more intuitively than loops.\n- **Performance**: Each recursive call adds overhead (stack memory usage), so deep recursion can be slow or crash if the stack limit is exceeded. Some languages optimize this with tail-call recursion.\n\n**When to avoid it**:\n- For problems with no natural recursive structure (e.g., iterating through a list where each step depends only on the previous item).\n- When performance is critical and the recursion depth is unpredictable (e.g., parsing deeply nested data without limits).\n\n**Example in code (factorial)**:\n```python\ndef factorial(n):\n    if n == 1:  # Base case\n        return 1\n    else:       # Recursive case\n        return n * factorial(n - 1)\n```\nHere, `factorial(3)` calls `3 * factorial(2)`, which calls `2 * factorial(1)`, which returns `1`, then multiplies back up.",
+      "last_topic": "recursion",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "recent_topics": [
+        "javascript",
+        "machine learning",
+        "recall",
+        "recursion"
+      ],
+      "conversation_summary": {
+        "topics": [
+          "python",
+          "gravity",
+          "photosynthesis",
+          "javascript",
+          "machine learning",
+          "recall",
+          "recursion"
+        ],
+        "last_task_type": "explanation",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 7
+      }
+    },
+    "test-coding": {
+      "session_id": "test-coding",
+      "last_user_message": "How to sort a list in Python?",
+      "last_assistant_message": "Here's a clean, runnable solution to sort a list in Python:\n\n```python\n# Method 1: Using built-in sorted() function (returns new sorted list)\noriginal_list = [3, 1, 4, 1, 5, 9, 2]\nsorted_list = sorted(original_list)\nprint(\"Sorted list (new):\", sorted_list)\n\n# Method 2: Using list.sort() method (sorts in-place)\noriginal_list.sort()\nprint(\"Original list after sort():\", original_list)\n\n# Method 3: Sorting with custom key (e.g., by string length)\nwords = [\"apple\", \"banana\", \"kiwi\", \"orange\"]\nsorted_words = sorted(words, key=len)\nprint(\"Sorted by length:\", sorted_words)\n\n# Method 4: Reverse sorting\nnumbers = [5, 2, 9, 1, 5]\nsorted_desc = sorted(numbers, reverse=True)\nprint(\"Descending order:\", sorted_desc)\n```\n\n### Explanation:\n1. **`sorted()` function**: Creates and returns a new sorted list while leaving the original unchanged. Works with any iterable.\n2. **`list.sort()` method**: Sorts the list in-place (modifies the original list) and returns `None`. More memory efficient for large lists.\n3. **Custom sorting**: The `key` parameter lets you specify a function (like `len`) to determine sort order.\n4. **Reverse sorting**: The `reverse=True` parameter sorts in descending order.\n\nAll methods handle both numbers and strings correctly. The most common use cases are covered here. For descending order, you can also use `sorted(list, reverse=True)` or `list.sort(reverse=True)`.",
+      "last_topic": "coding",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "coding"
+        ],
+        "last_task_type": "coding",
+        "last_intent": "CODING",
+        "turns_seen": 3
+      }
+    },
+    "test-mathematics": {
+      "session_id": "test-mathematics",
+      "last_user_message": "Solve x^2 - 16 = 0",
+      "last_assistant_message": "**x^2 - 16 = 0  \u2192  x = -4, x = 4**\n\n_solved symbolically with SymPy; verified by substitution (2 solutions, residual = 0)_",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "calculation",
+        "last_intent": "MATHEMATICS",
+        "turns_seen": 3
+      }
+    },
+    "test-casual-chat": {
+      "session_id": "test-casual-chat",
+      "last_user_message": "What can you do?",
+      "last_assistant_message": "I'm a general-purpose AI assistant. \ud83d\udc4b\n\nI pick the right mode for each request automatically:\n- Answer general questions and explain concepts\n- Calculate math precisely (try \"what is 15% of 240\" or \"sqrt(144)\")\n- Help with coding: write, explain, debug and review code\n- Search the live web for current information (\"find the latest Python version\")\n- Run multi-step deep research with cited sources (\"research how JavaScript evolved\")\n- Summarize long text, draft and rewrite writing (translate with an LLM connected)\n- Compare options with structured reasoning\n- Analyze datasets and run real ML experiments when you ask for it\n\nJust talk to me normally \u2014 I'll route your request to the right capability.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "CASUAL_CHAT",
+        "turns_seen": 3
+      }
+    },
+    "test-project-identity": {
+      "session_id": "test-project-identity",
+      "last_user_message": "Who made you?",
+      "last_assistant_message": "AI Scientist was created by **Toshit Sai Galam**.\n\nHe is a B.Tech CSE (AI/ML) student specializing in Artificial Intelligence and Machine Learning and is developing AI Scientist as a general-purpose AI assistant with autonomous research capabilities.\n\nAI Scientist is designed to combine conversational AI, reasoning, tools, and deep autonomous research.",
+      "last_topic": "ai scientist identity",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "ai scientist identity"
+        ],
+        "last_task_type": "identity",
+        "last_intent": "PROJECT_IDENTITY",
+        "turns_seen": 3
+      }
+    },
+    "test-entity-information": {
+      "session_id": "test-entity-information",
+      "last_user_message": "Tell me about Albert Einstein",
+      "last_assistant_message": "The Einstein family is the family of physicist Albert Einstein (1879\u20131955). Einstein's fourth-great-grandfather, Jakob Weil, was his oldest recorded relative, born in the late 17th century, and the family continues to this day. Albert Einstein's second-great-grandfather, L\u00f6b Moses Sontheimer (1745\u20131831), was also the grandfather of the tenor Heinrich Sontheim (1820\u20131912) of Stuttgart.\n\nSource: https://en.wikipedia.org/wiki/Einstein_family",
+      "last_topic": "albert einstein",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "mahesh babu",
+          "albert einstein"
+        ],
+        "last_task_type": "entity_information",
+        "last_intent": "ENTITY_INFORMATION",
+        "turns_seen": 2
+      }
+    },
+    "test-current-information": {
+      "session_id": "test-current-information",
+      "last_user_message": "What time is it?",
+      "last_assistant_message": "It's Monday, 28 September 2026, 16:18 UTC.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "datetime",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 2
+      }
+    },
+    "test-web-search": {
+      "session_id": "test-web-search",
+      "last_user_message": "Search the web for recent tech news",
+      "last_assistant_message": "No live web-search provider is configured, so here's reference background on **recent tech news**:\n\n1. **.tech** \u2014 .Tech is a generic top-level domain of the Domain Name System used in the Internet. The name is truncated from technology.\n   https://en.wikipedia.org/wiki/.tech\n2. **Generic top-level domains** \u2014 Generic top-level domains\n   https://duckduckgo.com/c/Generic_top-level_domains\n\n_Keyless reference sources (DuckDuckGo/Wikipedia) \u2014 this may not reflect the very latest; open the links to check._",
+      "last_topic": "recent tech news",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "recent tech news"
+        ],
+        "last_task_type": "web_search",
+        "last_intent": "WEB_SEARCH",
+        "turns_seen": 2
+      }
+    },
+    "test-deep-research": {
+      "session_id": "test-deep-research",
+      "last_user_message": "Deep dive into renewable energy technologies",
+      "last_assistant_message": "You've asked me to research: renewable energy technologies.\n\nI ran the deep-research pipeline (plan -> search -> synthesize -> verify) but couldn't reach any web or academic source from this deployment, so I won't pretend to have found sources. Check the search provider configuration (TAVILY_API_KEY / SERPER_API_KEY / BRAVE_API_KEY) and network access, then try again. If your goal is a machine-learning problem, I can instead run the real ML workflow \u2014 find a dataset, train and compare models with verified metrics.",
+      "last_topic": "renewable energy technologies",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "the history of quantum computing",
+          "renewable energy technologies"
+        ],
+        "last_task_type": "deep_research",
+        "last_intent": "DEEP_RESEARCH",
+        "turns_seen": 2
+      }
+    },
+    "test-writing": {
+      "session_id": "test-writing",
+      "last_user_message": "Summarize this article: Artificial intelligence is transforming industries worldwide by automating repetitive tasks and enabling new capabilities...",
+      "last_assistant_message": "Paste the full text you'd like summarized (a few paragraphs or more) and I'll extract a summary locally. For short snippets, an abstractive summary needs a connected LLM provider, which isn't reachable right now.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "writing",
+        "last_intent": "WRITING",
+        "turns_seen": 2
+      }
+    },
+    "test-reasoning": {
+      "session_id": "test-reasoning",
+      "last_user_message": "What are the pros and cons of PostgreSQL vs MongoDB?",
+      "last_assistant_message": "Here\u2019s a structured comparison of **PostgreSQL** (a relational database management system, RDBMS) and **MongoDB** (a document-oriented NoSQL database), focusing on key criteria, trade-offs, and a bottom-line recommendation. Assumptions about the user\u2019s context are noted where relevant.\n\n---\n\n### **1. Core Criteria for Comparison**\n*(Ranked by typical use-case relevance)*\n\n| **Criteria**               | **PostgreSQL**                                                                 | **MongoDB**                                                                 | **Trade-offs**                                                                 |\n|----------------------------|-------------------------------------------------------------------------------|----------------------------------------------------------------------------|--------------------------------------------------------------------------------|\n| **Data Model**             | Relational (tables, rows, columns, ACID transactions, joins).                 | Document-oriented (JSON/BSON, flexible schema, no joins).                 | **PostgreSQL**: Strong for structured, complex queries; **MongoDB**: Better for semi-structured, rapidly evolving data. |\n| **Schema Flexibility**     | Rigid schema (DDL required for changes).                                      | Schema-less (dynamic fields, easy to evolve).                              | **MongoDB** wins for agile development; **PostgreSQL** enforces consistency.   |\n| **Query Language**         | SQL (standardized, powerful for analytics, aggregations).                     | Query Language (QL) with JSON-like syntax (less mature for complex joins). | **PostgreSQL** excels in reporting/analytics; **MongoDB** is simpler for CRUD. |\n| **Scalability**            | Vertical scaling (single-node performance), horizontal scaling via tools (e.g., Citus). | Horizontal scaling native (sharding), but eventual consistency in replicas. | **MongoDB** scales out easier; **PostgreSQL** requires architecture work.     |\n| **Performance**            | Optimized for OLTP (transactions) and complex queries; strong indexing.      | Optimized for high-speed CRUD; weaker for analytical queries without tools. | **PostgreSQL** for transaction-heavy workloads; **MongoDB** for low-latency reads/writes. |\n| **ACID Compliance**        | Full ACID support (transactions, isolation levels).                           | Multi-document ACID (since v4.0); single-document ACID always.             | **PostgreSQL** guarantees consistency across all operations; **MongoDB** has limitations in distributed transactions. |\n| **Indexing**               | Advanced indexing (B-tree, GiST, GIN, BRIN, partial indexes).                | Indexes on fields (B-tree, hashes, text), but less flexible than PostgreSQL. | **PostgreSQL** for complex query patterns; **MongoDB** for simple key-value lookups. |\n| **Joins**                  | Supports joins (critical for relational data).                               | No joins (denormalization or application-side joins required).             | **PostgreSQL** for multi-table relationships; **MongoDB** forces embedded/sub-document design. |\n| **Text Search**            | Full-text search with advanced features (trigram, ranking, etc.).            | Text search with regex and aggregations (less mature).                     | **PostgreSQL** for sophisticated search; **MongoDB** for basic text ops.     |\n| **JSON/NoSQL Features**    | JSON support (PostgreSQL 9.4+) with limited querying (e.g., `jsonb` ops).",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "last_reasoning_subjects": [
+        "python",
+        "c++",
+        "c"
+      ],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "reasoning",
+        "last_intent": "REASONING",
+        "turns_seen": 2
+      }
+    },
+    "test-data-analysis": {
+      "session_id": "test-data-analysis",
+      "last_user_message": "Analyze this CSV dataset",
+      "last_assistant_message": "I can analyze tabular data through the ML research workflow. Upload a CSV/Parquet file or paste a Hugging Face dataset link, tell me what you want to predict or find, and I'll inspect the data and then train and compare models with real metrics.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "data_analysis",
+        "last_intent": "DATA_ANALYSIS",
+        "turns_seen": 1
+      }
+    },
+    "test-document-analysis": {
+      "session_id": "test-document-analysis",
+      "last_user_message": "Summarize this PDF document",
+      "last_assistant_message": "Document and PDF analysis isn't wired into this deployment yet, so I can't read an uploaded file. If you paste the text here (a few paragraphs or more), I can produce an extractive summary right away \u2014 no model connection required \u2014 and answer questions about it when an assistant model is connected.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "document_analysis",
+        "last_intent": "DOCUMENT_ANALYSIS",
+        "turns_seen": 1
+      }
+    },
+    "test-report-request": {
+      "session_id": "test-report-request",
+      "last_user_message": "Show me the report",
+      "last_assistant_message": null,
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "REPORT_REQUEST",
+        "turns_seen": 1
+      }
+    },
+    "test-technical-details": {
+      "session_id": "test-technical-details",
+      "last_user_message": "Show technical details",
+      "last_assistant_message": null,
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "TECHNICAL_DETAILS",
+        "turns_seen": 1
+      }
+    },
+    "test-ml-research": {
+      "session_id": "test-ml-research",
+      "last_user_message": "Build a model to predict house prices",
+      "last_assistant_message": "I'll look for datasets that could help with: Build a model to predict house prices",
+      "last_topic": "Build a model to predict house prices",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "Improve credit-card fraud detection",
+          "Predict customer churn",
+          "Train a machine learning model to classify fraud",
+          "Improve fraud detection using dataset",
+          "Build a model to predict house prices"
+        ],
+        "last_task_type": null,
+        "last_intent": "RESEARCH_START",
+        "turns_seen": 5
+      }
+    },
+    "test-out-general-knowledge": {
+      "session_id": "test-out-general-knowledge",
+      "last_user_message": "What is gravity?",
+      "last_assistant_message": "Gravity is the force of attraction between objects that have mass. The more mass an object has, the stronger its pull, and the force weakens with distance. On Earth, gravity gives objects weight and makes them fall at about 9.8 m/s\u00b2. Newton described it as a universal force between masses; Einstein's general relativity later explained it as the curvature of spacetime caused by mass and energy. Gravity keeps planets in orbit around the Sun, the Moon around Earth, and holds galaxies together.",
+      "last_topic": "gravity",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "recent_topics": [
+        "python",
+        "recall",
+        "gravity"
+      ],
+      "conversation_summary": {
+        "topics": [
+          "python",
+          "recall",
+          "gravity"
+        ],
+        "last_task_type": "definition",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 3
+      }
+    },
+    "test-out-coding": {
+      "session_id": "test-out-coding",
+      "last_user_message": "How to sort a list in Python?",
+      "last_assistant_message": "Here's a clean, runnable solution to sort a list in Python:\n\n```python\n# Method 1: Using built-in sorted() function (returns new sorted list)\noriginal_list = [3, 1, 4, 1, 5, 9, 2]\nsorted_list = sorted(original_list)\nprint(\"Sorted list (ascending):\", sorted_list)\n\n# Method 2: Using list.sort() method (sorts in-place)\noriginal_list.sort()\nprint(\"Original list after in-place sort:\", original_list)\n\n# Method 3: Sorting in descending order\nsorted_descending = sorted(original_list, reverse=True)\nprint(\"Sorted list (descending):\", sorted_descending)\n```\n\n### Explanation:\n1. **`sorted()` function**:\n   - Takes any iterable (like a list) and returns a new list containing all items in ascending order (default)\n   - Original list remains unchanged\n   - Can specify `reverse=True` for descending order\n\n2. **`list.sort()` method**:\n   - Sorts the list in-place (modifies the original list)\n   - Returns `None` (no return value)\n   - Can also take `reverse=True` parameter\n\n3. **Key differences**:\n   - `sorted()` is more flexible (works with any iterable)\n   - `sort()` is more memory efficient for large lists (modifies in-place)\n   - Both use Python's Timsort algorithm (O(n log n) complexity)\n\nAll three methods will produce the same sorted output for the given example. Choose based on whether you need to preserve the original list or not.",
+      "last_topic": "coding",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "coding"
+        ],
+        "last_task_type": "coding",
+        "last_intent": "CODING",
+        "turns_seen": 2
+      }
+    },
+    "test-out-mathematics": {
+      "session_id": "test-out-mathematics",
+      "last_user_message": "Solve x^2 - 16 = 0",
+      "last_assistant_message": "**x^2 - 16 = 0  \u2192  x = -4, x = 4**\n\n_solved symbolically with SymPy; verified by substitution (2 solutions, residual = 0)_",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "calculation",
+        "last_intent": "MATHEMATICS",
+        "turns_seen": 2
+      }
+    },
+    "test-out-casual-chat": {
+      "session_id": "test-out-casual-chat",
+      "last_user_message": "What can you do?",
+      "last_assistant_message": "I'm a general-purpose AI assistant. \ud83d\udc4b\n\nI pick the right mode for each request automatically:\n- Answer general questions and explain concepts\n- Calculate math precisely (try \"what is 15% of 240\" or \"sqrt(144)\")\n- Help with coding: write, explain, debug and review code\n- Search the live web for current information (\"find the latest Python version\")\n- Run multi-step deep research with cited sources (\"research how JavaScript evolved\")\n- Summarize long text, draft and rewrite writing (translate with an LLM connected)\n- Compare options with structured reasoning\n- Analyze datasets and run real ML experiments when you ask for it\n\nJust talk to me normally \u2014 I'll route your request to the right capability.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "CASUAL_CHAT",
+        "turns_seen": 2
+      }
+    },
+    "test-out-project-identity": {
+      "session_id": "test-out-project-identity",
+      "last_user_message": "What is AI Scientist?",
+      "last_assistant_message": "**AI Scientist** is a AI research assistant created by **Toshit Sai Galam**.\n\nAI Scientist is a general-purpose AI assistant with autonomous deep research, reasoning, machine learning, and software execution capabilities.\n\nKey Capabilities:\n- **Autonomous Research Loop**: Planning, literature review, baseline training, hypothesis generation, and experiment execution.\n- **General Assistance**: Answering questions across mathematics, coding, logic, and general knowledge.\n- **Dataset Discovery**: Integrating directly with Hugging Face Hub for real dataset inspection and analysis.",
+      "last_topic": "ai scientist identity",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "ai scientist identity"
+        ],
+        "last_task_type": "identity",
+        "last_intent": "PROJECT_IDENTITY",
+        "turns_seen": 2
+      }
+    },
+    "test-out-entity-information": {
+      "session_id": "test-out-entity-information",
+      "last_user_message": "Tell me about Albert Einstein",
+      "last_assistant_message": "The Einstein family is the family of physicist Albert Einstein (1879\u20131955). Einstein's fourth-great-grandfather, Jakob Weil, was his oldest recorded relative, born in the late 17th century, and the family continues to this day. Albert Einstein's second-great-grandfather, L\u00f6b Moses Sontheimer (1745\u20131831), was also the grandfather of the tenor Heinrich Sontheim (1820\u20131912) of Stuttgart.\n\nSource: https://en.wikipedia.org/wiki/Einstein_family",
+      "last_topic": "albert einstein",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "mahesh babu",
+          "albert einstein"
+        ],
+        "last_task_type": "entity_information",
+        "last_intent": "ENTITY_INFORMATION",
+        "turns_seen": 2
+      }
+    },
+    "test-out-current-information": {
+      "session_id": "test-out-current-information",
+      "last_user_message": "What is today's date?",
+      "last_assistant_message": "It's Monday, 28 September 2026, 16:22 UTC.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "datetime",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 1
+      }
+    },
+    "test-out-web-search": {
+      "session_id": "test-out-web-search",
+      "last_user_message": "Search online for recent tech news",
+      "last_assistant_message": "No live web-search provider is configured, so here's reference background on **recent tech news**:\n\n1. **.tech** \u2014 .Tech is a generic top-level domain of the Domain Name System used in the Internet. The name is truncated from technology.\n   https://en.wikipedia.org/wiki/.tech\n2. **Generic top-level domains** \u2014 Generic top-level domains\n   https://duckduckgo.com/c/Generic_top-level_domains\n\n_Keyless reference sources (DuckDuckGo/Wikipedia) \u2014 this may not reflect the very latest; open the links to check._",
+      "last_topic": "recent tech news",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "recent tech news"
+        ],
+        "last_task_type": "web_search",
+        "last_intent": "WEB_SEARCH",
+        "turns_seen": 1
+      }
+    },
+    "test-out-deep-research": {
+      "session_id": "test-out-deep-research",
+      "last_user_message": "Research the history of quantum computing",
+      "last_assistant_message": "I ran a multi-step research pass on: the history of quantum computing\n\n# Deep Research Report: the history of quantum computing\n\n> Machine-generated by the AI Scientist deep-research pipeline (2026-09-28 21:52 UTC). Every statement below is traceable to a cited source; evidence is snippet-level (pages were not fully read).\n\n## Research Plan\n1. \"Origins and early developments of quantum computing: key milestones from 1980 to 1990\"\n2. \"Evolution of quantum computing hardware: from theoretical models to first physical implementations (2000\u2013present)\"\n\n## Findings\n\n### \"Origins and early developments of quantum computing: key milestones from 1980 to 1990\"\nThe provided evidence is **insufficient** to address the sub-question regarding the origins and early developments of quantum computing from 1980 to 1990. None of the cited snippets [1\u20133] relate to quantum computing, quantum theory, computing history, or any relevant scientific, academic, or technological context during that period. The examples given pertain to unrelated topics, such as video games [1], digital distribution platforms [2], and business terminology [3]. Thus, no synthesis can be constructed from these sources.\n\n### \"Evolution of quantum computing hardware: from theoretical models to first physical implementations (2000\u2013present)\"\nThe provided evidence is **insufficient** to address the evolution of quantum computing hardware from theoretical models to physical implementations (2000\u2013present). The snippets [4]\u2013[6] pertain exclusively to biological evolution\u2014specifically, definitions of evolutionary processes, categories, and chronospecies\u2014and contain no references to quantum computing, hardware development, or technological progress. No relevant data, timelines, or implementations are present in the given sources.\n\n## Verification\n- 6 unique sources collected across 2 planned searches (web + academic), deduplicated by URL.\n- Only sourced material is included; statements are snippet-level and should be verified against the full sources before being relied on.\n\n## Sources\n1. [Assassin's Creed Origins A 2017 action role-playing game developed by Ubisoft Montreal and published by Ubisoft.](https://duckduckgo.com/Assassin's_Creed_Origins) \u2014 DuckDuckGo\n2. [Origin (service) A digital distribution platform for macOS and formerly Windows, developed by Electronic Arts for...](https://duckduckgo.com/Origin_(service)) \u2014 DuckDuckGo\n3. [Original equipment manufacturer A company that produces parts and equipment that may be marketed by another company.](https://duckduckgo.com/Original_equipment_manufacturer) \u2014 DuckDuckGo\n4. [Evolution](https://en.wikipedia.org/wiki/Evolution) \u2014 DuckDuckGo\n5. [Evolution Category](https://duckduckgo.com/c/Evolution) \u2014 DuckDuckGo\n6. [Chronospecies](https://duckduckgo.com/Chronospecies) \u2014 DuckDuckGo\n\n_Pipeline: plan (2 sub-queries) -> web + academic search -> synthesis -> verification (6 sources)._",
+      "last_topic": "the history of quantum computing",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "the history of quantum computing"
+        ],
+        "last_task_type": "deep_research",
+        "last_intent": "DEEP_RESEARCH",
+        "turns_seen": 1
+      }
+    },
+    "test-out-writing": {
+      "session_id": "test-out-writing",
+      "last_user_message": "Write a poem about space",
+      "last_assistant_message": "**\"Cosmic Lullaby\"**\n\nBeneath the velvet dark where stars ignite,\nA universe hums soft in endless light.\nThe Milky Way unfurls like silver thread,\nA tapestry of dreams no mortal has read.\n\nThe moon, a pale sentinel, drifts alone,\nWhispering secrets to the ocean\u2019s stone.\nWhile comets streak like fire through velvet skies,\nPainting fleeting dreams in cosmic ties.\n\nOh, wanderer of dust and gas and flame,\nWhere galaxies spin in a silent game\u2014\nDo you hear the echoes of a birth cry?\nThe first spark that lit the void\u2019s dark eye?\n\nI dream of worlds where rivers run with gold,\nWhere alien suns kiss the clouds of old.\nOf nebulae blooming in crimson hue,\nAnd black holes singing their eternal view.\n\nSo close your eyes and drift on stardust wings,\nLet the cosmos rock you to its cosmic strings.\nFor in the dark, where silence hums so deep,\nThe universe sings\u2014*and you are its sleep*.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "writing",
+        "last_intent": "WRITING",
+        "turns_seen": 1
+      }
+    },
+    "test-out-reasoning": {
+      "session_id": "test-out-reasoning",
+      "last_user_message": "Compare Python vs C++",
+      "last_assistant_message": "Here\u2019s a structured comparison of **Python** vs. **C++**, covering key criteria, trade-offs, and a bottom-line recommendation. Assumptions: This analysis assumes a general-purpose software development context (e.g., application development, systems programming, data science, or embedded systems). If your use case differs (e.g., game engines, high-frequency trading, or IoT), clarify, and I\u2019ll adjust the reasoning.\n\n---\n\n### **1. Criteria for Comparison**\n#### **A. Performance**\n- **C++**:\n  - **Pros**: Near-native performance (compiled to machine code), low-level memory control (manual allocation/deallocation), optimized for speed-critical applications (e.g., game engines, HPC, embedded systems).\n  - **Cons**: Overhead from manual memory management (risk of leaks/dangling pointers), slower iteration time due to compilation.\n  - **Metrics**: C++ can outperform Python by **10\u2013100x** in CPU-bound tasks (e.g., matrix operations, physics simulations).\n  - **Dependency**: Performance depends heavily on the programmer\u2019s ability to optimize (e.g., using templates, SIMD, or parallelism libraries like OpenMP).\n\n- **Python**:\n  - **Pros**: Interpreted (dynamic typing, rapid prototyping), high-level abstractions (e.g., list comprehensions, built-in data structures), garbage-collected (no manual memory management).\n  - **Cons**: Slower execution (interpreted bytecode, dynamic typing overhead), limited to single-threaded performance without libraries like `multiprocessing` or `asyncio`.\n  - **Metrics**: Python is **~10\u2013100x slower** than C++ for pure computation but compensates with productivity.\n  - **Dependency**: Performance can be improved with libraries like NumPy (C-backed) or tools like Cython/Numba.\n\n**Trade-off**: Use C++ for performance-critical code; Python for rapid development or non-critical logic.\n\n---\n\n#### **B. Ease of Use and Productivity**\n- **Python**:\n  - **Pros**:\n    - Readable syntax (indentation-based, minimal boilerplate).\n    - Rich standard library (e.g., `os`, `json`, `collections`) and third-party ecosystem (PyPI: ~500K+ packages).\n    - Dynamic typing (flexible, less verbose).\n    - IDE support (e.g., VS Code, PyCharm) with strong debugging tools.\n  - **Cons**:\n    - No compile-time checks (runtime errors possible).\n    - Global interpreter lock (GIL) limits multi-threading for CPU-bound tasks.\n\n- **C++**:\n  - **Pros**:\n    - Strong typing (compile-time safety, better for large-scale projects).\n    - Control over hardware (e.g., pointers, templates, inline assembly).\n  - **Cons**:\n    - Steep learning curve (manual memory management, complex templates, RAII).\n    - Verbose syntax (e.g., `std::vector<int>`, smart pointers).\n    - Slower iteration time (compile step required).\n\n**Trade-off**: Python wins for rapid development and maintainability; C++ for projects requiring low-level control or performance.\n\n---\n\n#### **C. Memory Management**\n- **Python**:\n  - **Garbage-collected**: Automatic memory management (reference counting + generational GC).\n  - **",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "last_reasoning_subjects": [
+        "python",
+        "c++",
+        "c"
+      ],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "reasoning",
+        "last_intent": "REASONING",
+        "turns_seen": 1
+      }
+    },
+    "test-out-data-analysis": {
+      "session_id": "test-out-data-analysis",
+      "last_user_message": "Analyze this CSV dataset",
+      "last_assistant_message": "I can analyze tabular data through the ML research workflow. Upload a CSV/Parquet file or paste a Hugging Face dataset link, tell me what you want to predict or find, and I'll inspect the data and then train and compare models with real metrics.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "data_analysis",
+        "last_intent": "DATA_ANALYSIS",
+        "turns_seen": 1
+      }
+    },
+    "test-out-document-analysis": {
+      "session_id": "test-out-document-analysis",
+      "last_user_message": "Summarize this PDF document",
+      "last_assistant_message": "Document and PDF analysis isn't wired into this deployment yet, so I can't read an uploaded file. If you paste the text here (a few paragraphs or more), I can produce an extractive summary right away \u2014 no model connection required \u2014 and answer questions about it when an assistant model is connected.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "document_analysis",
+        "last_intent": "DOCUMENT_ANALYSIS",
+        "turns_seen": 1
+      }
+    },
+    "test-out-report-request": {
+      "session_id": "test-out-report-request",
+      "last_user_message": "Show me the report",
+      "last_assistant_message": null,
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "REPORT_REQUEST",
+        "turns_seen": 1
+      }
+    },
+    "test-out-technical-details": {
+      "session_id": "test-out-technical-details",
+      "last_user_message": "Show technical details",
+      "last_assistant_message": null,
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "TECHNICAL_DETAILS",
+        "turns_seen": 1
+      }
+    },
+    "test-out-ml-research": {
+      "session_id": "test-out-ml-research",
+      "last_user_message": "Predict customer churn",
+      "last_assistant_message": "I'll look for datasets that could help with: Predict customer churn",
+      "last_topic": "Predict customer churn",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "Improve credit-card fraud detection",
+          "Predict customer churn"
+        ],
+        "last_task_type": null,
+        "last_intent": "RESEARCH_START",
+        "turns_seen": 2
+      }
+    },
+    "score-eval-1": {
+      "session_id": "score-eval-1",
+      "last_user_message": "What is Python?",
+      "last_assistant_message": "Python is a high-level, open-source programming language widely used in artificial intelligence, machine learning, data science, and web development due to its clean syntax and extensive ecosystem of libraries like PyTorch, TensorFlow, and Scikit-Learn.",
+      "last_topic": "python",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "recent_topics": [
+        "python"
+      ],
+      "conversation_summary": {
+        "topics": [
+          "python"
+        ],
+        "last_task_type": "definition",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-2": {
+      "session_id": "score-eval-2",
+      "last_user_message": "Explain recursion",
+      "last_assistant_message": "Recursion is a programming technique where a function calls *itself* to solve a problem by breaking it down into smaller, similar subproblems. Here\u2019s how it works in practice:\n\n1. **Base Case**: The simplest, smallest version of the problem that can be solved directly\u2014this stops the recursion from continuing indefinitely. Without it, the function would keep calling itself forever (or until a stack overflow occurs).\n\n2. **Recursive Case**: The function calls itself with a modified version of the problem, moving it closer to the base case. Each call handles a smaller piece until the base case is reached.\n\n**Why use recursion?**\n- It\u2019s intuitive for problems with self-similar structure (e.g., trees, nested lists, or mathematical sequences like factorials or Fibonacci numbers).\n- It can make code cleaner and easier to understand for problems that naturally repeat themselves (e.g., traversing directories or parsing nested data).\n\n**Example (Factorial):**\n```python\ndef factorial(n):\n    if n == 0:  # Base case\n        return 1\n    else:       # Recursive case\n        return n * factorial(n - 1)\n```\nHere, `factorial(3)` calls `3 * factorial(2)`, which calls `2 * factorial(1)`, which calls `1 * factorial(0)`. The base case (`n == 0`) returns `1`, and the results multiply back up.\n\n**Trade-offs:**\n- **Pros**: Elegant for certain problems, reduces boilerplate code.\n- **Cons**: Each recursive call uses memory (stack space), so deep recursion can be slow or crash if the stack limit is hit. Iterative solutions (using loops) often avoid this.\n\nRecursion shines when the problem\u2019s nature aligns with the function calling itself\u2014like peeling layers of an onion until you reach the core.",
+      "last_topic": "recursion",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "recent_topics": [
+        "recursion"
+      ],
+      "conversation_summary": {
+        "topics": [
+          "recursion"
+        ],
+        "last_task_type": "explanation",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-3": {
+      "session_id": "score-eval-3",
+      "last_user_message": "Write a Python script to reverse a string",
+      "last_assistant_message": "Here's a clean, runnable Python script to reverse a string:\n\n```python\ndef reverse_string(input_str):\n    \"\"\"Reverse the input string and return the result.\"\"\"\n    return input_str[::-1]\n\n# Example usage\noriginal = \"Hello, World!\"\nreversed_str = reverse_string(original)\nprint(f\"Original: {original}\")\nprint(f\"Reversed: {reversed_str}\")\n```\n\n### Explanation:\nThis solution uses Python's **slice notation** (`[::-1]`) to reverse the string efficiently. Here's how it works:\n1. `input_str[::-1]` creates a new string by stepping backward through the original string (from the last character to the first).\n2. The function `reverse_string` takes any string as input and returns its reversed version.\n3. The example demonstrates usage with `\"Hello, World!\"`, showing both the original and reversed output.\n\nNo external libraries are required\u2014this is pure Python. The slice operation is optimal for this task in Python.",
+      "last_topic": "coding",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "coding"
+        ],
+        "last_task_type": "coding",
+        "last_intent": "CODING",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-4": {
+      "session_id": "score-eval-4",
+      "last_user_message": "How to sort a list in Python?",
+      "last_assistant_message": "Here's a clean, runnable solution to sort a list in Python:\n\n```python\n# Method 1: Using built-in sort() for lists (in-place)\nmy_list = [3, 1, 4, 1, 5, 9, 2]\nmy_list.sort()\nprint(\"Sorted list (in-place):\", my_list)\n\n# Method 2: Using sorted() function (returns new list)\noriginal_list = [3, 1, 4, 1, 5, 9, 2]\nsorted_list = sorted(original_list)\nprint(\"Original list remains:\", original_list)\nprint(\"New sorted list:\", sorted_list)\n\n# Method 3: Sorting with custom key (e.g., by string length)\nwords = [\"apple\", \"banana\", \"kiwi\", \"orange\"]\nsorted_words = sorted(words, key=len)\nprint(\"Words sorted by length:\", sorted_words)\n```\n\n### Explanation:\n1. **`list.sort()`** - Sorts the list *in-place* (modifies the original list). Works only for lists.\n2. **`sorted()`** - Returns a new sorted list without modifying the original. Works with any iterable.\n3. **Custom sorting** - The `key` parameter lets you define sorting logic (e.g., by string length).\n\nAll methods handle ascending order by default. For descending order, add `reverse=True`:\n```python\nmy_list.sort(reverse=True)  # or sorted(my_list, reverse=True)\n```",
+      "last_topic": "coding",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "coding"
+        ],
+        "last_task_type": "coding",
+        "last_intent": "CODING",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-5": {
+      "session_id": "score-eval-5",
+      "last_user_message": "What is 25 * 4?",
+      "last_assistant_message": "**25 * 4 = 100**",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "calculation",
+        "last_intent": "MATHEMATICS",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-6": {
+      "session_id": "score-eval-6",
+      "last_user_message": "Solve x^2 - 16 = 0",
+      "last_assistant_message": "**x^2 - 16 = 0  \u2192  x = -4, x = 4**\n\n_solved symbolically with SymPy; verified by substitution (2 solutions, residual = 0)_",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "calculation",
+        "last_intent": "MATHEMATICS",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-7": {
+      "session_id": "score-eval-7",
+      "last_user_message": "Hi",
+      "last_assistant_message": "Hi! \ud83d\udc4b What would you like help with?",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "CASUAL_CHAT",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-8": {
+      "session_id": "score-eval-8",
+      "last_user_message": "What can you do?",
+      "last_assistant_message": "I'm a general-purpose AI assistant. \ud83d\udc4b\n\nI pick the right mode for each request automatically:\n- Answer general questions and explain concepts\n- Calculate math precisely (try \"what is 15% of 240\" or \"sqrt(144)\")\n- Help with coding: write, explain, debug and review code\n- Search the live web for current information (\"find the latest Python version\")\n- Run multi-step deep research with cited sources (\"research how JavaScript evolved\")\n- Summarize long text, draft and rewrite writing (translate with an LLM connected)\n- Compare options with structured reasoning\n- Analyze datasets and run real ML experiments when you ask for it\n\nJust talk to me normally \u2014 I'll route your request to the right capability.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "CASUAL_CHAT",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-9": {
+      "session_id": "score-eval-9",
+      "last_user_message": "Who created AI Scientist?",
+      "last_assistant_message": "AI Scientist was created by **Toshit Sai Galam**.\n\nHe is a B.Tech CSE (AI/ML) student specializing in Artificial Intelligence and Machine Learning and is developing AI Scientist as a general-purpose AI assistant with autonomous research capabilities.\n\nAI Scientist is designed to combine conversational AI, reasoning, tools, and deep autonomous research.",
+      "last_topic": "ai scientist identity",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "ai scientist identity"
+        ],
+        "last_task_type": "identity",
+        "last_intent": "PROJECT_IDENTITY",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-10": {
+      "session_id": "score-eval-10",
+      "last_user_message": "What is AI Scientist?",
+      "last_assistant_message": "**AI Scientist** is a AI research assistant created by **Toshit Sai Galam**.\n\nAI Scientist is a general-purpose AI assistant with autonomous deep research, reasoning, machine learning, and software execution capabilities.\n\nKey Capabilities:\n- **Autonomous Research Loop**: Planning, literature review, baseline training, hypothesis generation, and experiment execution.\n- **General Assistance**: Answering questions across mathematics, coding, logic, and general knowledge.\n- **Dataset Discovery**: Integrating directly with Hugging Face Hub for real dataset inspection and analysis.",
+      "last_topic": "ai scientist identity",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "ai scientist identity"
+        ],
+        "last_task_type": "identity",
+        "last_intent": "PROJECT_IDENTITY",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-11": {
+      "session_id": "score-eval-11",
+      "last_user_message": "Who is Mahesh Babu?",
+      "last_assistant_message": "Ghattamaneni Mahesh Babu is an Indian actor, producer and philanthropist, voice actor, who works in Telugu cinema. He is one of the highest-paid actors in Indian cinema and has been featured in Forbes India's Celebrity 100 list from 2012 to 2025. Referred to in the media as the Superstar, he appeared in over 30 films and has been a recipient of several accolades including, nine Nandi Awards, five \n\nSource: https://en.wikipedia.org/wiki/Mahesh_Babu",
+      "last_topic": "mahesh babu",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "mahesh babu"
+        ],
+        "last_task_type": "entity_information",
+        "last_intent": "ENTITY_INFORMATION",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-12": {
+      "session_id": "score-eval-12",
+      "last_user_message": "What is today's date?",
+      "last_assistant_message": "It's Tuesday, 29 September 2026, 06:29 UTC.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "datetime",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-13": {
+      "session_id": "score-eval-13",
+      "last_user_message": "Search online for recent tech news",
+      "last_assistant_message": "No live web-search provider is configured, so here's reference background on **recent tech news**:\n\n1. **.tech** \u2014 .Tech is a generic top-level domain of the Domain Name System used in the Internet. The name is truncated from technology.\n   https://en.wikipedia.org/wiki/.tech\n2. **Generic top-level domains** \u2014 Generic top-level domains\n   https://duckduckgo.com/c/Generic_top-level_domains\n\n_Keyless reference sources (DuckDuckGo/Wikipedia) \u2014 this may not reflect the very latest; open the links to check._",
+      "last_topic": "recent tech news",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "recent tech news"
+        ],
+        "last_task_type": "web_search",
+        "last_intent": "WEB_SEARCH",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-14": {
+      "session_id": "score-eval-14",
+      "last_user_message": "Research the history of quantum computing",
+      "last_assistant_message": "I ran a multi-step research pass on: the history of quantum computing\n\n# Deep Research Report: the history of quantum computing\n\n> Machine-generated by the AI Scientist deep-research pipeline (2026-09-29 11:59 UTC). Every statement below is traceable to a cited source; evidence is snippet-level (pages were not fully read).\n\n## Research Plan\n1. \"Origins of quantum computing: key theoretical breakthroughs from 1980 to 1990\"\n2. \"Development of quantum computing hardware: milestones in physical implementations (1990s\u20132000s)\"\n\n## Findings\n\n### \"Origins of quantum computing: key theoretical breakthroughs from 1980 to 1990\"\nThe provided evidence is **insufficient** to address the sub-question regarding the origins of quantum computing or any key theoretical breakthroughs from 1980 to 1990. The snippets reference unrelated topics\u2014such as a video game ([1]), a digital distribution platform ([2]), and business terminology ([3])\u2014and contain no scientific, mathematical, or historical references to quantum computing or its foundational developments during that period. No relevant citations or discussions of quantum mechanics, algorithms, or computational models appear in the given evidence.\n\n### \"Development of quantum computing hardware: milestones in physical implementations (1990s\u20132000s)\"\nThe provided evidence snippets are **insufficient** to address the sub-question on the development of quantum computing hardware milestones (1990s\u20132000s). The given sources pertain exclusively to unrelated topics\u2014**Human Development Index** [4], **developing countries** [5], and **sustainable development** [6]\u2014offering no empirical, technical, or historical details about quantum computing hardware implementations during the specified period. Thus, no synthesis can be constructed from these citations.\n\n## Verification\n- 6 unique sources collected across 2 planned searches (web + academic), deduplicated by URL.\n- Only sourced material is included; statements are snippet-level and should be verified against the full sources before being relied on.\n\n## Sources\n1. [Assassin's Creed Origins A 2017 action role-playing game developed by Ubisoft Montreal and published by Ubisoft.](https://duckduckgo.com/Assassin's_Creed_Origins) \u2014 DuckDuckGo\n2. [Origin (service) A digital distribution platform for macOS and formerly Windows, developed by Electronic Arts for...](https://duckduckgo.com/Origin_(service)) \u2014 DuckDuckGo\n3. [Original equipment manufacturer A company that produces parts and equipment that may be marketed by another company.](https://duckduckgo.com/Original_equipment_manufacturer) \u2014 DuckDuckGo\n4. [Human Development Index A statistical composite index of life expectancy, education, and per capita income indicators...](https://duckduckgo.com/Human_Development_Index) \u2014 DuckDuckGo\n5. [Developing country A country with a less-developed industrial base and a lower Human Development Index relative to...](https://duckduckgo.com/Developing_country) \u2014 DuckDuckGo\n6. [Sustainable development An approach to growth and human development that aims to meet the needs of the present without..](https://duckduckgo.com/Sustainable_development) \u2014 DuckDuckGo\n\n_Pipeline: plan (2 sub-queries) -> web + academic search -> synthesis -> verification (6 sources)._",
+      "last_topic": "the history of quantum computing",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "the history of quantum computing"
+        ],
+        "last_task_type": "deep_research",
+        "last_intent": "DEEP_RESEARCH",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-15": {
+      "session_id": "score-eval-15",
+      "last_user_message": "Write a poem about space",
+      "last_assistant_message": "**\"Cosmic Lullaby\"**\n\nBeneath the velvet dark where stars ignite,\nA universe hums soft in endless light.\nThe Milky Way unfurls like silver thread,\nA tapestry of dreams no mortal has read.\n\nThe moon, a pale sentinel, drifts alone,\nWhispering secrets to the ocean\u2019s stone.\nWhile comets streak like fire through the night,\nLeaving trails of stardust in their flight.\n\nOh, wanderer of worlds, so vast, so wide,\nWhere galaxies spin in a cosmic tide.\nYou dance with black holes, you kiss the sun,\nA fleeting spark in the cosmic run.\n\nSo close your eyes and let the cosmos call\u2014\nThe stars will sing you home through time and all.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "writing",
+        "last_intent": "WRITING",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-16": {
+      "session_id": "score-eval-16",
+      "last_user_message": "Compare Python vs C++",
+      "last_assistant_message": "Here\u2019s a structured comparison of **Python** vs. **C++**, covering key criteria, trade-offs, and a bottom-line recommendation. Assumptions about the context (e.g., project type, performance needs, team expertise) will influence the final choice, so I\u2019ll flag those dependencies.\n\n---\n\n### **1. Criteria for Comparison**\n#### **A. Performance & Efficiency**\n| **Metric**       | **Python**                          | **C++**                              | **Trade-off**                                                                 |\n|------------------|-------------------------------------|--------------------------------------|-------------------------------------------------------------------------------|\n| **Execution Speed** | Slower (~10\u2013100x slower than C++)   | Faster (near hardware-level control)  | C++ excels in performance-critical applications (e.g., game engines, HPC).   |\n| **Memory Usage**  | Higher (dynamic typing, garbage collection) | Lower (manual memory management) | C++ offers finer control but risks leaks; Python abstracts this away.       |\n| **Parallelism**   | Limited (GIL in CPython)            | Native multithreading/parallelism    | C++ is better for CPU-bound parallel tasks; Python relies on libraries (e.g., `multiprocessing`). |\n\n**Dependency**: Critical if the application requires real-time processing, embedded systems, or high-frequency trading.\n\n---\n\n#### **B. Ease of Development & Readability**\n| **Metric**       | **Python**                          | **C++**                              | **Trade-off**                                                                 |\n|------------------|-------------------------------------|--------------------------------------|-------------------------------------------------------------------------------|\n| **Syntax**       | Concise, readable, high-level       | Verbose, low-level, complex          | Python reduces boilerplate; C++ requires explicit declarations (e.g., types, pointers). |\n| **Learning Curve** | Gentle (beginner-friendly)          | Steep (requires understanding pointers, memory, templates) | C++ rewards mastery but punishes mistakes (e.g., dangling pointers).       |\n| **Tooling**      | Rich ecosystem (IDE support, debuggers) | Strong but fragmented (e.g., Clang, GDB) | Python\u2019s tooling is more user-friendly; C++ tools are powerful but require setup. |\n| **Debugging**    | Easier (stack traces, dynamic typing) | Harder (manual memory checks, undefined behavior) | C++ errors (e.g., segmentation faults) are harder to diagnose.               |\n\n**Dependency**: Critical for teams prioritizing rapid prototyping or those with limited C++ expertise.\n\n---\n\n#### **C. Ecosystem & Libraries**\n| **Metric**       | **Python**                          | **C++**                              | **Trade-off**                                                                 |\n|------------------|-------------------------------------|--------------------------------------|-------------------------------------------------------------------------------|\n| **Standard Library** | Comprehensive (e.g., `numpy`, `pandas`) | Limited (focuses on low-level features) | Python\u2019s libraries dominate data science, AI, and scripting.                |\n| **Third-Party Packages** | Extensive (PyPI: ~500K+ packages)   | Growing but niche (e.g., Boost, Eigen) | Python\u2019s ecosystem is unmatched for ML, web dev, and automation.            |\n| **Interoperability** | Easy (C extensions via `ctypes`, `CFFI`) | Direct (",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "last_reasoning_subjects": [
+        "python",
+        "c++",
+        "c"
+      ],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "reasoning",
+        "last_intent": "REASONING",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-17": {
+      "session_id": "score-eval-17",
+      "last_user_message": "Analyze this CSV dataset",
+      "last_assistant_message": "I can analyze tabular data through the ML research workflow. Upload a CSV/Parquet file or paste a Hugging Face dataset link, tell me what you want to predict or find, and I'll inspect the data and then train and compare models with real metrics.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "data_analysis",
+        "last_intent": "DATA_ANALYSIS",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-18": {
+      "session_id": "score-eval-18",
+      "last_user_message": "Summarize this PDF document",
+      "last_assistant_message": "Document and PDF analysis isn't wired into this deployment yet, so I can't read an uploaded file. If you paste the text here (a few paragraphs or more), I can produce an extractive summary right away \u2014 no model connection required \u2014 and answer questions about it when an assistant model is connected.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "document_analysis",
+        "last_intent": "DOCUMENT_ANALYSIS",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-19": {
+      "session_id": "score-eval-19",
+      "last_user_message": "Show me the report",
+      "last_assistant_message": null,
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "REPORT_REQUEST",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-20": {
+      "session_id": "score-eval-20",
+      "last_user_message": "Show technical details",
+      "last_assistant_message": null,
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": null,
+        "last_intent": "TECHNICAL_DETAILS",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-21": {
+      "session_id": "score-eval-21",
+      "last_user_message": "Improve credit-card fraud detection",
+      "last_assistant_message": "**Goal-Specific Breakdown**\n- **Primary Task**: **Binary classification** (fraud vs. non-fraud) or **anomaly detection** (if fraud is rare and unbalanced).\n- **Target Variable**: `is_fraud` (binary) or `fraud_score` (continuous, if using anomaly detection).\n- **Key Domain Risks**:\n  - **Class imbalance**: Fraud is rare (e.g., <1% of transactions). Models must avoid false negatives (missed fraud) while minimizing false positives (blocking legitimate users).\n  - **Concept drift**: Fraud patterns evolve (e.g., new scams, payment methods). Models need retraining or online learning.\n  - **Privacy/regulatory**: GDPR/CCPA may restrict raw transaction data. Aggregations or synthetic data may be required.\n  - **Latency**: Real-time fraud detection (e.g., during transaction) requires lightweight models.\n\n---\n\n**Evaluation Metric**\n- **Primary**: **Precision-Recall AUC** (better than ROC-AUC for imbalanced data) or **F2-score** (weights false negatives heavily).\n- **Secondary**:\n  - **False Positive Rate (FPR)** at a threshold where precision is acceptable (e.g., 95% precision).\n  - **Business cost metrics**: e.g., \"cost per fraud detected\" (fraud loss vs. customer friction from false positives).\n\n---\n\n**Sensible First Approaches/Models**\n1. **Isolation Forest or One-Class SVM**\n   - *Why*: Unsupervised/anomaly detection for rare fraud cases. Handles high-dimensional data (e.g., transaction features) well.\n   - *Caveat*: May struggle with complex fraud patterns if labeled data exists. Requires tuning for sensitivity.\n   - *Example Use*: Baseline for detecting novel fraud schemes not seen in training.\n\n2. **XGBoost/LightGBM with Class Weighting**\n   - *Why*: Handles imbalance via `scale_pos_weight` or custom sampling. Feature importance helps interpret fraud triggers (e.g., unusual location, high velocity).\n   - *Caveat*: Needs labeled data. Risk of overfitting to noise if features are noisy (e.g., one-hot encoded categories).\n   - *Example Use*: Start with transaction features (amount, time, merchant, device) + engineered features (e.g., \"transactions in last hour\").\n\n3. **Deep Learning (TabNet or TabTransformer)**\n   - *Why*: Captures non-linear relationships in tabular data (e.g., interactions between time, amount, and user behavior).\n   - *Caveat*: Requires more data and compute. Risk of overfitting without careful regularization.\n   - *Example Use*: If you have sequential transaction data (e.g., user behavior graphs) or high-cardinality categoricals.\n\n---\n**Next Steps**\n- **Data**: Fraud detection typically uses transaction logs (amount, timestamp, merchant, user ID, device, location) + user behavior (e.g., spending patterns). Would you like help finding a relevant dataset (e.g., [Kaggle Credit Card Fraud](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud), [IEEE Fraud Detection](https://www.kaggle.com/c/ieee-fraud-detection))?",
+      "last_topic": null,
+      "pending_action": {
+        "type": "START_RESEARCH",
+        "topic": "Improve credit-card fraud detection",
+        "query": "Improve credit-card fraud detection",
+        "projectId": null
+      },
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "Improve credit-card fraud detection"
+        ],
+        "last_task_type": null,
+        "last_intent": "RESEARCH_START",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-22": {
+      "session_id": "score-eval-22",
+      "last_user_message": "Predict customer churn",
+      "last_assistant_message": "**Customer Churn Prediction: Practical Plan**\n\n---\n### **Core Task & Target**\n- **Task**: Binary classification (or multi-class if churn tiers exist).\n- **Target**: `churned` (1) vs. `not churned` (0), or similar binary/multi-class label.\n- **Risk**: **Class imbalance** (e.g., 95% retention, 5% churn) is common. Requires stratified sampling or specialized metrics.\n\n---\n### **Domain-Specific Risks**\n- **Data leakage**: Time-based leakage (e.g., future feature values) if data isn\u2019t split chronologically.\n- **Feature bias**: Historical behavior may not reflect real-time triggers (e.g., a one-time discount).\n- **Causal ambiguity**: Correlation \u2260 causation (e.g., \"high support calls\" may indicate churn *or* proactive engagement).\n- **Business constraints**: Cost of false positives/negatives varies (e.g., retaining a loyal customer vs. losing a high-value churner).\n\n---\n### **Evaluation Metric**\n- **Primary**: **Precision@K** (e.g., top 10% predicted churners) or **F1-score** (if imbalance is severe).\n  - Why? Businesses prioritize recall (catching churners) or precision (avoiding wasted retention efforts), depending on cost.\n- **Secondary**: **Lift curve** (how much better predictions are than random) or **business ROI** (e.g., cost to retain vs. revenue lost).\n\n---\n### **First Models/Approaches**\n1. **Gradient-Boosted Trees (XGBoost/LightGBM/CatBoost)**\n   - *Why*: Handles mixed data types (numerical/categorical), robust to outliers, and interpretable (feature importance).\n   - *Quick win*: Start with default hyperparameters; tune `max_depth` and `learning_rate` later.\n   - *Example*: Train on 60% data, validate on 20% (stratified), test on 20%.\n\n2. **Logistic Regression (with Regularization)**\n   - *Why*: Baseline for interpretability; L1/L2 can highlight key drivers (e.g., \"last purchase >30 days ago\").\n   - *Caveat*: Assumes linear relationships; may underperform if churn is complex.\n\n3. **Time-Aware Model (e.g., Survival Analysis or Markov Chains)**\n   - *Why*: If you have **timestamps** (e.g., \"days since last login\"), predict *when* churn happens, not just *if*.\n   - *Tools*: `lifelines` (Python) for survival analysis or custom Markov models.\n   - *Tradeoff*: Requires more data and domain expertise.\n\n---\n### **Next Steps**\n- **Data prep**: Ensure features are:\n  - Time-agnostic (e.g., \"avg. support calls in last 30 days\" vs. raw counts).\n  - Business-aligned (e.g., \"customer lifetime value\" if available).\n- **Baseline**: Start with a dummy classifier (predict majority class) to measure improvement.\n\n---\n**Want help finding a relevant dataset?**\n(Examples: [Kaggle\u2019s Telco Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn), [Cohort-based",
+      "last_topic": null,
+      "pending_action": {
+        "type": "START_RESEARCH",
+        "topic": "Predict customer churn",
+        "query": "Predict customer churn",
+        "projectId": null
+      },
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "Predict customer churn"
+        ],
+        "last_task_type": null,
+        "last_intent": "RESEARCH_START",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-23": {
+      "session_id": "score-eval-23",
+      "last_user_message": "Train a machine learning model to classify fraud",
+      "last_assistant_message": "**Fraud Classification Project Plan**\n\n---\n### **Core Task & Target**\n- **Task**: Binary/multi-class classification (e.g., `fraudulent` vs. `legitimate`).\n- **Target Variable**: Likely imbalanced (e.g., 99% legitimate, 1% fraud).\n- **Domain-Specific Risks**:\n  - **Class imbalance**: Standard accuracy is misleading; focus on precision/recall for fraud.\n  - **Data leakage**: Time-series fraud (e.g., transactions) requires temporal splits to avoid future data contamination.\n  - **Concept drift**: Fraud patterns evolve; monitor model performance over time.\n  - **Regulatory constraints**: Explainability may be required (e.g., GDPR, financial compliance).\n\n---\n### **Evaluation Metric**\n- **Primary**: **Precision@K** (e.g., top 1% predictions) or **F1-score** (if fraud is rare).\n- **Secondary**:\n  - **ROC-AUC** (if classes are separable).\n  - **Cost-sensitive metrics** (e.g., weighted loss if false negatives/positives have different costs).\n  - **Business metrics**: e.g., \"cost per fraud detected\" (fraud cases caught / total fraud cases).\n\n---\n### **First Models/Approaches**\n1. **Anomaly Detection (Unsupervised)**\n   - **Why**: Fraud is often rare and novel; unsupervised methods can flag outliers.\n   - **Approach**:\n     - Isolation Forest or One-Class SVM (for imbalanced data).\n     - Autoencoders (if transaction data is structured/sequential).\n   - **Pros**: No labeled data needed; catches unseen fraud patterns.\n   - **Cons**: May flag legitimate anomalies (e.g., high-value one-time purchases).\n\n2. **XGBoost/LightGBM (Supervised)**\n   - **Why**: Handles imbalanced data well with class weights; interpretable feature importance.\n   - **Approach**:\n     - Use `scale_pos_weight` (XGBoost) or `is_unbalance=True` (LightGBM).\n     - Feature engineering: e.g., transaction velocity, geospatial clusters, or temporal patterns.\n   - **Pros**: High performance with minimal tuning; works with mixed data types.\n   - **Cons**: Requires labeled data; may overfit to known fraud patterns.\n\n3. **Deep Learning (Supervised)**\n   - **Why**: Captures complex interactions in high-dimensional data (e.g., embeddings for user/merchant behavior).\n   - **Approach**:\n     - **TabNet** or **TabTransformer** (for tabular data with interpretability).\n     - **Graph Neural Networks (GNNs)** if fraud involves relationships (e.g., transaction graphs).\n   - **Pros**: Scales to large feature spaces; can model sequential behavior.\n   - **Cons**: Needs more data; harder to interpret; risk of overfitting.\n\n---\n### **Next Steps**\n- **Data**: Fraud datasets often require:\n  - Synthetic data (e.g., [Kaggle\u2019s ISIC](https://www.kaggle.com/c/credit-fraud-detection)) or proprietary transaction logs.\n  - **Critical**: Temporal splits (train on past data, validate on future) to simulate real-world drift.\n- **Baseline**: Start with a simple X",
+      "last_topic": null,
+      "pending_action": {
+        "type": "START_RESEARCH",
+        "topic": "Train a machine learning model to classify fraud",
+        "query": "Train a machine learning model to classify fraud",
+        "projectId": null
+      },
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "Train a machine learning model to classify fraud"
+        ],
+        "last_task_type": null,
+        "last_intent": "RESEARCH_START",
+        "turns_seen": 1
+      }
+    },
+    "score-eval-24": {
+      "session_id": "score-eval-24",
+      "last_user_message": "Build a model to predict house prices",
+      "last_assistant_message": "**Goal-Specific Breakdown**\n- **Task**: Regression (predicting a continuous target: house price in USD, EUR, etc.).\n- **Target Variable**: Log-transformed price (to handle skewness) or raw price (if distribution is symmetric).\n- **Domain-Specific Risks**:\n  - **Non-stationarity**: Prices fluctuate due to market trends, economic cycles, or local events (e.g., new infrastructure). Historical data may not generalize to future predictions.\n  - **Feature Engineering**: Missing or irrelevant features (e.g., \"number of bathrooms\" may not matter in rural vs. urban markets). Latent factors like school district quality or crime rates are often unmeasured.\n  - **Geospatial Bias**: Proximity to amenities (e.g., parks, highways) or environmental factors (e.g., flood zones) can dominate price but are hard to quantify without external data.\n  - **Data Leakage**: Risk of accidentally including future events (e.g., a planned subway line) in training data.\n\n---\n\n**Evaluation Metric**\n- **Primary**: **Root Mean Squared Error (RMSE)** on a time-based holdout set (e.g., last 12 months of data). RMSE penalizes large errors heavily, aligning with business needs (e.g., avoiding over/underestimating by $50K).\n- **Secondary**:\n  - **R\u00b2 (R-squared)**: Explains variance captured by the model (but can be misleading if features are spurious).\n  - **Quantile Loss**: If you need calibrated error bounds (e.g., \"90% confidence interval for price\").\n\n---\n\n**Sensible First Approaches**\n1. **Baseline: Linear Regression with Feature Engineering**\n   - **Why**: Quick to implement, interpretable, and serves as a sanity check.\n   - **Features to Include**:\n     - Structural: sqft, bedrooms, bathrooms, age of home.\n     - Location: latitude/longitude (or distance to city center), neighborhood dummies, crime rate (if available).\n     - External: school district ranking (proxy), distance to amenities (e.g., grocery stores), economic indicators (e.g., local unemployment rate).\n   - **Risk Mitigation**:\n     - Use **regularization (L1/L2)** to handle multicollinearity (e.g., sqft and lot size).\n     - Encode categorical variables (e.g., neighborhood) with **target encoding** or embeddings if many categories exist.\n\n2. **Gradient Boosting (XGBoost/LightGBM/CatBoost)**\n   - **Why**: Handles non-linear relationships and interactions well, robust to outliers, and often outperforms linear models with minimal tuning.\n   - **Features**: Same as above, but leverage built-in handling of categoricals (CatBoost) or tree-based feature importance to identify spurious correlations.\n   - **Tuning Focus**:\n     - Limit tree depth to avoid overfitting to noise (e.g., micro-location quirks).\n     - Use **early stopping** on a validation set to prevent overfitting to temporal trends.\n\n3. **Geospatial-Aware Model: Random Forest + KNN Imputation for Missing Features**\n   - **Why**: Captures local price patterns (e.g., a $100K drop near a highway) and handles missing data gracefully.\n   - **Appro\n\nWant me to search for relevant datasets?",
+      "last_topic": null,
+      "pending_action": {
+        "type": "START_RESEARCH",
+        "topic": "Build a model to predict house prices",
+        "query": "Build a model to predict house prices",
+        "projectId": null
+      },
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "Build a model to predict house prices"
+        ],
+        "last_task_type": null,
+        "last_intent": "RESEARCH_START",
+        "turns_seen": 1
+      }
     }
   },
   "settings": {

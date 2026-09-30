@@ -25,7 +25,7 @@ export default function ResearchStartScreen({ onSendChatMessage, isLaunching, on
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 min-h-screen bg-[#0B0F17] select-none">
+    <div className="research-start flex-1 flex flex-col items-center justify-center p-4 sm:p-6 min-h-screen select-none">
       {/* Mobile menu button — only visible below lg where the drawer replaces
           the sidebar; positioned in-flow at the top-left of the screen. */}
       {onOpenMenu && (
@@ -60,10 +60,10 @@ export default function ResearchStartScreen({ onSendChatMessage, isLaunching, on
             </div>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100 font-sans">
-            AI Scientist
+            Research Nexus
           </h1>
           <p className="text-sm text-slate-400 max-w-md">
-            Your autonomous machine learning research assistant
+            Autonomous intelligence for rigorous ML research
           </p>
         </div>
 

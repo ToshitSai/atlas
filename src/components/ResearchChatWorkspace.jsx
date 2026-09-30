@@ -229,11 +229,11 @@ export default function ResearchChatWorkspace({
   }
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col h-screen bg-[#0B0F17] overflow-hidden select-none">
+    <div className="research-console flex-1 min-w-0 flex flex-col h-screen overflow-hidden select-none">
 
       {/* Top Header — compact on mobile: [menu] [title] [actions] */}
       <header
-        className="h-14 border-b border-[#1E293B] bg-[#0D111A] px-2 sm:px-6 flex items-center justify-between gap-2 shrink-0 min-w-0"
+        className="h-14 border-b border-white/5 bg-[#0b0710]/90 px-2 sm:px-6 flex items-center justify-between gap-2 shrink-0 min-w-0 backdrop-blur-xl"
         style={{ paddingTop: 0 }}
       >
         <div className="flex items-center gap-1 sm:gap-3 min-w-0">
@@ -263,7 +263,7 @@ export default function ResearchChatWorkspace({
 
           <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-sm font-semibold text-slate-100 flex items-center gap-2 font-sans min-w-0">
-              <span className="shrink-0">AI Scientist</span>
+              <span className="shrink-0 tracking-tight">Research Nexus</span>
               {activeProject && (
                 <span className={`hidden sm:inline-flex text-[11px] font-medium px-2.5 py-0.5 rounded-full border shrink-0 ${
                   isCompleted

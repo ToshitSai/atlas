@@ -1,53 +1,70 @@
 import React from 'react';
-import { Cpu, Terminal, Shield, Zap, Sparkles, Database } from 'lucide-react';
 
-export default function Header({ currentView, activeProject, activeProvider }) {
+/**
+ * Header Component:
+ * Compact header with product name and actual session status.
+ * Palette: #080808 background, #242424 bottom border.
+ */
+export default function Header({
+  sessionStatus = 'DISCONNECTED',
+  routingMode = 'AUTO',
+  backendConnected = false,
+  onOpenMobileNav,
+  activeNavTitle = 'Research Workspace',
+}) {
+  const statusConfig = {
+    DISCONNECTED: { label: 'Disconnected', color: 'text-[#F87171]', bg: 'bg-[#F87171]/10', border: 'border-[#F87171]/30', dot: 'bg-[#F87171]' },
+    IDLE: { label: 'Idle', color: 'text-[#8A8F98]', bg: 'bg-[#101012]', border: 'border-[#242424]', dot: 'bg-[#8A8F98]' },
+    QUEUED: { label: 'Queued', color: 'text-[#FF6500]', bg: 'bg-[#FF6500]/10', border: 'border-[#FF6500]/30', dot: 'bg-[#FF6500] animate-pulse' },
+    IN_PROGRESS: { label: 'In Progress', color: 'text-[#FF6500]', bg: 'bg-[#FF6500]/10', border: 'border-[#FF6500]/30', dot: 'bg-[#FF6500] animate-running-pulse' },
+    COMPLETE: { label: 'Complete', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', dot: 'bg-emerald-400' },
+    FAILED: { label: 'Failed', color: 'text-[#F87171]', bg: 'bg-[#F87171]/10', border: 'border-[#F87171]/30', dot: 'bg-[#F87171]' },
+    CANCELLED: { label: 'Cancelled', color: 'text-[#8A8F98]', bg: 'bg-[#101012]', border: 'border-[#242424]', dot: 'bg-[#8A8F98]' },
+  };
+
+  const currentStatusKey = !backendConnected ? 'DISCONNECTED' : (sessionStatus || 'IDLE');
+  const st = statusConfig[currentStatusKey] || statusConfig.IDLE;
+
   return (
-    <header className="h-16 border-b border-slate-800 bg-[#0F172A]/90 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-40">
-      {/* Left: Project title & active scope */}
-      <div className="flex items-center space-x-4">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold shadow-lg shadow-cyan-500/20">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h1 className="font-extrabold text-base tracking-tight bg-gradient-to-r from-white via-slate-200 to-cyan-400 bg-clip-text text-transparent">
-              AutoML Scientist
-            </h1>
-            <p className="text-[10px] text-cyan-400/80 font-mono tracking-wider uppercase">
-              Autonomous ML Research Engine v2.0
-            </p>
-          </div>
-        </div>
+    <header className="h-12 border-b border-[#242424] bg-[#080808] px-3 sm:px-5 flex items-center justify-between gap-3 shrink-0 select-none z-10">
+      <div className="flex items-center gap-2.5 min-w-0">
+        {/* Mobile menu hamburger toggle */}
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          aria-label="Open navigation menu"
+          className="lg:hidden p-1.5 rounded text-[#8A8F98] hover:text-[#F4F4F6] hover:bg-[#141416] transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
 
-        <div className="h-5 w-[1px] bg-slate-800 hidden sm:block"></div>
-
-        <div className="hidden sm:flex items-center space-x-2 bg-slate-900/80 border border-slate-800 rounded-full px-3 py-1 text-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="text-slate-400">Active Scope:</span>
-          <span className="text-slate-200 font-semibold">{activeProject ? activeProject.name : 'No Active Project'}</span>
+        {/* Product Title */}
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-xs sm:text-sm font-semibold text-[#F4F4F6] truncate tracking-tight">
+            AI Scientist
+          </h1>
+          <span className="hidden sm:inline text-xs text-[#8A8F98] font-mono">/</span>
+          <span className="hidden sm:inline text-xs text-[#8A8F98] truncate">
+            {activeNavTitle}
+          </span>
         </div>
       </div>
 
-      {/* Right: Engine metrics & status indicators */}
-      <div className="flex items-center space-x-4">
-        {/* Sandbox indicator */}
-        <div className="hidden md:flex items-center space-x-2 bg-slate-900/60 border border-slate-800 text-xs px-2.5 py-1 rounded-md text-slate-300">
-          <Shield className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Sandbox: <strong className="text-emerald-400">Docker Isolated</strong></span>
-        </div>
+      {/* Actual Session Status & Mode */}
+      <div className="flex items-center gap-2 shrink-0 text-xs">
+        {/* AUTO Mode Badge */}
+        <span className="px-2 py-0.5 rounded bg-[#141416] border border-[#242424] text-[11px] font-mono text-[#8A8F98] flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#FF6500]" />
+          {routingMode}
+        </span>
 
-        {/* LLM Provider */}
-        <div className="hidden lg:flex items-center space-x-2 bg-slate-900/60 border border-slate-800 text-xs px-2.5 py-1 rounded-md text-slate-300">
-          <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-          <span>LLM: <strong className="text-cyan-300">{activeProvider}</strong></span>
-        </div>
-
-        {/* Compute Budget */}
-        <div className="flex items-center space-x-2 bg-cyan-950/40 border border-cyan-800/40 text-xs px-3 py-1 rounded-md text-cyan-200">
-          <Zap className="w-3.5 h-3.5 text-amber-400" />
-          <span className="font-mono">Budget: 42m / 60m</span>
-        </div>
+        {/* Status Pill */}
+        <span className={`px-2.5 py-0.5 rounded-full border text-[11px] font-mono flex items-center gap-1.5 ${st.bg} ${st.color} ${st.border}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+          {st.label}
+        </span>
       </div>
     </header>
   );
