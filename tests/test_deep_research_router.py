@@ -127,11 +127,11 @@ def test_deep_research_streams_real_steps_as_they_happen(monkeypatch):
 
     monkeypatch.setattr(deep, "plan_subqueries", lambda goal, max_subqueries=3, trace=None: ["first query", "second query"])
     monkeypatch.setattr(deep, "search_web", lambda query, limit=3: [
-        {"title": f"Web hit {i} for {query}", "url": f"https://example.test/{query.replace(' ', '-')}-{i}", "snippet": "Evidence"}
+        {"title": f"Web hit {i} for {query}", "url": f"https://en.wikipedia.org/wiki/{query.replace(' ', '_')}_{i}", "snippet": "Evidence"}
         for i in range(3)
     ])
     monkeypatch.setattr(deep, "search_literature", lambda query, limit=2: [
-        {"title": f"Paper on {query}", "url": f"https://doi.test/{query.replace(' ', '-')}", "abstract": "Real abstract text"},
+        {"title": f"Paper on {query}", "url": f"https://doi.org/{query.replace(' ', '-')}", "abstract": "Real abstract text"},
     ])
     monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
     events = []
@@ -184,7 +184,7 @@ def test_deep_research_drops_irrelevant_results(monkeypatch):
     ])
     monkeypatch.setattr(deep, "search_web", lambda *args, **kwargs: [
         {"title": "How (TV series)", "url": "https://example.test/how", "snippet": "British television programme"},
-        {"title": "Credit card fraud detection methods", "url": "https://example.test/fraud", "snippet": "Fraud detection model evaluation"},
+        {"title": "Credit card fraud detection methods", "url": "https://en.wikipedia.org/wiki/Credit_card_fraud", "snippet": "Fraud detection model evaluation"},
     ])
     monkeypatch.setattr(deep, "search_literature", lambda *args, **kwargs: [])
     monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
@@ -193,4 +193,21 @@ def test_deep_research_drops_irrelevant_results(monkeypatch):
 
     assert result["status"] == "ok"
     sources = result["trace"]  # report inputs are captured through the collector path
+    assert result["sourceCount"] == 1
+
+
+def test_deep_research_drops_low_quality_domains(monkeypatch):
+    import backend.deep_research as deep
+
+    monkeypatch.setattr(deep, "plan_subqueries", lambda *args, **kwargs: ["history of coffee origins"])
+    monkeypatch.setattr(deep, "search_web", lambda *args, **kwargs: [
+        {"title": "Coffee history discussion", "url": "https://random-seo-blog.example/coffee", "snippet": "Coffee origins"},
+        {"title": "History of coffee", "url": "https://en.wikipedia.org/wiki/History_of_coffee", "snippet": "Coffee originated in Ethiopia"},
+    ])
+    monkeypatch.setattr(deep, "search_literature", lambda *args, **kwargs: [])
+    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
+
+    result = deep.run_deep_research("history of coffee origins")
+
+    assert result["status"] == "ok"
     assert result["sourceCount"] == 1

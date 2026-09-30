@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css';
 
 function safeHttpUrl(value) {
   try {
@@ -38,12 +40,40 @@ export default function ChatMarkdown({ content }) {
             </a>
           ) : <span>{children}</span>;
         },
-        code: ({ children, className }) => <code className={className ? `block overflow-x-auto rounded-lg bg-[#0B1018] p-3 text-xs ${className}` : 'rounded bg-[#0B1018] px-1.5 py-0.5 text-xs text-cyan-200'}>{children}</code>,
+        pre: ({ children }) => <>{children}</>,
+        code: ({ children, className }) => <CodeBlock className={className}>{children}</CodeBlock>,
         blockquote: ({ children }) => <blockquote className="border-l-2 border-cyan-500/60 pl-3 text-slate-400 italic my-3">{children}</blockquote>,
         hr: () => <hr className="my-4 border-slate-700" />,
+        table: ({ children }) => <div className="table-responsive my-4 rounded-lg border border-slate-700"><table className="w-full border-collapse text-xs">{children}</table></div>,
+        thead: ({ children }) => <thead className="bg-slate-800/90 text-slate-100">{children}</thead>,
+        th: ({ children }) => <th className="border-b border-slate-700 px-3 py-2 text-left font-semibold">{children}</th>,
+        td: ({ children }) => <td className="border-b border-slate-800 px-3 py-2 align-top">{children}</td>,
+        tr: ({ children }) => <tr className="odd:bg-slate-900/30 even:bg-slate-800/25">{children}</tr>,
       }}
     >
       {String(content || '')}
     </ReactMarkdown>
   );
+}
+
+function CodeBlock({ children, className }) {
+  const raw = String(children || '').replace(/\n$/, '');
+  const language = (className || '').match(/language-([\w+-]+)/)?.[1];
+  if (!language) return <code className="rounded bg-[#0B1018] px-1.5 py-0.5 text-xs text-cyan-200">{children}</code>;
+  let highlighted = '';
+  try {
+    highlighted = hljs.getLanguage(language)
+      ? hljs.highlight(raw, { language }).value
+      : hljs.highlightAuto(raw).value;
+  } catch { highlighted = raw; }
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(raw); } catch { /* Clipboard may be unavailable. */ }
+  };
+  return <div className="my-3 overflow-hidden rounded-xl border border-slate-700 bg-[#0B1018] shadow-inner">
+    <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900/80 px-3 py-1.5 text-[11px]">
+      <span className="font-mono uppercase tracking-wide text-slate-400">{language}</span>
+      <button type="button" onClick={copy} className="rounded px-2 py-1 text-slate-300 hover:bg-slate-700 hover:text-white">Copy</button>
+    </div>
+    <pre className="overflow-x-auto p-3 text-xs leading-relaxed"><code className={`hljs language-${language}`} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
+  </div>;
 }

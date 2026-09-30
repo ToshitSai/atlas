@@ -8,6 +8,7 @@ inventing content.
 """
 import datetime
 import re
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
 import backend.config  # auto-loads .env into os.environ
@@ -25,6 +26,14 @@ _SYNTH_SYSTEM_PROMPT = (
 )
 
 _FILLER_ABSTRACT_PREFIXES = ("research paper on", "academic research indexed")
+_TRUSTED_SOURCE_HOSTS = (
+    "wikipedia.org", "britannica.com", "arxiv.org", "pubmed.ncbi.nlm.nih.gov", "nih.gov",
+    "who.int", "worldbank.org", "oecd.org", "un.org", "kaggle.com", "huggingface.co",
+    "archive.ics.uci.edu", "doi.org", "semanticscholar.org", "openalex.org", "acm.org",
+    "ieee.org", "nature.com", "science.org", "reuters.com", "apnews.com", "bbc.com",
+    "nytimes.com", "theguardian.com", "ft.com",
+)
+_LOW_QUALITY_HOST_HINTS = ("reddit.", "quora.", "medium.com", "pinterest.", "facebook.", "x.com", "twitter.")
 _QUERY_STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "for", "from", "how",
     "in", "improve", "is", "it", "latest", "of", "on", "or", "the", "this", "to", "what",
@@ -55,6 +64,19 @@ def _source_is_relevant(hit: Dict[str, Any], goal: str, query: str) -> bool:
     # One unmistakable topic term (e.g. fraud) is enough for a focused goal;
     # broader goals require two overlapping terms to avoid unrelated hits.
     return topic_matches >= (1 if len(topic) <= 3 else 2) or query_matches >= 2
+
+
+def _source_is_trustworthy(hit: Dict[str, Any]) -> bool:
+    """Allow recognised publishers, official domains, and academic indexes only."""
+    source = str(hit.get("source") or "").lower()
+    if source in {"semantic scholar", "openalex", "academic", "pubmed", "arxiv"}:
+        return True
+    host = (urlparse(str(hit.get("url") or "")).hostname or "").lower().lstrip("www.")
+    if not host or any(hint in host for hint in _LOW_QUALITY_HOST_HINTS):
+        return False
+    return host.endswith(".gov") or host.endswith(".edu") or any(
+        host == trusted or host.endswith(f".{trusted}") for trusted in _TRUSTED_SOURCE_HOSTS
+    )
 
 
 def plan_subqueries(goal: str, max_subqueries: int = 3, trace: Optional[StepTrace] = None) -> List[str]:
@@ -165,6 +187,8 @@ def _collect_sources(goal: str, subqueries: List[str], per_query: int, papers_on
             if hit.get("syntheticAbstract"):
                 continue
             if title.lower().startswith("untitled"):
+                continue
+            if not _source_is_trustworthy(hit):
                 continue
             if not _source_is_relevant(hit, goal, sq):
                 continue

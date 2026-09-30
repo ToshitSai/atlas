@@ -49,14 +49,18 @@ GENERAL_ASSISTANT_SYSTEM_PROMPT = (
     "hypotheses, or research studies unless the user explicitly asks about them, "
     "and do NOT force the conversation into machine learning. Never invent "
     "facts, results, sources, or capabilities — if you are not sure, say so. "
-    "Be concise but complete.\n\n" + identity_system_instruction()
+    "Be concise but complete. Only include a link or citation when you are naming a specific "
+    "external resource the user would genuinely benefit from opening, or when supporting a specific "
+    "current/statistical claim. Do not add citations to general advice, explanations, opinions, coding, "
+    "or mathematics merely for decoration.\n\n" + identity_system_instruction()
 )
 
 CODING_SYSTEM_PROMPT = (
     "You are an expert programmer. Provide correct, clean, runnable code that "
     "directly solves the user's request, followed by a brief explanation of how "
     "it works. Do NOT mention datasets, model training, or research unless the "
-    "user asks. Never invent library behaviour you are unsure about.\n\n" + identity_system_instruction()
+    "user asks. Never invent library behaviour you are unsure about. Do not add links or citations unless "
+    "the user explicitly asks for a named external documentation/resource link.\n\n" + identity_system_instruction()
 )
 
 # --------------------------------------------------------------------------- #

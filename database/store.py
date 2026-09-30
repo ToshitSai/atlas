@@ -623,8 +623,12 @@ class ResearchStore:
                     if not conversation.get("messageCount"):
                         continue
                     messages = self.repo.get_messages(conversation["id"], limit=200)
-                    first_user = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
-                    result.append({**conversation, "title": conversation.get("title") or self._conversation_title(first_user)})
+                    stored_title = str(conversation.get("title") or "").strip()
+                    # Older conversations were initialized with this placeholder.
+                    # It must not win over a later substantive user topic.
+                    if stored_title.lower() in {"", "untitled research chat", "new research"}:
+                        stored_title = self._conversation_title_from_messages(messages)
+                    result.append({**conversation, "title": stored_title})
                 return result
             except Exception as e:
                 print(f"[STORE DB WARNING]: {e}")
@@ -636,10 +640,9 @@ class ResearchStore:
                 messages = session.get("messages", [])
                 if not messages:
                     continue
-                first_user = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
                 summaries.append({
                     "id": sid,
-                    "title": self._conversation_title(first_user),
+                    "title": self._conversation_title_from_messages(messages),
                     "status": session.get("status"),
                     "createdAt": messages[0].get("timestamp"),
                     "updatedAt": messages[-1].get("timestamp"),
@@ -654,6 +657,21 @@ class ResearchStore:
         if not compact:
             return "Untitled research chat"
         return compact[:77].rstrip() + ("…" if len(compact) > 77 else "")
+
+    @classmethod
+    def _conversation_title_from_messages(cls, messages: List[Dict[str, Any]]) -> str:
+        """Prefer the first substantive user turn over a greeting-only opener."""
+        generic = {"hi", "hello", "hey", "hello there", "hi there", "good morning", "good evening"}
+        user_turns = [" ".join(str(m.get("content") or "").split())
+                      for m in messages if m.get("role") == "user"]
+        candidate = next((text for text in user_turns
+                          if len(text.split()) >= 3 and text.lower().strip("!?.") not in generic), "")
+        if not candidate:
+            candidate = next((text for text in user_turns if text.lower().strip("!?.") not in generic), "")
+        lower = candidate.lower()
+        if "fraud" in lower and any(word in lower for word in ("train", "model", "detect", "predict")):
+            return "Fraud detection model design"
+        return cls._conversation_title(candidate)
 
     def reconcile_stale_runs(self) -> List[str]:
         """Mark runs stuck in a non-terminal state as FAILED (startup reconciliation).

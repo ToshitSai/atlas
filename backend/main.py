@@ -587,6 +587,15 @@ async def chat_endpoint(payload: dict, activity_callback=None):
         if not ev.get("requestId"):
             ev["requestId"] = request_id or None
 
+    # The client can use this explicit policy when it grows citation UI.  More
+    # importantly, it makes the response contract unambiguous: research and
+    # time-sensitive factual answers are expected to carry sources; coding,
+    # maths, and general guidance are not decorated with irrelevant links.
+    source_backed_intents = {"DEEP_RESEARCH", "CURRENT_INFORMATION", "WEB_SEARCH"}
+    res["citationPolicy"] = (
+        "required" if res.get("intent") in source_backed_intents else "not_expected"
+    )
+
     store.record_message(
         conversation_id, "assistant", res.get("response", ""),
         intent=res.get("intent"), topic=res.get("lastTopic"),

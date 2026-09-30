@@ -1,19 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 /** Safe, high-level work status only. Never renders prompts, reasoning, or tool inputs. */
 export default function ActivityPanel({ activities = [], running = false, startedAt }) {
-  // Keep real completed activity visible by default. Collapsing is purely a
-  // presentation choice and never clears or interrupts the underlying work.
-  const [expanded, setExpanded] = useState(true);
+  // Live work is expanded; completed work is retained but starts folded.
+  const [expanded, setExpanded] = useState(Boolean(running));
+  useEffect(() => {
+    if (running) {
+      setExpanded(true);
+      return undefined;
+    }
+    const timer = setTimeout(() => setExpanded(false), 1500);
+    return () => clearTimeout(timer);
+  }, [running]);
   const elapsed = startedAt ? Math.max(1, Math.round((Date.now() - startedAt) / 1000)) : null;
   // While a request is genuinely in flight, the UI can truthfully show its
   // current client-side stage. Once it completes, only server-produced
   // pipeline/router events remain — never a fabricated completed history.
-  const shown = running
-    ? (activities.length
-      ? activities
-      : [{ id: 'request-understanding', label: 'Understanding your question', status: 'running', detail: 'Classifying the request before starting research.' }])
-    : activities;
+  const shown = activities;
   if (!shown.length) return null;
 
   const icon = (status) => status === 'completed' ? '✓' : status === 'failed' ? '✕' : status === 'skipped' ? '—' : status === 'pending' ? '○' : '●';
