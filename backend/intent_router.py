@@ -5,7 +5,7 @@ import operator
 import re
 from typing import Dict, Any, Optional, List, Tuple
 from backend.llm import (
-    query_llm, any_provider_configured, set_llm_budget, clear_llm_budget, DEFAULT_REQUEST_BUDGET,
+    query_llm, query_llm_with_continuation, any_provider_configured, set_llm_budget, clear_llm_budget, DEFAULT_REQUEST_BUDGET,
 )
 from backend.calculator import try_evaluate
 from database.store import store
@@ -1242,7 +1242,8 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "") -
         "pronouns using prior turns only when the current message has no explicit subject.\n"
         f"CURRENT USER MESSAGE: {message}"
     )
-    llm_answer = query_llm(prompt, GENERAL_ASSISTANT_SYSTEM_PROMPT)
+    res_dict = query_llm_with_continuation(prompt, GENERAL_ASSISTANT_SYSTEM_PROMPT, timeout=60, query_fn=query_llm)
+    llm_answer = res_dict.get("text") if isinstance(res_dict, dict) else res_dict
     if llm_answer and llm_answer.strip():
         return llm_answer.strip()
     # No provider reachable: a KB definition is better than nothing, else be honest.

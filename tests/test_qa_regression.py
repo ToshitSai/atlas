@@ -198,7 +198,7 @@ def test_frontend_uses_shared_conversation_id():
     with open("src/components/ResearchChatWorkspace.jsx", encoding="utf-8") as f:
         ws = f.read()
     # The start screen must send an explicit conversationId...
-    assert re.search(r"sendChatMessage\(userText,\s*activeProject\?\.id,\s*convId", app)
+    assert re.search(r"sendDeepResearchStream\(userText,\s*activeProject\?\.id,\s*convId", app)
     # ...and the workspace must prefer the app-level conversation.
     assert "propsConversationId || localConversationId" in ws
     # The old always-new-random-id bug must stay gone.

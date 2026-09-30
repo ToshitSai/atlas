@@ -9,13 +9,13 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 import backend.config  # Auto-loads .env into os.environ
 
 # Per-provider socket timeout. ``LLM_TIMEOUT_SECONDS`` is the production name;
 # ``LLM_TIMEOUT`` remains a backwards-compatible development alias.
 _DEFAULT_TIMEOUT = max(1, int(os.environ.get(
-    "LLM_TIMEOUT_SECONDS", os.environ.get("LLM_TIMEOUT", "8"))))
+    "LLM_TIMEOUT_SECONDS", os.environ.get("LLM_TIMEOUT", "60"))))
 
 # A local model process normally handles only one or a few generations at a
 # time. Admission control is intentionally process-wide: a per-request pool
@@ -52,7 +52,8 @@ def _increment_telemetry(**values: float) -> None:
 
 
 def _call_with_retries(fn, prompt: str, system_prompt: Optional[str], timeout: int,
-                       deadline: float) -> Optional[str]:
+                       deadline: float, max_tokens: Optional[int] = None,
+                       return_details: bool = False) -> Any:
     """Call one provider with bounded retry/backoff.
 
     A retry is only started while the race's wall-clock deadline still allows a
@@ -63,7 +64,14 @@ def _call_with_retries(fn, prompt: str, system_prompt: Optional[str], timeout: i
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return None
-        result = fn(prompt, system_prompt, max(1, min(timeout, math.ceil(remaining))))
+        socket_timeout = max(1, min(timeout, math.ceil(remaining)))
+        try:
+            result = fn(prompt, system_prompt, timeout=socket_timeout, max_tokens=max_tokens, return_details=return_details)
+        except TypeError:
+            try:
+                result = fn(prompt, system_prompt, timeout=socket_timeout)
+            except TypeError:
+                result = fn(prompt, system_prompt)
         if result:
             return result
         if attempt < _MAX_RETRIES:
@@ -76,7 +84,7 @@ def _call_with_retries(fn, prompt: str, system_prompt: Optional[str], timeout: i
 # Default overall budget for query_llm when the caller did not set a tighter
 # request budget via set_llm_budget(). Long-form answers (multi-requirement
 # decomposition, architecture design) legitimately need more than 10s.
-_DEFAULT_BUDGET = max(1.0, float(os.environ.get("LLM_BUDGET", "30")))
+_DEFAULT_BUDGET = max(1.0, float(os.environ.get("LLM_BUDGET", "90")))
 
 # Public alias: request-level budget applied by handle_intent_message() via
 # set_llm_budget(). One constant, one knob (LLM_BUDGET env).
@@ -105,7 +113,7 @@ def remaining_llm_budget() -> Optional[float]:
     return deadline - time.monotonic()
 
 
-def call_openai_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT) -> Optional[str]:
+def call_openai_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
     api_key = os.environ.get("OPENAI_API_KEY")
     api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
     model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
@@ -126,24 +134,45 @@ def call_openai_api(prompt: str, system_prompt: Optional[str] = None, timeout: i
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        effective_max_tokens = max_tokens or int(os.environ.get("OPENAI_MAX_TOKENS", "4096"))
+
         payload = {
             "model": model,
             "messages": messages,
             "temperature": 0.2,
-            "max_tokens": int(os.environ.get("OPENAI_MAX_TOKENS", "2000")),
+            "max_tokens": effective_max_tokens,
         }
 
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as response:
             res_data = json.loads(response.read().decode("utf-8"))
-            content = res_data["choices"][0]["message"]["content"]
-            print(f"[LLM TIMING] OpenAI responded in {time.monotonic() - start:.2f}s")
+            choice = res_data["choices"][0]
+            content = choice["message"]["content"]
+            finish_reason = choice.get("finish_reason", "stop")
+            usage = res_data.get("usage", {})
+            in_tokens = usage.get("prompt_tokens", len(prompt) // 4)
+            out_tokens = usage.get("completion_tokens", len(content) // 4)
+
+            print(f"[LLM TIMING] OpenAI ({model}) responded in {time.monotonic() - start:.2f}s | Tokens: in={in_tokens}, out={out_tokens}, finish={finish_reason}")
+
+            if return_details:
+                return {
+                    "text": content,
+                    "finish_reason": finish_reason,
+                    "input_tokens": in_tokens,
+                    "output_tokens": out_tokens,
+                    "requested_output_tokens": effective_max_tokens,
+                    "model_context_limit": 128000,
+                    "provider": "openai",
+                    "model": model,
+                    "generation_time": round(time.monotonic() - start, 2)
+                }
             return content
     except Exception as e:
         print(f"[LLM Client Warning] OpenAI call failed after {time.monotonic() - start:.2f}s: {e}")
         return None
 
-def call_gemini_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT) -> Optional[str]:
+def call_gemini_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return None
@@ -155,23 +184,49 @@ def call_gemini_api(prompt: str, system_prompt: Optional[str] = None, timeout: i
         headers = {"Content-Type": "application/json"}
         
         full_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        effective_max_tokens = max_tokens or int(os.environ.get("GEMINI_MAX_TOKENS", "8192"))
+
         payload = {
             "contents": [
                 {"role": "user", "parts": [{"text": full_text}]}
-            ]
+            ],
+            "generationConfig": {
+                "maxOutputTokens": effective_max_tokens,
+                "temperature": 0.2
+            }
         }
 
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as response:
             res_data = json.loads(response.read().decode("utf-8"))
-            text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-            print(f"[LLM TIMING] Gemini responded in {time.monotonic() - start:.2f}s")
+            candidate = res_data["candidates"][0]
+            text = candidate["content"]["parts"][0]["text"]
+            finish_reason_raw = candidate.get("finishReason", "STOP")
+            finish_reason = "length" if finish_reason_raw in ("MAX_TOKENS", "LENGTH") else "stop"
+            usage = res_data.get("usageMetadata", {})
+            in_tokens = usage.get("promptTokenCount", len(full_text) // 4)
+            out_tokens = usage.get("candidatesTokenCount", len(text) // 4)
+
+            print(f"[LLM TIMING] Gemini ({model}) responded in {time.monotonic() - start:.2f}s | Tokens: in={in_tokens}, out={out_tokens}, finish={finish_reason}")
+
+            if return_details:
+                return {
+                    "text": text,
+                    "finish_reason": finish_reason,
+                    "input_tokens": in_tokens,
+                    "output_tokens": out_tokens,
+                    "requested_output_tokens": effective_max_tokens,
+                    "model_context_limit": 1000000,
+                    "provider": "gemini",
+                    "model": model,
+                    "generation_time": round(time.monotonic() - start, 2)
+                }
             return text
     except Exception as e:
         print(f"[LLM Client Warning] Gemini call failed after {time.monotonic() - start:.2f}s: {e}")
         return None
 
-def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT) -> Optional[str]:
+def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
@@ -185,9 +240,12 @@ def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout
             "anthropic-version": "2023-06-01"
         }
 
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        effective_max_tokens = max_tokens or int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096"))
+
         payload = {
-            "model": os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
-            "max_tokens": int(os.environ.get("ANTHROPIC_MAX_TOKENS", "1024")),
+            "model": model,
+            "max_tokens": effective_max_tokens,
             "messages": [{"role": "user", "content": prompt}]
         }
         if system_prompt:
@@ -197,13 +255,32 @@ def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout
         with urllib.request.urlopen(req, timeout=timeout) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             text = res_data["content"][0]["text"]
-            print(f"[LLM TIMING] Anthropic responded in {time.monotonic() - start:.2f}s")
+            stop_reason = res_data.get("stop_reason", "end_turn")
+            finish_reason = "length" if stop_reason == "max_tokens" else "stop"
+            usage = res_data.get("usage", {})
+            in_tokens = usage.get("input_tokens", len(prompt) // 4)
+            out_tokens = usage.get("output_tokens", len(text) // 4)
+
+            print(f"[LLM TIMING] Anthropic ({model}) responded in {time.monotonic() - start:.2f}s | Tokens: in={in_tokens}, out={out_tokens}, finish={finish_reason}")
+
+            if return_details:
+                return {
+                    "text": text,
+                    "finish_reason": finish_reason,
+                    "input_tokens": in_tokens,
+                    "output_tokens": out_tokens,
+                    "requested_output_tokens": effective_max_tokens,
+                    "model_context_limit": 200000,
+                    "provider": "anthropic",
+                    "model": model,
+                    "generation_time": round(time.monotonic() - start, 2)
+                }
             return text
     except Exception as e:
         print(f"[LLM Client Warning] Anthropic call failed after {time.monotonic() - start:.2f}s: {e}")
         return None
 
-def call_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT) -> Optional[str]:
+def call_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
     api_key = os.environ.get("MISTRAL_API_KEY")
     if not api_key:
         return None
@@ -221,15 +298,12 @@ def call_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: 
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        model = os.environ.get("MISTRAL_MODEL", "mistral-tiny")
+        effective_max_tokens = max_tokens or int(os.environ.get("MISTRAL_MAX_TOKENS", "4096"))
+
         payload = {
-            # Model is env-configurable so a stronger tier can be enabled without a
-            # code change. Default stays mistral-tiny: the account's current tier
-            # rate-limits (429) small/medium and forbids (403) large, so defaulting
-            # to those would silently degrade every request to the fallback path.
-            "model": os.environ.get("MISTRAL_MODEL", "mistral-tiny"),
-            "max_tokens": int(os.environ.get("MISTRAL_MAX_TOKENS", "700")),
-            # Pinned low for deterministic, reproducible answers (was provider
-            # default ~0.7, which made identical questions give different results).
+            "model": model,
+            "max_tokens": effective_max_tokens,
             "temperature": float(os.environ.get("MISTRAL_TEMPERATURE", "0.1")),
             "messages": messages
         }
@@ -237,8 +311,27 @@ def call_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: 
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as response:
             res_data = json.loads(response.read().decode("utf-8"))
-            content = res_data["choices"][0]["message"]["content"]
-            print(f"[LLM TIMING] Mistral responded in {time.monotonic() - start:.2f}s")
+            choice = res_data["choices"][0]
+            content = choice["message"]["content"]
+            finish_reason = choice.get("finish_reason", "stop")
+            usage = res_data.get("usage", {})
+            in_tokens = usage.get("prompt_tokens", len(prompt) // 4)
+            out_tokens = usage.get("completion_tokens", len(content) // 4)
+
+            print(f"[LLM TIMING] Mistral ({model}) responded in {time.monotonic() - start:.2f}s | Tokens: in={in_tokens}, out={out_tokens}, finish={finish_reason}")
+
+            if return_details:
+                return {
+                    "text": content,
+                    "finish_reason": finish_reason,
+                    "input_tokens": in_tokens,
+                    "output_tokens": out_tokens,
+                    "requested_output_tokens": effective_max_tokens,
+                    "model_context_limit": 32000,
+                    "provider": "mistral",
+                    "model": model,
+                    "generation_time": round(time.monotonic() - start, 2)
+                }
             return content
     except Exception as e:
         print(f"[LLM Client Warning] Mistral call failed after {time.monotonic() - start:.2f}s: {e}")
@@ -294,7 +387,15 @@ def engine_disclosure() -> str:
             "built-in rule-based engine, not a live model._")
 
 
-def query_llm(prompt: str, system_prompt: Optional[str] = None, provider: str = "auto", role: str = "main", timeout: int = _DEFAULT_TIMEOUT) -> Optional[str]:
+def query_llm(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    provider: str = "auto",
+    role: str = "main",
+    timeout: int = _DEFAULT_TIMEOUT,
+    max_tokens: Optional[int] = None,
+    return_details: bool = False
+) -> Any:
     """
     Unified multi-provider LLM caller supporting OpenAI, Gemini, Anthropic Claude, and Mistral.
 
@@ -310,9 +411,9 @@ def query_llm(prompt: str, system_prompt: Optional[str] = None, provider: str = 
     returns None (callers surface a capability error) instead of pretending
     another provider answered.
 
-    The wait is capped by the `timeout` parameter (default ~8s, env LLM_TIMEOUT_SECONDS)
+    The wait is capped by the `timeout` parameter (default ~60s, env LLM_TIMEOUT_SECONDS)
     and by the request's overall LLM budget (set_llm_budget) when one is active;
-    otherwise LLM_BUDGET (default 30s) applies so long-form answers can finish.
+    otherwise LLM_BUDGET (default 90s) applies so long-form answers can finish.
     """
     submitted_at = time.monotonic()
     _increment_telemetry(submitted=1)
@@ -347,19 +448,12 @@ def query_llm(prompt: str, system_prompt: Optional[str] = None, provider: str = 
         print("[LLM BUDGET] exhausted before call; skipping provider race")
         return None
     # Cap the socket timeout to the requested timeout and the remaining budget.
-    # The OVERALL wait is capped too: socket timeouts are per-read, so a slow
-    # streaming response could otherwise exceed the wall-time budget. When no
-    # request budget is active, the explicit timeout parameter is the cap
-    # (prior fix: query_llm never waits longer than its explicit timeout).
     if remaining is None:
         socket_timeout = timeout
         wait_overall = timeout
     else:
         socket_timeout = max(1, min(timeout, math.ceil(remaining)))
         wait_overall = max(0.05, remaining)
-    # Do not let queued requests wait longer than their caller can wait. This
-    # is a controlled local-development fallback when Redis/workers are absent;
-    # deployments can increase the same bound through MAX_CONCURRENT_LLM_REQUESTS.
     admission_wait = min(_QUEUE_TIMEOUT, wait_overall)
     if not _LLM_ADMISSION.acquire(timeout=admission_wait):
         _increment_telemetry(overloaded=1)
@@ -372,7 +466,7 @@ def query_llm(prompt: str, system_prompt: Optional[str] = None, provider: str = 
     try:
         futures = {
             _LLM_EXECUTOR.submit(_call_with_retries, fn, prompt, system_prompt,
-                                 socket_timeout, deadline): fn.__name__
+                                 socket_timeout, deadline, max_tokens, return_details): fn.__name__
             for fn in providers
         }
         try:
@@ -387,10 +481,6 @@ def query_llm(prompt: str, system_prompt: Optional[str] = None, provider: str = 
             print(f"[LLM TIMING] provider race timed out after {time.monotonic() - start:.2f}s")
         return None
     finally:
-        # Do NOT wait for stragglers: returning immediately on the first result
-        # is the whole point. The shared executor bounds retained work; queued
-        # provider calls are cancelled, while a running socket exits at its
-        # bounded timeout.
         for future in locals().get("futures", {}):
             future.cancel()
         _LLM_ADMISSION.release()
@@ -647,4 +737,319 @@ print("Experiment completed. %s=%.4f" % (metric_name, float(metric_value)))
         "hyperparams": hyperparams,
         "model": "HistGradientBoosting (class-weighted)" if exp_idx == 1 else "XGBoost/HistGB (threshold-tuned)",
         "python_script": script
+    }
+
+
+def estimate_question_complexity(prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Estimates question complexity (1-10) and calculates optimal output token budget.
+    Scans for multi-part questions, technical/derivation keywords, LaTeX math requests,
+    architectural comparisons, and deep ML topics.
+    """
+    text = f"{system_prompt or ''} {prompt or ''}".lower()
+
+    score = 2  # Baseline for standard question
+
+    # 1. Multi-part detection
+    part_matches = len(re.findall(r"\b(?:\d+[\.\)]|part\s+\d+|step\s+\d+|question\s+\d+|task\s+\d+)\b", text))
+    if part_matches >= 3:
+        score += 3
+    elif part_matches >= 2:
+        score += 2
+
+    # Question mark count / multi-question detection
+    qmark_count = text.count('?')
+    if qmark_count >= 4:
+        score += 2
+    elif qmark_count >= 2:
+        score += 1
+
+    # 2. Mathematical derivation & technical deep dive keywords
+    derivation_keywords = [
+        "derive", "derivation", "proof", "prove", "step-by-step", "mathematically",
+        "show mathematically", "taylor expansion", "loss function", "gradient descent",
+        "jacobian", "hessian", "eigenvalue", "integral", "matrix factorization"
+    ]
+    if any(kw in text for kw in derivation_keywords):
+        score += 3
+
+    # 3. Comparative & structural keywords
+    comparison_keywords = [
+        "compare", "comparison", "versus", "vs", "difference between",
+        "trade-offs", "pros and cons", "architectural comparison"
+    ]
+    if any(kw in text for kw in comparison_keywords):
+        score += 2
+
+    # 4. Advanced ML topics
+    advanced_ml_topics = [
+        "flashattention", "rope", "yarn", "ppo", "dpo", "grpo", "ddpm", "score sde",
+        "flow matching", "xgboost", "goss", "pagedattention", "mla", "sparse moe",
+        "ntk", "sam", "navit", "2d-rope", "shampoo", "muon", "vlm", "patchification"
+    ]
+    if any(topic in text for topic in advanced_ml_topics):
+        score += 2
+
+    final_score = min(10, max(1, score))
+
+    # Dynamic output token budget mapping:
+    if final_score <= 3:
+        budget = 1024
+    elif final_score <= 6:
+        budget = 2500
+    elif final_score <= 8:
+        budget = 4096
+    else:
+        budget = 8192
+
+    return {
+        "complexity_score": final_score,
+        "recommended_output_budget": budget,
+        "is_multi_part": part_matches >= 2 or qmark_count >= 3,
+        "is_derivation": any(kw in text for kw in derivation_keywords),
+    }
+
+
+def check_response_completion(text: str, finish_reason: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Checks if an LLM output was truncated or cut off mid-equation / mid-sentence.
+    """
+    if not text or not text.strip():
+        return {"complete": False, "reason": "empty"}
+
+    if finish_reason and finish_reason.lower() in ("length", "max_tokens"):
+        return {"complete": False, "reason": "finish_reason_length"}
+
+    # 1. Check unclosed LaTeX math blocks
+    dollar_blocks = text.count("$$")
+    if dollar_blocks % 2 != 0:
+        return {"complete": False, "reason": "unclosed_dollar_latex"}
+
+    open_bracket_math = text.count(r"\[")
+    close_bracket_math = text.count(r"\]")
+    if open_bracket_math > close_bracket_math:
+        return {"complete": False, "reason": "unclosed_bracket_latex"}
+
+    begins = len(re.findall(r"\\begin\{[a-zA-Z0-9\*]+\}", text))
+    ends = len(re.findall(r"\\end\{[a-zA-Z0-9\*]+\}", text))
+    if begins > ends:
+        return {"complete": False, "reason": "unclosed_begin_env_latex"}
+
+    # 2. Check unclosed code blocks
+    code_blocks = text.count("```")
+    if code_blocks % 2 != 0:
+        return {"complete": False, "reason": "unclosed_code_block"}
+
+    # 3. Check abrupt sentence ending
+    trimmed = text.strip()
+    abrupt_patterns = [
+        r"(?:where|and|with|equal to|equals|given by|defined as|note that|we have|which gives|so that|thus,?\s*)\s*$",
+        r"[\+\-\*/=,\\:=]\s*$",
+        r"\\frac\{[^\}]*$",
+        r"\\begin\{[^\}]*$",
+    ]
+    for pattern in abrupt_patterns:
+        if re.search(pattern, trimmed, re.IGNORECASE):
+            return {"complete": False, "reason": "abrupt_text_ending"}
+
+    if len(trimmed) > 50 and not re.search(r"[\.\!\?\}\]\>\)]\s*$", trimmed):
+        last_line = trimmed.split("\n")[-1].strip()
+        if not last_line.startswith("#") and not last_line.startswith("-") and not last_line.startswith("*"):
+            if len(last_line) > 10 and not last_line.endswith("."):
+                return {"complete": False, "reason": "missing_terminal_punctuation"}
+
+    return {"complete": True, "reason": "ok"}
+
+
+def fix_unclosed_markdown_blocks(text: str) -> str:
+    if not text:
+        return text
+
+    res = text
+    if res.count("```") % 2 != 0:
+        res += "\n```"
+
+    if res.count("$$") % 2 != 0:
+        res += "\n$$"
+
+    open_brackets = res.count(r"\[")
+    close_brackets = res.count(r"\]")
+    if open_brackets > close_brackets:
+        res += "\n\\]" * (open_brackets - close_brackets)
+
+    return res
+
+
+def query_llm_detailed(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    provider: str = "auto",
+    role: str = "main",
+    timeout: int = _DEFAULT_TIMEOUT,
+    requested_max_tokens: Optional[int] = None
+) -> Optional[Dict[str, Any]]:
+    """Query LLM and return rich telemetry dictionary."""
+    res = query_llm(
+        prompt,
+        system_prompt=system_prompt,
+        provider=provider,
+        role=role,
+        timeout=timeout,
+        max_tokens=requested_max_tokens,
+        return_details=True
+    )
+    if isinstance(res, dict):
+        return res
+    if isinstance(res, str):
+        return {
+            "text": res,
+            "finish_reason": "stop",
+            "input_tokens": len(prompt) // 4,
+            "output_tokens": len(res) // 4,
+            "requested_output_tokens": requested_max_tokens or 4096,
+            "model_context_limit": 128000,
+            "provider": provider,
+            "model": "unknown",
+            "generation_time": 0.0
+        }
+    return None
+
+
+def _call_query_detailed(
+    query_fn: Optional[Callable],
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    provider: str = "auto",
+    role: str = "main",
+    timeout: int = _DEFAULT_TIMEOUT,
+    requested_max_tokens: Optional[int] = None
+) -> Optional[Dict[str, Any]]:
+    if query_fn is not None:
+        try:
+            res = query_fn(prompt, system_prompt=system_prompt, provider=provider, role=role, timeout=timeout, max_tokens=requested_max_tokens, return_details=True)
+        except TypeError:
+            try:
+                res = query_fn(prompt, system_prompt=system_prompt, timeout=timeout)
+            except TypeError:
+                res = query_fn(prompt, system_prompt)
+        if isinstance(res, dict):
+            return res
+        if isinstance(res, str):
+            return {
+                "text": res,
+                "finish_reason": "stop",
+                "input_tokens": len(prompt) // 4,
+                "output_tokens": len(res) // 4,
+                "requested_output_tokens": requested_max_tokens or 4096,
+                "model_context_limit": 128000,
+                "provider": provider,
+                "model": "unknown",
+                "generation_time": 0.0
+            }
+        return None
+    return query_llm_detailed(
+        prompt,
+        system_prompt=system_prompt,
+        provider=provider,
+        role=role,
+        timeout=timeout,
+        requested_max_tokens=requested_max_tokens
+    )
+
+
+def query_llm_with_continuation(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    provider: str = "auto",
+    role: str = "main",
+    timeout: int = _DEFAULT_TIMEOUT,
+    max_continuations: int = 3,
+    query_fn: Optional[Callable] = None
+) -> Dict[str, Any]:
+    """
+    Executes query_llm with dynamic complexity token budgeting and automated continuation recovery
+    if responses are truncated or cut off mid-derivation.
+    """
+    complexity = estimate_question_complexity(prompt, system_prompt)
+    target_budget = complexity["recommended_output_budget"]
+
+    enhanced_system_prompt = system_prompt or ""
+    if complexity["complexity_score"] >= 6:
+        plan_instruction = (
+            "\n\nCRITICAL INSTRUCTION FOR TECHNICAL COMPLETENESS:\n"
+            "This is a multi-part or complex technical query. You MUST provide a thorough, "
+            "untruncated answer covering EVERY requested part, step, and derivation. "
+            "Organize your output into clear numbered sections (Part 1, Part 2, etc.). "
+            "Do NOT abbreviate mathematical steps or leave derivations half-finished."
+        )
+        enhanced_system_prompt += plan_instruction
+
+    result = _call_query_detailed(
+        query_fn,
+        prompt,
+        system_prompt=enhanced_system_prompt,
+        provider=provider,
+        role=role,
+        timeout=timeout,
+        requested_max_tokens=target_budget
+    )
+
+    if not result or not result.get("text"):
+        return {
+            "text": None,
+            "complexity": complexity,
+            "completed": False,
+            "continuations": 0
+        }
+
+    full_text = result["text"]
+    finish_reason = result.get("finish_reason")
+    continuations_done = 0
+
+    while continuations_done < max_continuations:
+        status = check_response_completion(full_text, finish_reason)
+        if status["complete"]:
+            break
+
+        print(f"[CONTINUATION TRIGGERED] Reason: {status['reason']} | Continuation count: {continuations_done + 1}")
+
+        continuation_prompt = (
+            f"Original User Question:\n{prompt}\n\n"
+            f"Your previous response was truncated mid-answer due to token limits. Here is what you generated so far:\n"
+            f"--- BEGIN PARTIAL RESPONSE ---\n{full_text[-1500:]}\n--- END PARTIAL RESPONSE ---\n\n"
+            "CRITICAL CONTINUATION INSTRUCTION:\n"
+            "Continue the response seamlessly from the EXACT character where it stopped above. "
+            "DO NOT repeat what has already been written. DO NOT write introductory greetings. "
+            "Complete all remaining equations, steps, and requested parts in full detail."
+        )
+
+        cont_result = _call_query_detailed(
+            query_fn,
+            continuation_prompt,
+            system_prompt=enhanced_system_prompt,
+            provider=provider,
+            role=role,
+            timeout=timeout,
+            requested_max_tokens=target_budget
+        )
+
+        if not cont_result or not cont_result.get("text"):
+            break
+
+        added_text = cont_result["text"].strip()
+        if added_text and added_text not in full_text:
+            full_text = full_text + "\n" + added_text
+            finish_reason = cont_result.get("finish_reason")
+            continuations_done += 1
+        else:
+            break
+
+    full_text = fix_unclosed_markdown_blocks(full_text)
+
+    return {
+        "text": full_text,
+        "complexity": complexity,
+        "completed": check_response_completion(full_text)["complete"],
+        "continuations": continuations_done,
+        "telemetry": result
     }
