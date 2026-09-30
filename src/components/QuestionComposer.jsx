@@ -140,24 +140,24 @@ export default function QuestionComposer({
     <div className="w-full font-sans select-none space-y-1.5">
       {/* Feedback alerts if disconnected, failed, or speech error */}
       {!backendConnected && (
-        <div className="text-[11px] font-mono text-[#F87171] px-3 pb-0.5 flex items-center justify-between">
+        <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5 flex items-center justify-between">
           <span>Research service not configured. No investigation or experiment has started.</span>
         </div>
       )}
 
       {errorFeedback && (
-        <div className="text-[11px] font-mono text-[#F87171] px-3 pb-0.5">
+        <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5">
           {errorFeedback}
         </div>
       )}
 
       {speechError && (
-        <div className="text-[11px] font-mono text-[#FF6500] px-3 pb-0.5 flex items-center justify-between">
+        <div className="text-xs font-sans text-[#FF6500] px-3 pb-0.5 flex items-center justify-between">
           <span>{speechError}</span>
           <button
             type="button"
             onClick={() => setSpeechError(null)}
-            className="text-[10px] text-[#8A8F98] hover:text-[#F4F4F6] underline ml-2"
+            className="text-xs text-[#8A8F98] hover:text-[#F4F4F6] underline ml-2 font-sans"
           >
             Dismiss
           </button>

@@ -317,17 +317,17 @@ export default function App() {
                         <path d="M12 21a9 9 0 0 1-9-9" />
                       </svg>
                     </div>
-                    <div className="space-y-1">
-                      <h2 className="text-base font-semibold text-[#F4F4F6] font-mono tracking-tight">
+                    <div className="space-y-1 font-sans">
+                      <h2 className="text-base font-semibold text-[#F4F4F6] font-sans tracking-normal">
                         AI Scientist Workspace
                       </h2>
-                      <p className="text-xs text-[#8A8F98] leading-relaxed">
+                      <p className="text-xs text-[#8A8F98] leading-relaxed font-sans">
                         Ask a simple question for a concise explanation, or enter a complex machine learning query to trigger an autonomous scientific research pipeline.
                       </p>
                     </div>
 
                     {!backendConnected && (
-                      <div className="p-3 rounded bg-[#F87171]/10 border border-[#F87171]/30 text-xs font-mono text-[#F87171] w-full">
+                      <div className="p-3 rounded-xl bg-[#F87171]/10 border border-[#F87171]/30 text-xs font-sans text-[#F87171] w-full">
                         Research service not configured. No investigation or experiment has started.
                       </div>
                     )}

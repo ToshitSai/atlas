@@ -40,13 +40,13 @@ export default function Header({
           </svg>
         </button>
 
-        {/* Product Title */}
-        <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-xs sm:text-sm font-semibold text-[#F4F4F6] truncate tracking-tight">
+        {/* Product Title Breadcrumb */}
+        <div className="flex items-center gap-2 min-w-0 font-sans">
+          <h1 className="text-sm font-semibold text-[#F4F4F6] truncate tracking-normal font-sans">
             AI Scientist
           </h1>
-          <span className="hidden sm:inline text-xs text-[#8A8F98] font-mono">/</span>
-          <span className="hidden sm:inline text-xs text-[#8A8F98] truncate">
+          <span className="hidden sm:inline text-xs text-[#8A8F98]">/</span>
+          <span className="hidden sm:inline text-sm font-normal text-[#8A8F98] truncate font-sans">
             {activeNavTitle}
           </span>
         </div>

@@ -1,45 +1,45 @@
 import React from 'react';
 
 /**
- * Functional Sources View displaying validated primary research sources.
+ * Functional Sources View displaying validated primary research sources with clean typography.
  */
 export default function SourcesView({ sources = [] }) {
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-w-4xl mx-auto w-full select-none font-sans min-w-0 pb-32 animate-panel-entrance">
-      <div className="border-b border-[#242424] pb-3 flex items-center justify-between">
+      <div className="border-b border-[#242424] pb-3 flex items-center justify-between font-sans">
         <div>
-          <h2 className="text-base font-mono font-bold text-[#F4F4F6] uppercase flex items-center gap-2">
+          <h2 className="text-base font-semibold text-[#F4F4F6] font-sans flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#FF6500]" />
-            Validated Primary Sources
+            Research Sources
           </h2>
-          <p className="text-xs text-[#8A8F98] mt-0.5">
+          <p className="text-xs text-[#8A8F98] mt-0.5 font-sans">
             Literature, benchmark repositories, and domain papers validated by research pipeline
           </p>
         </div>
-        <span className="text-xs font-mono text-[#8A8F98] px-2 py-1 bg-[#141416] border border-[#242424] rounded">
+        <span className="text-xs font-medium text-[#8A8F98] px-2.5 py-1 bg-[#141416] border border-[#242424] rounded-full font-sans">
           Total: {sources.length}
         </span>
       </div>
 
       {sources.length === 0 ? (
-        <div className="bg-[#0B0B0B] border border-[#242424] rounded p-8 text-center space-y-2">
-          <p className="text-xs text-[#8A8F98] italic font-mono">
+        <div className="bg-[#0B0B0B] border border-[#242424] rounded-xl p-8 text-center space-y-2 font-sans">
+          <p className="text-xs text-[#8A8F98] font-sans">
             No validated sources yet.
           </p>
-          <p className="text-xs text-[#8A8F98]">
+          <p className="text-xs text-[#8A8F98] font-sans">
             Source links will appear when a deep research session retrieves and validates academic literature.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3 font-sans">
           {sources.map((src, idx) => (
-            <div key={src.id || idx} className="bg-[#0B0B0B] border border-[#242424] rounded p-4 space-y-2 card-hover-lift">
-              <div className="flex items-start justify-between gap-3">
+            <div key={src.id || idx} className="bg-[#0B0B0B] border border-[#242424] rounded-xl p-4 space-y-2 card-hover-lift font-sans">
+              <div className="flex items-start justify-between gap-3 font-sans">
                 <a
                   href={src.url || '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm font-semibold text-[#F4F4F6] hover:text-[#FF6500] leading-snug transition-colors"
+                  className="text-sm font-semibold text-[#F4F4F6] hover:text-[#FF6500] leading-snug transition-colors font-sans"
                 >
                   {src.title || 'Untitled Source'}
                 </a>
@@ -47,27 +47,27 @@ export default function SourcesView({ sources = [] }) {
                   href={src.url || '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="shrink-0 text-xs font-mono text-[#FF6500] hover:underline flex items-center gap-1"
+                  className="shrink-0 text-xs font-medium text-[#FF6500] hover:underline flex items-center gap-1 font-sans"
                 >
                   Open Link ↗
                 </a>
               </div>
 
               {src.authors && (
-                <div className="text-xs text-[#8A8F98]">
+                <div className="text-xs text-[#8A8F98] font-sans">
                   Authors: {src.authors} {src.year ? `(${src.year})` : ''}
                 </div>
               )}
 
               {src.publisher && (
-                <div className="text-xs font-mono text-[#8A8F98]">
+                <div className="text-xs text-[#8A8F98] font-sans">
                   Publisher / Platform: {src.publisher}
                 </div>
               )}
 
               {src.relevance && (
-                <div className="text-xs text-[#8A8F98] leading-relaxed pt-1 border-t border-[#242424]/60">
-                  <span className="text-[#F4F4F6] font-medium">Relevance:</span> {src.relevance}
+                <div className="text-xs text-[#8A8F98] leading-relaxed pt-2 border-t border-[#242424]/60 font-sans">
+                  <span className="text-[#F4F4F6] font-medium font-sans">Relevance:</span> {src.relevance}
                 </div>
               )}
             </div>

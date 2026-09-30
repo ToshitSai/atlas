@@ -14,17 +14,17 @@ export default function ScientificInquiryCard({
   onRetry,
   canRetry = false,
 }) {
-  // Heading based strictly on actual session state
+  // Heading based strictly on actual session state, in normal title case (Instrument Sans)
   const headingMap = {
-    QUEUED: 'SCIENTIFIC INQUIRY QUEUED',
-    IN_PROGRESS: 'SCIENTIFIC INQUIRY IN PROGRESS',
-    COMPLETE: 'SCIENTIFIC INQUIRY COMPLETE',
-    FAILED: 'SCIENTIFIC INQUIRY FAILED',
-    CANCELLED: 'SCIENTIFIC INQUIRY CANCELLED',
-    IDLE: 'SCIENTIFIC INQUIRY',
+    QUEUED: 'Scientific Inquiry Queued',
+    IN_PROGRESS: 'Scientific Inquiry in Progress',
+    COMPLETE: 'Scientific Inquiry Complete',
+    FAILED: 'Scientific Inquiry Failed',
+    CANCELLED: 'Scientific Inquiry Cancelled',
+    IDLE: 'Scientific Inquiry',
   };
 
-  const headingText = headingMap[sessionState] || 'SCIENTIFIC INQUIRY';
+  const headingText = headingMap[sessionState] || 'Scientific Inquiry';
 
   // 13 Required Stages (1-indexed)
   const STAGES = [
@@ -60,7 +60,6 @@ export default function ScientificInquiryCard({
         timestamp: evt.timestamp,
       };
     }
-    // Fallback if no specific event for this stage
     if (sessionState === 'IDLE') return { status: 'pending' };
     return { status: 'pending' };
   };
@@ -80,18 +79,18 @@ export default function ScientificInquiryCard({
   };
 
   return (
-    <div className="bg-[#0B0B0B] border border-[#242424] border-l-4 border-l-[#DF223A] rounded p-3.5 sm:p-4 shadow-sm animate-panel-entrance select-none">
+    <div className="bg-[#0B0B0B] border border-[#242424] border-l-4 border-l-[#DF223A] rounded p-3.5 sm:p-4 shadow-sm animate-panel-entrance select-none font-sans">
       {/* Card Header */}
       <div className="flex items-center justify-between gap-3 border-b border-[#242424] pb-2.5 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          {/* Small orange technical icon */}
+          {/* Small orange icon */}
           <div className="w-5 h-5 rounded bg-[#FF6500]/10 border border-[#FF6500]/30 flex items-center justify-center shrink-0">
             <svg className="w-3 h-3 text-[#FF6500]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
               <circle cx="12" cy="12" r="3" />
               <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
             </svg>
           </div>
-          <h2 className="text-xs font-mono font-bold tracking-wider text-[#F4F4F6] uppercase truncate">
+          <h2 className="text-xs sm:text-sm font-semibold tracking-normal text-[#F4F4F6] truncate font-sans">
             {headingText}
           </h2>
         </div>
@@ -101,7 +100,7 @@ export default function ScientificInquiryCard({
           <button
             type="button"
             onClick={onRetry}
-            className="px-2.5 py-1 rounded bg-[#FF302A]/10 border border-[#FF302A]/40 text-[#F87171] text-[11px] font-mono hover:bg-[#FF302A]/20 btn-transition cursor-pointer"
+            className="px-2.5 py-1 rounded bg-[#FF302A]/10 border border-[#FF302A]/40 text-[#F87171] text-[11px] font-medium hover:bg-[#FF302A]/20 btn-transition cursor-pointer font-sans"
           >
             ↻ Retry Stage
           </button>
@@ -109,22 +108,22 @@ export default function ScientificInquiryCard({
       </div>
 
       {/* 13 Stages List (Desktop: 2-column, Mobile: 1-column) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-xs font-mono">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-xs font-sans">
         {STAGES.map((stage) => {
           const { status, detail, timestamp } = getStageState(stage.id);
           return (
             <div key={stage.id} className="flex flex-col min-w-0 py-0.5">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="w-4 text-center shrink-0 text-xs">
+                <span className="w-4 text-center shrink-0 text-xs font-sans">
                   {renderStatusSymbol(status)}
                 </span>
                 <span className="text-[#8A8F98] text-[11px] shrink-0 font-mono w-5">
                   {String(stage.id).padStart(2, '0')}.
                 </span>
-                <span className={`truncate text-xs ${
-                  status === 'completed' ? 'text-[#F4F4F6]' :
+                <span className={`truncate text-xs font-sans ${
+                  status === 'completed' ? 'text-[#F4F4F6] font-medium' :
                   status === 'running' ? 'text-[#FF6500] font-medium' :
-                  status === 'failed' ? 'text-[#F87171]' : 'text-[#8A8F98]'
+                  status === 'failed' ? 'text-[#F87171] font-medium' : 'text-[#8A8F98] font-normal'
                 }`}>
                   {stage.name}
                 </span>
