@@ -40,6 +40,33 @@ INTENT_CATEGORIES = [
 # --------------------------------------------------------------------------- #
 # System prompts
 # --------------------------------------------------------------------------- #
+_BEHAVIOR_ANCHORS = """
+AI Scientist behavioral contract:
+- Never claim an experiment, search, metric, dataset inspection, citation, or tool call happened unless this runtime actually performed it.
+- Clearly label recommendations as a proposed plan, and completed work as completed only when supplied by runtime evidence.
+- Be technically rigorous, practical, and explicit about uncertainty.
+
+Representative answer style:
+User: What is overfitting?
+Assistant: Overfitting is when a model fits training data well but generalizes poorly. Compare training and validation error, then consider regularization, simpler models, more data, or early stopping.
+User: Design leakage-safe validation for grouped patient data.
+Assistant: Split by patient/group before preprocessing, fit every transform inside each training fold, and report uncertainty across grouped folds. Do not let samples from one patient appear in both train and validation.
+User: Can you run an experiment to test class weighting?
+Assistant: I can propose the controlled experiment, but I have not run it yet. Hold the split fixed, compare weighted and unweighted models, and predefine recall, precision, and calibration thresholds.
+"""
+
+_ROUTER_FEW_SHOTS = """
+Routing examples (input -> mode):
+What is overfitting? -> normal
+Why can accuracy be misleading for fraud detection? -> normal
+Find recent research on imbalanced fraud detection. -> web_search
+What is today's latest PyTorch release? -> web_search
+Compare recent approaches to fraud detection and identify their limitations. -> deep_research
+Improve fraud detection. -> deep_research
+Investigate why my fraud model has poor recall and test possible fixes. -> deep_research
+Design and run experiments to determine whether SMOTE improves fraud detection. -> deep_research
+"""
+
 # General-purpose assistant prompt (see owner directive §10). The assistant must
 # answer the user's actual question directly and completely, and must NOT force
 # the conversation into the ML/research workflow.
@@ -52,7 +79,7 @@ GENERAL_ASSISTANT_SYSTEM_PROMPT = (
     "Be concise but complete. Only include a link or citation when you are naming a specific "
     "external resource the user would genuinely benefit from opening, or when supporting a specific "
     "current/statistical claim. Do not add citations to general advice, explanations, opinions, coding, "
-    "or mathematics merely for decoration.\n\n" + identity_system_instruction()
+    "or mathematics merely for decoration.\n\n" + _BEHAVIOR_ANCHORS + "\n" + identity_system_instruction()
 )
 
 CODING_SYSTEM_PROMPT = (
@@ -1234,7 +1261,10 @@ def classify_intent(
             "RESEARCH_START, RESEARCH_FOLLOWUP, RESEARCH_CONTROL, REPORT_REQUEST, "
             "TECHNICAL_DETAILS, CASUAL_CHAT, MATHEMATICS, WEB_SEARCH, "
             "CURRENT_INFORMATION, REASONING, "
-            "WRITING."
+            "WRITING.\n\nReturn a category from the app taxonomy, using these mode equivalents: "
+            "normal usually maps to EXPLANATION; web_search maps to WEB_SEARCH; "
+            "deep_research maps to DEEP_RESEARCH or RESEARCH_START when the user requests an ML project.\n"
+            + _ROUTER_FEW_SHOTS
         )
         user_prompt = f"User Input: \"{message}\"\nCategory:"
         llm_res = query_llm(user_prompt, system_prompt)
