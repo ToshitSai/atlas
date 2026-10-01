@@ -16,6 +16,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend import llm as llm_mod
 from backend import model_router as mr
 
+# conftest's autouse `no_llm` fixture replaces llm_mod.query_llm with a None
+# stub for hermeticity. Capture the real implementation at import time so the
+# fallback test below can still exercise the genuine sequential preference path.
+_REAL_QUERY_LLM = llm_mod.query_llm
+
 
 # --- 14-scenario routing matrix ------------------------------------------- #
 MATRIX = [
@@ -142,7 +147,7 @@ def test_sequential_fallback_in_query_llm(monkeypatch=None):
         llm_mod.set_llm_budget(20)
         llm_mod.begin_provider_outcomes()
         llm_mod.set_provider_preference(["openai", "gemini"])
-        result = llm_mod.query_llm("test prompt", "test system")
+        result = _REAL_QUERY_LLM("test prompt", "test system")
         outcomes = llm_mod.get_provider_outcomes()
         llm_mod.clear_provider_preference()
         llm_mod.clear_llm_budget()

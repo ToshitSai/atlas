@@ -15,9 +15,7 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
       </article>
 
       <article className="flex items-start gap-3">
-        <div className="mt-0.5 w-7 h-7 rounded-lg bg-[#F15A3A]/10 border border-[#F15A3A]/35 p-1 flex items-center justify-center shrink-0" aria-label="Atlas">
-          <AtlasLogo className="w-full h-full" />
-        </div>
+        <AtlasLogo className="mt-0.5 w-6 h-6 shrink-0" aria-label="Atlas" />
         <div className="min-w-0 flex-1 pt-0.5 text-sm text-[#E8E5DF] leading-relaxed break-words overflow-wrap-anywhere">
           {isLoading ? <AnswerSkeleton /> : <ChatMarkdown content={answer} />}
           {!isLoading && <ConfidenceBlock confidence={confidence} />}

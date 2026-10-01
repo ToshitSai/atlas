@@ -86,9 +86,7 @@ export default function Sidebar({
         <div className="flex items-center justify-between gap-2 px-1 pt-1">
           <div className="flex items-center gap-2 min-w-0">
             {/* Small orange scientific mark */}
-            <div className="w-7 h-7 rounded-lg bg-[#F15A3A]/10 border border-[#F15A3A]/40 flex items-center justify-center p-1 shrink-0">
-              <AtlasLogo className="w-full h-full" />
-            </div>
+            <AtlasLogo className="w-6 h-6 shrink-0" />
             <div className="min-w-0">
               <span className="font-semibold text-sm tracking-normal text-[#E8E5DF] block leading-none truncate font-sans">
                 Atlas
