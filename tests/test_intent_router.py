@@ -79,6 +79,31 @@ def test_hf_url_is_research_start():
 
 
 # ---------------------------------------------------------------------------
+# Section 4 (current product): the router must distinguish the three answer
+# modes — NORMAL explanation, WEB/current lookup, and DEEP_RESEARCH — and must
+# NOT treat every ML question as deep research.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("msg,expected", [
+    # NORMAL: a direct conceptual question gets a focused explanation.
+    ("What is overfitting?", "EXPLANATION"),
+    ("Explain XGBoost.", "EXPLANATION"),
+    # WEB / CURRENT: recency-seeking questions go to web search, not research.
+    ("What are the latest developments in RAG?", "WEB_SEARCH"),
+    # DEEP_RESEARCH: explicit investigation / experiment-design intent.
+    ("Investigate why my fraud model has low recall and design experiments to improve it.", "DEEP_RESEARCH"),
+    ("Do deep research on RAG.", "DEEP_RESEARCH"),
+])
+def test_current_routing_modes_normal_web_deepresearch(msg, expected):
+    assert classify_intent(msg, session_id="s-modes") == expected
+
+
+def test_not_every_ml_question_is_deep_research():
+    # Guard against the router over-escalating ordinary ML questions.
+    for normal in ("What is overfitting?", "Explain XGBoost.", "What is recall?"):
+        assert classify_intent(normal, session_id="s-no-escalate") != "DEEP_RESEARCH"
+
+
+# ---------------------------------------------------------------------------
 # BUG A: explanations must work DURING active research
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("msg", ["What is recall?", "What is Python?", "What is PR-AUC?"])
@@ -142,9 +167,11 @@ def test_confirm_executes_pending_next_experiment(isolate_store):
 def test_confirm_without_pending_asks_clarification(isolate_store):
     res = handle_intent_message("yes", session_id="s-nopending")
     assert res["action"] == "NONE"
-    # Must NOT repeat the greeting and must NOT assume research (§11): it asks
-    # what the user actually wants done.
-    assert "what would you like me to do" in res["response"].lower()
+    # Must NOT repeat the greeting and must NOT assume research (§11): it asks a
+    # clarifying question about what the user actually wants done. Assert the
+    # behaviour (a clarifying question), not the exact microcopy wording.
+    low = res["response"].lower()
+    assert "what would you like" in low and low.rstrip().endswith("?")
     assert "autonomous research assistant" not in res["response"]
 
 
@@ -169,7 +196,8 @@ def test_natural_conversation_flow(isolate_store):
     r3 = handle_intent_message("Yes, do it.", session_id=sid)
     assert r3["intent"] == "CONFIRM_PENDING_ACTION"
     assert r3["action"] == "NONE"
-    assert "what would you like me to do" in r3["response"].lower()
+    low3 = r3["response"].lower()
+    assert "what would you like" in low3 and low3.rstrip().endswith("?")
 
 
 def test_short_person_question_prefers_a_source_over_a_model_biography(isolate_store, monkeypatch):

@@ -9,21 +9,57 @@ restart -> messages still served -> migrated research artifacts served.
 """
 import json
 import os
+import shutil
+import socket
 import time
 import urllib.request
 
 import pytest
 
 BASE = "http://127.0.0.1:8000"
+PSQL = r"C:\Program Files\PostgreSQL\17\bin\psql.exe"
+PG_HOST = os.environ.get("PGHOST", "127.0.0.1")
+PG_PORT = int(os.environ.get("PGPORT", "5432"))
 
 
 def _server_up() -> bool:
     try:
-        socket_create = __import__("socket").create_connection
-        socket_create(("127.0.0.1", 8000), timeout=1).close()
+        socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
         return True
     except OSError:
         return False
+
+
+def _postgres_up() -> bool:
+    """True only when a real PostgreSQL server is reachable AND psql is present.
+
+    This test verifies rows land in the actual database via a direct psql query,
+    so without both dependencies it cannot run and must be SKIPPED (truthfully
+    reported as 'live dependencies unavailable'), never failed or faked.
+    """
+    if not (os.path.exists(PSQL) or shutil.which("psql")):
+        return False
+    try:
+        socket.create_connection((PG_HOST, PG_PORT), timeout=1).close()
+        return True
+    except OSError:
+        return False
+
+
+def _missing_live_deps():
+    missing = []
+    if not _server_up():
+        missing.append("backend not running on :8000")
+    if not _postgres_up():
+        missing.append("PostgreSQL unavailable (psql + server on %s:%s)" % (PG_HOST, PG_PORT))
+    return missing
+
+
+_missing = _missing_live_deps()
+pytestmark = pytest.mark.skipif(
+    bool(_missing),
+    reason="SKIPPED — live dependencies unavailable: " + "; ".join(_missing) if _missing else "",
+)
 
 
 def _post(path: str, payload: dict, timeout: float = 60.0):
@@ -39,10 +75,6 @@ def _post(path: str, payload: dict, timeout: float = 60.0):
 def _get(path: str, timeout: float = 30.0):
     with urllib.request.urlopen(BASE + path, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
-
-
-pytestmark = pytest.mark.skipif(not _server_up(),
-                                reason="live backend not running on :8000")
 
 
 def test_live_chat_persists_to_postgres_and_survives_restart():

@@ -399,9 +399,6 @@ export default function App() {
                       <h2 className="text-base font-semibold text-[#E8E5DF] font-sans tracking-normal">
                         Ready when you are. What should we investigate?
                       </h2>
-                      <p className="text-xs text-[#8A8884] leading-relaxed font-sans">
-                        Ask a direct question for a focused technical analysis, or enter a complex machine learning query to trigger an autonomous scientific research pipeline.
-                      </p>
                     </div>
 
                     {connectionState === 'OFFLINE' && (

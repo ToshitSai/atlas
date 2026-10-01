@@ -54,7 +54,9 @@ def _chat(msg, conv, proj=None, timeout=300):
     ("What is AI?", "it-2", "EXPLANATION"),
     ("What is Python?", "it-3", "EXPLANATION"),
     ("What is recall?", "it-4", "EXPLANATION"),
-    ("Improve fraud detection", "it-5", "RESEARCH_START"),
+    # A vague "improve X" request is an autonomous investigation, not a concrete
+    # "build/train a model for Y" dataset task: it routes to DEEP_RESEARCH.
+    ("Improve fraud detection", "it-5", "DEEP_RESEARCH"),
 ])
 def test_chat_intent_pipeline(msg, conv, intent):
     res = _chat(msg, conv)
@@ -128,7 +130,7 @@ def test_regression_matrix_live():
     assert _chat("What is AI?", "rg-b")["intent"] == "EXPLANATION"
     assert _chat("What is Python?", "rg-c")["intent"] == "EXPLANATION"
     assert _chat("What is recall?", "rg-d")["intent"] == "EXPLANATION"
-    assert _chat("Improve fraud detection", "rg-e")["intent"] == "RESEARCH_START"
+    assert _chat("Improve fraud detection", "rg-e")["intent"] == "DEEP_RESEARCH"
     if pid:
         assert _chat("Why did the model perform poorly?", "rg-f", pid)["intent"] == "RESEARCH_FOLLOWUP"
         assert _chat("Try another approach", "rg-h", pid)["action"] == "NEXT_EXPERIMENT"

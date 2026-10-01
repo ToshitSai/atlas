@@ -3,10 +3,16 @@ import pytest
 
 from backend.project_identity import (
     classify_identity_query,
+    get_public_project_info,
     handle_identity_response,
     sanitize_llm_identity_hallucinations,
 )
 from backend.intent_router import handle_intent_message
+
+# Source-of-truth product name (config-driven; currently "Atlas"). Read from the
+# application rather than hard-coded so this test protects the LIVE identity and
+# tracks an intentional rebrand instead of pinning an obsolete string.
+PRODUCT_NAME = get_public_project_info()["name"]
 
 
 @pytest.mark.parametrize("question", [
@@ -28,7 +34,9 @@ def test_creator_variants_route_to_the_project_profile(question):
 def test_self_identity_is_application_not_model_provider():
     assert classify_identity_query("Who are you?") == "SELF"
     response = handle_identity_response("Who are you?")["response"]
-    assert "AI Scientist" in response
+    # The self-description must use the configured product identity, never the
+    # underlying model provider's name.
+    assert PRODUCT_NAME in response
     assert "Mistral" not in response
 
 

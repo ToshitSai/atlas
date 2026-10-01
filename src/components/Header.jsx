@@ -49,10 +49,6 @@ export default function Header({
           <h1 className="text-sm font-semibold text-[#E8E5DF] truncate tracking-normal font-sans">
             Atlas
           </h1>
-          <span className="hidden sm:inline text-xs text-[#8A8884]">/</span>
-          <span className="hidden sm:inline text-sm font-normal text-[#8A8884] truncate font-sans">
-            {activeNavTitle}
-          </span>
         </div>
       </div>
 

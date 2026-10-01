@@ -21,8 +21,19 @@ import pytest
 
 import backend.intent_router as ir
 import backend.llm as llm
+from backend.project_identity import get_public_project_info
 
 REAL_QUERY_LLM = llm.query_llm  # conftest stubs llm.query_llm; keep the real one
+
+# Source-of-truth product name (config-driven; currently "Atlas"). Identity
+# responses are built from this, so assert against it rather than an obsolete
+# hard-coded brand string.
+PRODUCT_NAME = get_public_project_info()["name"]
+
+# Provider env vars that, when present, make configured_model_identity() name a
+# real provider. Identity-interception tests delete them so the assertions are
+# deterministic regardless of a developer's .env or earlier tests in the run.
+_PROVIDER_KEY_ENVS = ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "MISTRAL_API_KEY")
 
 
 @pytest.fixture(autouse=True)
@@ -170,11 +181,18 @@ def test_general_question_with_active_project_stays_general():
     "are you powered by Mistral?",
     "are you ChatGPT?",
 ])
-def test_identity_queries_are_intercepted_before_general_llm_knowledge(msg):
+def test_identity_queries_are_intercepted_before_general_llm_knowledge(msg, monkeypatch):
+    # Hermetic: with no provider keys configured, the MODEL_POWER answer is the
+    # honest "not available" text and never names a provider. This removes the
+    # order-dependence on a developer's .env (auto-loaded by backend.config).
+    for key in _PROVIDER_KEY_ENVS:
+        monkeypatch.delenv(key, raising=False)
+
     intent = ir.classify_intent(msg)
     assert intent == "PROJECT_IDENTITY", f"{msg!r} should route to PROJECT_IDENTITY, got {intent!r}"
 
     response = ir.handle_intent_message(msg, session_id="qa-identity-check")["response"]
+    # The assistant must never claim to BE a third-party model/provider.
     assert "Mistral AI" not in response
     assert "OpenAI" not in response
     assert "Anthropic" not in response
@@ -182,24 +200,37 @@ def test_identity_queries_are_intercepted_before_general_llm_knowledge(msg):
     assert "DeepMind" not in response
 
     if "model" in msg.lower() or "powered by" in msg.lower() or "chatgpt" in msg.lower():
-        assert "AI Scientist" in response or "configured" in response.lower()
+        # Underlying-model questions disclose only configured info; with none
+        # configured they say so honestly while still naming the application.
+        assert PRODUCT_NAME in response or "configured" in response.lower()
     else:
-        assert "AI Scientist" in response or "Toshit Sai Galam" in response
+        assert PRODUCT_NAME in response or "Toshit Sai Galam" in response
 
 
 # --------------------------------------------------------------------------- #
-# Bug 7: the frontend contract — App.jsx and the workspace must share one
-# conversation id per project.
+# Bug 7: the frontend contract — the app shell must hold ONE conversation id and
+# reuse it for both the normal-answer path and the deep-research stream, so memory
+# is not split across messages. Validated against the CURRENT Atlas shell
+# (App.jsx -> NormalAnswerView / ResearchWorkspaceView), not the orphaned legacy
+# ResearchChatWorkspace component.
 # --------------------------------------------------------------------------- #
 def test_frontend_uses_shared_conversation_id():
     import re
     with open("src/App.jsx", encoding="utf-8") as f:
         app = f.read()
-    with open("src/components/ResearchChatWorkspace.jsx", encoding="utf-8") as f:
-        ws = f.read()
-    # The start screen must send an explicit conversationId...
-    assert re.search(r"sendDeepResearchStream\(userText,\s*activeProject\?\.id,\s*convId", app)
-    # ...and the workspace must prefer the app-level conversation.
-    assert "propsConversationId || localConversationId" in ws
-    # The old always-new-random-id bug must stay gone.
+
+    # A single conversation id is created once and held in state...
+    assert re.search(r"useState\(\s*createConversationId\(\)\s*\)", app), \
+        "App.jsx must initialise one conversationId in state"
+    # ...and BOTH transport calls reuse that same state value (not a fresh id).
+    assert re.search(r"sendDeepResearchStream\([^;]*?\bconversationId\b", app, re.S), \
+        "deep-research stream must reuse the shared conversationId"
+    assert re.search(r"sendChatMessage\([^;]*?\bconversationId\b", app, re.S), \
+        "normal chat call must reuse the shared conversationId"
+    # The old always-new-random-id-per-message bug must stay gone.
     assert "useState(() => 'conv-' + Math.random()" not in app
+
+    # The active workspace is the Atlas view set; the legacy component is orphaned
+    # and must not be wired back into the shell.
+    assert "NormalAnswerView" in app and "ResearchWorkspaceView" in app
+    assert "ResearchChatWorkspace" not in app

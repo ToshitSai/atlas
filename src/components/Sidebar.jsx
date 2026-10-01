@@ -91,9 +91,6 @@ export default function Sidebar({
               <span className="font-semibold text-sm tracking-normal text-[#E8E5DF] block leading-none truncate font-sans">
                 Atlas
               </span>
-              <span className={`text-[11px] font-normal block mt-1 font-sans ${connectionState === 'OFFLINE' ? 'text-[#F87171]' : 'text-[#8A8884]'}`}>
-                {connectionState === 'CONNECTING' ? 'Connecting…' : backendConnected ? 'Connected' : 'Offline'}
-              </span>
             </div>
           </div>
 
