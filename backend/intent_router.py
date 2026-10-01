@@ -89,7 +89,10 @@ _ROUTER_DATASET_EXACT = {
 # answer the user's actual question directly and completely, and must NOT force
 # the conversation into the ML/research workflow.
 GENERAL_ASSISTANT_SYSTEM_PROMPT = (
-    "Answer the user's actual question directly, completely, and clearly in natural English. "
+    "You are Atlas, an intelligent research system. "
+    "Begin your response directly without conversational preamble or filler such as 'Sure!', 'Of course!', 'Here is', 'Let me help you', 'Hi!', 'Great!', 'Awesome!', or 'Let's dive in!'. "
+    "Do not end with generic chatbot sign-offs like 'Hope this helps!', 'Let me know if you need anything else!', or 'Is there anything else I can help with?'. Finish the answer cleanly and naturally. "
+    "Answer the user's actual question directly, completely, and clearly in precise, professional English. "
     "Address every part of the question. Do NOT mention datasets, model training, experiments, "
     "hypotheses, or research studies unless the user explicitly asks about them, "
     "and do NOT force the conversation into machine learning. Never invent "
@@ -1666,7 +1669,7 @@ def _handle_intent_message_impl(
         # assume research, and do NOT repeat the greeting). Owner directive §11.
         return {
             "intent": intent,
-            "response": "Sure — what would you like me to do?",
+            "response": "Understood. What would you like to investigate?",
             "action": "NONE",
             "projectId": active_project_id,
             "pendingAction": None,
@@ -1679,7 +1682,7 @@ def _handle_intent_message_impl(
         res_identity = handle_identity_response(message, sess.get("last_topic"))
         resp_text = res_identity["response"]
         store.clear_pending_action(sid)
-        store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": "ai scientist identity"})
+        store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": "atlas identity"})
         return {
             "intent": intent,
             "taskType": "identity",
@@ -1687,7 +1690,7 @@ def _handle_intent_message_impl(
             "action": "NONE",
             "projectId": active_project_id,
             "pendingAction": None,
-            "lastTopic": "ai scientist identity"
+            "lastTopic": "atlas identity"
         }
 
     # Named entity question. Ask the model for a concise answer first, then
@@ -2569,22 +2572,22 @@ def _handle_intent_message_impl(
     store.clear_pending_action(sid)
     if "what can you do" in msg_clean or "help" in msg_clean:
         content = (
-            "I'm a general-purpose AI assistant. 👋\n\n"
-            "I pick the right mode for each request automatically:\n"
-            "- Answer general questions and explain concepts\n"
-            "- Calculate math precisely (try \"what is 15% of 240\" or \"sqrt(144)\")\n"
-            "- Help with coding: write, explain, debug and review code\n"
-            "- Search the live web for current information (\"find the latest Python version\")\n"
-            "- Run multi-step deep research with cited sources (\"research how JavaScript evolved\")\n"
-            "- Summarize long text, draft and rewrite writing (translate with an LLM connected)\n"
-            "- Compare options with structured reasoning\n"
-            "- Analyze datasets and run real ML experiments when you ask for it\n\n"
-            "Just talk to me normally — I'll route your request to the right capability."
+            "I'm Atlas, an autonomous AI research system.\n\n"
+            "I pick the optimal operational mode for each request automatically:\n"
+            "- Answer technical questions and explain complex concepts\n"
+            "- Perform precise calculations and symbolic mathematics\n"
+            "- Assist with software development: write, inspect, debug, and refactor code\n"
+            "- Query live web sources for current evidence and developments\n"
+            "- Execute multi-step deep research with cited literature synthesis\n"
+            "- Summarize technical documents and structure scientific writing\n"
+            "- Evaluate competing approaches with multi-factor technical reasoning\n"
+            "- Run autonomous ML research pipelines and execute real experiments\n\n"
+            "Ready when you are. What should we investigate?"
         )
     elif "hello" in msg_clean:
-        content = "Hello! 👋 What can I help you with?"
+        content = "Ready when you are. What should we investigate?"
     else:
-        content = "Hi! 👋 What would you like help with?"
+        content = "Ready when you are. What should we investigate?"
 
     store.update_session(sid, {"last_assistant_message": content})
 

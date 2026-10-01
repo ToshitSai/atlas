@@ -1,8 +1,8 @@
 {
   "project": {
-    "name": "AI Scientist",
+    "name": "Atlas",
     "type": "AI research assistant",
-    "description": "AI Scientist is a general-purpose AI assistant with autonomous deep research, reasoning, machine learning, and software execution capabilities.",
+    "description": "Atlas is a general-purpose AI assistant with autonomous deep research, reasoning, machine learning, and software execution capabilities.",
     "website": "https://github.com/ToshitSai/automl-scientist",
     "github": "https://github.com/ToshitSai/automl-scientist",
     "creator": {
@@ -10,9 +10,9 @@
       "role": "Founder / Creator",
       "education": "B.Tech CSE (AI/ML)",
       "focus": "AI, machine learning, software engineering, and autonomous AI research",
-      "bio": "Toshit Sai Galam is a B.Tech Computer Science student specializing in Artificial Intelligence and Machine Learning. He is developing AI Scientist as a general-purpose AI assistant with autonomous research capabilities.",
+      "bio": "Toshit Sai Galam is a B.Tech Computer Science student specializing in Artificial Intelligence and Machine Learning. He is developing Atlas as a general-purpose AI assistant with autonomous research capabilities.",
       "projects": [
-        "AI Scientist"
+        "Atlas"
       ],
       "website": "",
       "github": "https://github.com/ToshitSai",

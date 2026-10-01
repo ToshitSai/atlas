@@ -158,6 +158,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 def health_check():
     """Health check endpoint for API dependencies."""
     from backend.llm import get_llm_telemetry
+    from backend import model_router
     llm_configured = bool(os.environ.get("OPENAI_API_KEY"))
     docker_ready = safe_docker_check()
     return {
@@ -167,6 +168,7 @@ def health_check():
         "llm": llm_configured,
         "docker": docker_ready,
         "llmExecution": get_llm_telemetry(),
+        "modelRouting": model_router.snapshot(),
     }
 
 @app.get("/api/config")
@@ -342,6 +344,26 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None)
     # Persist the selected mode once per user request. Streamed/project updates
     # read this state; they never reclassify partial assistant output.
     store.update_session(conversation_id, {"research_route": routing_decision})
+
+    # Invisible Model Router (backend-only). Classify the task and pick the
+    # capability-appropriate provider/model BEFORE any answer is generated, so
+    # the existing streaming/answer path is unaffected and the UI is unchanged.
+    # A short, truncated conversation context is enough for routing; the full
+    # conversation is never sent. No secrets or message text leave the server.
+    from backend import model_router
+    chat_files = payload.get("files") if isinstance(payload.get("files"), list) else None
+    router_context = ""
+    if conversation_history:
+        router_context = " | ".join(
+            f"{str(h.get('role', ''))[:9]}: {str(h.get('content', ''))[:120]}"
+            for h in conversation_history[-4:] if isinstance(h, dict)
+        )[:500]
+    routing = model_router.route(
+        request_id, message, files=chat_files,
+        conversation_context=router_context, active_mode=effective_mode,
+    )
+    model_router.apply(routing)
+
     res = handle_intent_message(
         message=message, 
         active_project_id=active_project_id, 
@@ -352,6 +374,13 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None)
         activity_callback=activity_callback,
     )
     res["researchRouting"] = routing_decision
+    # Update provider health + routing log from the REAL per-provider outcomes
+    # and attach a secret-free routing summary (internal/debug; not rendered).
+    try:
+        res["modelRouting"] = model_router.finalize(request_id, routing)
+    except Exception as route_err:
+        print(f"[MODEL ROUTER WARNING] finalize failed: {route_err}")
+        res["modelRouting"] = routing.to_safe_dict()
 
     # Persisted activity = the REAL trace recorded during execution, merged
     # with any handler-produced events, deduplicated by event id. A request

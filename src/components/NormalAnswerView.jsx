@@ -1,82 +1,46 @@
 import React from 'react';
 import ChatMarkdown from './ChatMarkdown';
 
-/**
- * Normal Answer View:
- * For simple questions ("What is overfitting?"), shows a concise, readable answer
- * without the large research activity card or context sidebar.
- */
-export default function NormalAnswerView({
-  userQuestion = '',
-  answer = '',
-  routingMode = 'AUTO (Normal Answer)',
-  isBuiltInExplanation = false,
-  sources = [],
-}) {
+/** Focused direct-answer thread, without document-style Question/Answer cards. */
+export default function NormalAnswerView({ userQuestion = '', answer = '', sources = [], isLoading = false }) {
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-3xl mx-auto w-full space-y-5 animate-panel-entrance select-none font-sans">
-      {/* User Question Header Card */}
-      <div className="bg-[#0B0B0B] border border-[#242424] rounded-xl p-4 space-y-1.5 font-sans">
-        <div className="text-xs font-medium text-[#FF6500] font-sans">
-          Question
-        </div>
-        <h2 className="text-base font-semibold text-[#F4F4F6] font-sans leading-relaxed break-words overflow-wrap-anywhere">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-3xl mx-auto w-full space-y-7 animate-panel-entrance select-none font-sans pb-32">
+      <article className="ml-auto max-w-[90%] sm:max-w-[78%] flex justify-end gap-2.5">
+        <div className="bg-[#1B1B1B] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[#E8E5DF] leading-relaxed break-words overflow-wrap-anywhere">
           {userQuestion}
-        </h2>
-      </div>
+        </div>
+        <div className="mt-0.5 w-7 h-7 rounded-full border border-[#353535] bg-[#181818] text-[10px] font-mono text-[#8A8884] flex items-center justify-center shrink-0" aria-label="You">Y</div>
+      </article>
 
-      {/* Answer Body Card */}
-      <div className="bg-[#0B0B0B] border border-[#242424] rounded-xl p-4 sm:p-5 space-y-4 font-sans">
-        <div className="flex items-center justify-between border-b border-[#242424] pb-2.5 font-sans">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-[#FF6500]/10 border border-[#FF6500]/30 flex items-center justify-center shrink-0">
-              <svg className="w-3 h-3 text-[#FF6500]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M12 3a9 9 0 0 1 9 9" />
-              </svg>
-            </div>
-            <h3 className="text-sm font-semibold text-[#F4F4F6] font-sans">
-              Answer
-            </h3>
-          </div>
-
-          {/* Honest Disclosure if built-in explanation */}
-          {isBuiltInExplanation && (
-            <span className="text-xs font-normal text-[#8A8F98] bg-[#141416] border border-[#242424] px-2.5 py-0.5 rounded-full font-sans">
-              Built-in Knowledge Engine
-            </span>
+      <article className="flex items-start gap-3">
+        <div className="mt-0.5 w-7 h-7 rounded-lg bg-[#F15A3A]/10 border border-[#F15A3A]/35 flex items-center justify-center shrink-0" aria-label="Atlas">
+          <svg className="w-4 h-4 text-[#F15A3A]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 3a9 9 0 0 1 9 9" /><path d="M3 12a9 9 0 0 1 9-9" /></svg>
+        </div>
+        <div className="min-w-0 flex-1 pt-0.5 text-sm text-[#E8E5DF] leading-relaxed break-words overflow-wrap-anywhere">
+          {isLoading ? <AnswerSkeleton /> : <ChatMarkdown content={answer} />}
+          {sources.length > 0 && !isLoading && (
+            <section className="mt-5 pt-4 border-t border-[#303030] space-y-2">
+              <div className="text-[11px] font-mono uppercase tracking-wide text-[#8A8884]">Sources</div>
+              <div className="space-y-1.5">
+                {sources.map((src, idx) => (
+                  <div key={idx} className="text-xs flex items-center gap-2"><span className="text-[#F15A3A]">•</span><a href={src.url} target="_blank" rel="noopener noreferrer" className="text-[#E8E5DF] hover:text-[#F15A3A] underline underline-offset-2 transition-colors truncate">{src.title || src.url}</a></div>
+                ))}
+              </div>
+            </section>
           )}
         </div>
+      </article>
+    </div>
+  );
+}
 
-        {/* Answer Content */}
-        <div className="text-sm text-[#F4F4F6] leading-relaxed break-words overflow-wrap-anywhere space-y-3 font-sans">
-          <ChatMarkdown content={answer} />
-        </div>
-
-        {/* Source citations if web search */}
-        {sources && sources.length > 0 && (
-          <div className="pt-3 border-t border-[#242424] space-y-2 font-sans">
-            <div className="text-xs font-medium text-[#8A8F98] font-sans">
-              Sources
-            </div>
-            <div className="space-y-1 font-sans">
-              {sources.map((src, idx) => (
-                <div key={idx} className="text-xs flex items-center gap-2 font-sans">
-                  <span className="text-[#FF6500] font-sans text-xs">•</span>
-                  <a
-                    href={src.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#F4F4F6] hover:text-[#FF6500] underline text-xs transition-colors truncate font-sans"
-                  >
-                    {src.title || src.url}
-                  </a>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+function AnswerSkeleton() {
+  return (
+    <div className="space-y-3 py-1" role="status" aria-label="Atlas is thinking">
+      <div className="flex items-center gap-2 text-xs text-[#8A8884] font-mono"><span className="w-1.5 h-1.5 rounded-full bg-[#F15A3A] animate-pulse" />Analyzing the question…</div>
+      <div className="h-3 rounded bg-[#303030]/75 animate-pulse w-[92%]" />
+      <div className="h-3 rounded bg-[#303030]/60 animate-pulse w-[78%]" />
+      <div className="h-3 rounded bg-[#303030]/45 animate-pulse w-[64%]" />
     </div>
   );
 }

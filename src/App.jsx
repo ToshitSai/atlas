@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import QuestionComposer from './components/QuestionComposer';
@@ -61,7 +61,9 @@ export default function App() {
 
   // System & Connection State
   const [backendConnected, setBackendConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState('CONNECTING');
   const [sysSettings, setSysSettings] = useState({});
+  const connectionFailureTimer = useRef(null);
 
   // Active Session & Research State
   const [conversationId, setConversationId] = useState(createConversationId());
@@ -95,18 +97,41 @@ export default function App() {
   const checkBackend = async () => {
     try {
       const health = await fetchHealth();
-      setBackendConnected(health && health.status === 'healthy');
-      const settings = await fetchSettings();
-      setSysSettings(settings);
+      if (!health || health.status !== 'healthy') throw new Error('Health check failed');
+
+      if (connectionFailureTimer.current) {
+        clearTimeout(connectionFailureTimer.current);
+        connectionFailureTimer.current = null;
+      }
+      setBackendConnected(true);
+      setConnectionState('CONNECTED');
+
+      // Settings are supplementary: a settings failure must not mark a healthy
+      // research API as offline.
+      try {
+        const settings = await fetchSettings();
+        setSysSettings(settings);
+      } catch {
+        // Health is authoritative for the connection status.
+      }
     } catch (e) {
-      setBackendConnected(false);
+      // Avoid a visible error for a transient startup/network race. A later
+      // successful check clears this timer before the offline state is shown.
+      if (connectionFailureTimer.current) clearTimeout(connectionFailureTimer.current);
+      connectionFailureTimer.current = setTimeout(() => {
+        setBackendConnected(false);
+        setConnectionState('OFFLINE');
+      }, 1500);
     }
   };
 
   useEffect(() => {
     checkBackend();
     const interval = setInterval(checkBackend, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (connectionFailureTimer.current) clearTimeout(connectionFailureTimer.current);
+    };
   }, []);
 
   // Handle New Question / Reset State
@@ -139,13 +164,29 @@ export default function App() {
     setErrorFeedback(null);
     setActiveNav('research');
 
+    // A submitted turn owns the response area immediately. Clearing every
+    // previous response payload prevents one question's answer from being
+    // displayed under another question while the next request is running.
+    setNormalAnswer('');
+    setNormalSources([]);
+    setIsBuiltInExplanation(false);
+    setReportMd(null);
+    setLatestInsight(null);
+    setStageEvents([]);
+
     // Disconnected Backend Guard (Req §1 & §15)
+    if (connectionState === 'CONNECTING') {
+      setIsPending(false);
+      return;
+    }
     if (!backendConnected) {
       setIsPending(false);
       setSessionState('FAILED');
       setErrorFeedback('Research service not configured. No investigation or experiment has started.');
       return;
     }
+
+    if (onSuccess) onSuccess();
 
     // Determine initial routing intention
     const deepCheck = isLikelyDeepResearch(queryText);
@@ -247,6 +288,42 @@ export default function App() {
     }
   };
 
+  // Initialize and synchronize URL path (/atlas, /atlas/experiments, etc.)
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith('/atlas')) {
+      const sub = path.replace(/^\/atlas\/?/, '');
+      if (['research', 'experiments', 'sources', 'hypotheses', 'reports', 'history'].includes(sub)) {
+        setActiveNav(sub);
+      }
+    } else {
+      window.history.replaceState(null, '', '/atlas');
+    }
+
+    const handlePopState = () => {
+      const p = window.location.pathname;
+      if (p.startsWith('/atlas')) {
+        const sub = p.replace(/^\/atlas\/?/, '');
+        if (['research', 'experiments', 'sources', 'hypotheses', 'reports', 'history'].includes(sub)) {
+          setActiveNav(sub);
+          return;
+        }
+      }
+      setActiveNav('research');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleSelectNav = (nav) => {
+    setActiveNav(nav);
+    const targetPath = nav === 'research' ? '/atlas' : `/atlas/${nav}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+    }
+  };
+
   // Download Report as Markdown (.md) file
   const handleDownloadReport = () => {
     if (!reportMd) return;
@@ -254,7 +331,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `AI_Scientist_Research_Report_${Date.now()}.md`;
+    link.download = `Atlas_Research_Report_${Date.now()}.md`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -272,17 +349,18 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-[#080808] text-[#F4F4F6] font-sans overflow-hidden select-none">
+    <div className="flex h-screen w-screen bg-[#121212] text-[#E8E5DF] font-sans overflow-hidden select-none">
       
       {/* 1. Left Navigation Column (~210px wide) */}
       <Sidebar
         activeNav={activeNav}
-        onSelectNav={setActiveNav}
+        onSelectNav={handleSelectNav}
         onNewQuestion={handleNewQuestion}
         onOpenSettings={() => setIsSettingsOpen(true)}
         isMobileOpen={isMobileNavOpen}
         onMobileClose={() => setIsMobileNavOpen(false)}
         backendConnected={backendConnected}
+        connectionState={connectionState}
       />
 
       {/* Main Workspace Stack (Center Column + Right Context Sidebar) */}
@@ -293,6 +371,7 @@ export default function App() {
           sessionStatus={sessionState}
           routingMode={routingMode}
           backendConnected={backendConnected}
+          connectionState={connectionState}
           onOpenMobileNav={() => setIsMobileNavOpen(true)}
           activeNavTitle={navTitles[activeNav] || 'Research Workspace'}
         />
@@ -301,7 +380,7 @@ export default function App() {
         <div className="flex-1 min-w-0 flex overflow-hidden relative">
           
           {/* 2. Center Workspace Area (Flexible width) */}
-          <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative bg-[#080808]">
+          <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative bg-[#121212]">
             
             {/* View Switching based on activeNav destination */}
             {activeNav === 'research' && (
@@ -309,8 +388,8 @@ export default function App() {
                 {!userQuestion && sessionState === 'IDLE' ? (
                   // Initial Welcome / Guidance View
                   <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-xl mx-auto space-y-4 animate-panel-entrance">
-                    <div className="w-12 h-12 rounded-xl bg-[#FF6500]/10 border border-[#FF6500]/40 flex items-center justify-center">
-                      <svg className="w-6 h-6 text-[#FF6500]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <div className="w-12 h-12 rounded-xl bg-[#F15A3A]/10 border border-[#F15A3A]/40 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-[#F15A3A]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <circle cx="12" cy="12" r="3" />
                         <path d="M12 3a9 9 0 0 1 9 9" />
                         <path d="M3 12a9 9 0 0 1 9-9" />
@@ -318,15 +397,15 @@ export default function App() {
                       </svg>
                     </div>
                     <div className="space-y-1 font-sans">
-                      <h2 className="text-base font-semibold text-[#F4F4F6] font-sans tracking-normal">
-                        AI Scientist Workspace
+                      <h2 className="text-base font-semibold text-[#E8E5DF] font-sans tracking-normal">
+                        Ready when you are. What should we investigate?
                       </h2>
-                      <p className="text-xs text-[#8A8F98] leading-relaxed font-sans">
-                        Ask a simple question for a concise explanation, or enter a complex machine learning query to trigger an autonomous scientific research pipeline.
+                      <p className="text-xs text-[#8A8884] leading-relaxed font-sans">
+                        Ask a direct question for a focused technical analysis, or enter a complex machine learning query to trigger an autonomous scientific research pipeline.
                       </p>
                     </div>
 
-                    {!backendConnected && (
+                    {connectionState === 'OFFLINE' && (
                       <div className="p-3 rounded-xl bg-[#F87171]/10 border border-[#F87171]/30 text-xs font-sans text-[#F87171] w-full">
                         Research service not configured. No investigation or experiment has started.
                       </div>
@@ -337,9 +416,8 @@ export default function App() {
                   <NormalAnswerView
                     userQuestion={userQuestion}
                     answer={normalAnswer}
-                    routingMode={routingMode}
-                    isBuiltInExplanation={isBuiltInExplanation}
                     sources={normalSources}
+                    isLoading={isPending}
                   />
                 ) : (
                   // Deep Research Workspace View (Activity Card, Experiments, Report)
@@ -353,6 +431,7 @@ export default function App() {
                     latestFinding={latestInsight}
                     reportMd={reportMd}
                     backendConnected={backendConnected}
+                    connectionState={connectionState}
                     canRetry={sessionState === 'FAILED'}
                     onRetryStage={() => handleSendQuestion(userQuestion)}
                     onDownloadReport={handleDownloadReport}
@@ -397,12 +476,13 @@ export default function App() {
             )}
 
             {/* Anchored Bottom Command Composer (Reserved padding prevents covering content) */}
-            <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#080808] via-[#080808]/95 to-transparent z-20">
+            <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20">
               <div className="max-w-3xl mx-auto w-full">
                 <QuestionComposer
                   onSubmit={handleSendQuestion}
                   isPending={isPending}
                   backendConnected={backendConnected}
+                  connectionState={connectionState}
                   errorFeedback={errorFeedback}
                 />
               </div>

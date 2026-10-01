@@ -346,6 +346,61 @@ _PROVIDER_KEY_ENV = {
 
 _selected_provider: contextvars.ContextVar = contextvars.ContextVar("selected_llm_provider", default="auto")
 
+# Name -> provider call function. Built once so both the explicit-provider path
+# and the router's capability-ordered preference path share one source of truth.
+_PROVIDER_FUNCS = {
+    "openai": call_openai_api,
+    "gemini": call_gemini_api,
+    "anthropic": call_anthropic_api,
+    "mistral": call_mistral_api,
+}
+
+# Router capability preference (ordered provider names). Purely additive: when a
+# request sets it, query_llm's "auto" path tries these providers in order with
+# fallback instead of racing every provider. When unset (all internal pipeline
+# calls, orchestrator threads) the existing parallel race is used unchanged.
+_provider_preference: contextvars.ContextVar = contextvars.ContextVar("llm_provider_preference", default=None)
+
+
+def set_provider_preference(order) -> None:
+    """Set this request's capability-ordered provider preference (router output).
+
+    Unknown/unconfigured names are dropped; an empty result clears the
+    preference so the default race applies. Never mutates global process state.
+    """
+    cleaned = tuple(
+        dict.fromkeys(str(p).lower() for p in (order or ()) if str(p).lower() in _PROVIDER_FUNCS)
+    )
+    _provider_preference.set(cleaned or None)
+
+
+def clear_provider_preference() -> None:
+    _provider_preference.set(None)
+
+
+def get_provider_preference():
+    return _provider_preference.get()
+
+
+# Per-request provider outcome trace. The router reads this after a request to
+# update provider health (which provider answered, which failed and why). It
+# never contains secrets or message text — only provider names and short notes.
+_provider_outcomes: contextvars.ContextVar = contextvars.ContextVar("llm_provider_outcomes", default=None)
+
+
+def begin_provider_outcomes() -> None:
+    _provider_outcomes.set([])
+
+
+def record_provider_outcome(name: str, ok: bool, note: str = "") -> None:
+    outcomes = _provider_outcomes.get()
+    if outcomes is not None:
+        outcomes.append({"provider": str(name), "ok": bool(ok), "note": str(note)[:40]})
+
+
+def get_provider_outcomes() -> List[Dict[str, Any]]:
+    return list(_provider_outcomes.get() or [])
+
 
 def provider_from_setting(value: str) -> str:
     """Map the UI's human-readable provider label to the dispatcher value."""
@@ -441,6 +496,13 @@ def query_llm(
     critic: Anthropic -> Gemini -> OpenAI -> Mistral) only acts as a tie-break:
     if several succeed at the same time the first to complete wins.
 
+    When the Model Router (backend.model_router) has set a capability-ordered
+    provider preference for this request via set_provider_preference(), the
+    "auto" path instead tries those providers IN ORDER with graceful fallback
+    (sequential, bounded by the same budget/deadline). This selects the
+    capability-appropriate model first while still degrading to the next
+    provider on failure. With no preference set, the parallel race is unchanged.
+
     An EXPLICIT provider ("openai" | "gemini" | "anthropic" | "mistral") is
     honoured strictly (§15): only that provider is called and there is NO silent
     cross-provider fallback. An explicitly selected provider without a key
@@ -457,6 +519,7 @@ def query_llm(
     provider = (provider or "auto").lower()
     if provider == "auto":
         provider = _selected_provider.get() or "auto"
+    sequential = False
     if provider != "auto":
         # Explicit selection is strict (§15): only the requested provider is
         # called — no silent cross-provider fallback. Built at call time so
@@ -476,10 +539,19 @@ def query_llm(
                   f"but {env_name} is not configured")
             return None
         providers = (fn,)
-    elif role == "critic":
-        providers = (call_anthropic_api, call_gemini_api, call_openai_api, call_mistral_api)
     else:
-        providers = (call_openai_api, call_gemini_api, call_anthropic_api, call_mistral_api)
+        # Router capability preference (additive): when the model router set an
+        # ordered preference for this request, try those providers in order with
+        # fallback instead of racing all of them. This selects the
+        # capability-appropriate model first while still degrading gracefully.
+        preference = _provider_preference.get()
+        if preference:
+            providers = tuple(_PROVIDER_FUNCS[name] for name in preference)
+            sequential = True
+        elif role == "critic":
+            providers = (call_anthropic_api, call_gemini_api, call_openai_api, call_mistral_api)
+        else:
+            providers = (call_openai_api, call_gemini_api, call_anthropic_api, call_mistral_api)
 
     remaining = remaining_llm_budget()
     if remaining is not None and remaining <= 0:
@@ -502,6 +574,42 @@ def query_llm(
     start = time.monotonic()
     deadline = start + wait_overall
     try:
+        if sequential:
+            # Capability-ordered fallback: try the router's preferred providers
+            # one at a time. Each attempt is bounded by the shared deadline and
+            # its own socket timeout, so a slow/failing provider degrades to the
+            # next instead of hanging the request. Outcomes feed provider health.
+            pref_names = [n for n in (_provider_preference.get() or ()) if n in _PROVIDER_FUNCS]
+            for name in pref_names:
+                fn = _PROVIDER_FUNCS[name]
+                remaining_now = deadline - time.monotonic()
+                if remaining_now <= 0:
+                    _increment_telemetry(timeouts=1)
+                    record_provider_outcome(name, False, "budget_exhausted")
+                    print(f"[LLM TIMING] preference budget exhausted after {time.monotonic() - start:.2f}s")
+                    break
+                fut = _LLM_EXECUTOR.submit(_call_with_retries, fn, prompt, system_prompt,
+                                           socket_timeout, deadline, max_tokens, return_details)
+                try:
+                    result = fut.result(timeout=max(0.05, remaining_now))
+                except FuturesTimeoutError:
+                    _increment_telemetry(timeouts=1)
+                    fut.cancel()
+                    record_provider_outcome(name, False, "timeout")
+                    print(f"[LLM TIMING] {name} timed out; trying next preferred provider")
+                    continue
+                except Exception as exc:
+                    fut.cancel()
+                    record_provider_outcome(name, False, "error")
+                    print(f"[LLM Client Warning] {name} failed: {exc}")
+                    continue
+                if result:
+                    record_provider_outcome(name, True, "")
+                    _trace_succeeded()
+                    print(f"[LLM TIMING] preference success via {name} in {time.monotonic() - start:.2f}s")
+                    return result
+                record_provider_outcome(name, False, "empty")
+            return None
         futures = {
             _LLM_EXECUTOR.submit(_call_with_retries, fn, prompt, system_prompt,
                                  socket_timeout, deadline, max_tokens, return_details): fn.__name__

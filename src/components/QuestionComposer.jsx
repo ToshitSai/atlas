@@ -1,72 +1,44 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
  * Question Composer:
- * Redesigned to match the clean, single-bar capsule design (Image 2 reference).
  * Features:
  * - Single rounded pill container (`rounded-2xl`) with dark surface `#1C1C20`
+ * - Smooth GPU-friendly focus/blur border transition (250-400ms easing)
+ * - Focus activation on direct click, tabbing, or container click
  * - Left `+` quick access trigger button
  * - Clean borderless auto-resizing text field
+ * - Keyboard shortcuts: Enter to send (Shift+Enter for newline), Cmd/Ctrl+K to focus
+ * - Speech-to-text via Web Speech API with full lifecycle & error handling
  * - Right action button:
- *   - When empty: Microphone toggle with Web Speech API voice-to-text recognition
- *   - When text typed: Orange send button (`#FF6500`)
- * - Live active recording pulse state and error feedback
- * - Cmd/Ctrl+K keyboard shortcut focus support
+ *   - When empty: Microphone toggle with listening animation state
+ *   - When text typed: Orange send button (`#F15A3A`)
  */
 export default function QuestionComposer({
   onSubmit,
   isPending = false,
   backendConnected = false,
+  connectionState = 'CONNECTING',
   errorFeedback = null,
 }) {
   const [text, setText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState(null);
+
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
+  const baseTextRef = useRef('');
 
-  // Initialize Web Speech API for smooth voice input without external libraries
+  // Clean up SpeechRecognition on unmount
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recog = new SpeechRecognition();
-      recog.continuous = true;
-      recog.interimResults = true;
-      recog.lang = 'en-US';
-
-      recog.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        if (transcript.trim()) {
-          setText(transcript);
-        }
-      };
-
-      recog.onerror = (event) => {
-        console.warn('Speech recognition error:', event.error);
-        setIsListening(false);
-        if (event.error === 'not-allowed') {
-          setSpeechError('Microphone permission denied. Please enable microphone access in browser settings.');
-        } else if (event.error === 'no-speech') {
-          // Silence timeout, reset state quietly
-          setSpeechError(null);
-        } else {
-          setSpeechError(`Voice input error (${event.error})`);
-        }
-      };
-
-      recog.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recog;
-    }
-
     return () => {
       if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) {}
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          // ignore cleanup errors
+        }
+        recognitionRef.current = null;
       }
     };
   }, []);
@@ -83,7 +55,7 @@ export default function QuestionComposer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Auto-adjust textarea height
+  // Auto-adjust textarea height dynamically
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -91,17 +63,115 @@ export default function QuestionComposer({
     }
   }, [text]);
 
+  // Stop active speech recognition safely
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        try { recognitionRef.current.abort(); } catch (err) {}
+      }
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  // Toggle speech recognition session with proper event lifecycle
+  const toggleListening = (e) => {
+    if (e) e.preventDefault();
+    setSpeechError(null);
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setSpeechError('Voice recognition is not supported in this browser. Please type your question.');
+      return;
+    }
+
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    // Stop any stale instance before starting a new session
+    if (recognitionRef.current) {
+      stopListening();
+    }
+
+    try {
+      const recog = new SpeechRecognition();
+      recog.continuous = true;
+      recog.interimResults = true;
+      recog.lang = 'en-US';
+
+      // Store current text before speech begins so recognized text is appended cleanly
+      baseTextRef.current = text ? (text.trim() + ' ') : '';
+
+      recog.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
+      recog.onresult = (event) => {
+        let sessionTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          sessionTranscript += event.results[i][0].transcript;
+        }
+        const updatedText = baseTextRef.current + sessionTranscript;
+        setText(updatedText);
+      };
+
+      recog.onerror = (event) => {
+        console.warn('Speech recognition error event:', event.error);
+        setIsListening(false);
+        recognitionRef.current = null;
+
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setSpeechError('Microphone permission denied. Please enable microphone access in browser settings.');
+        } else if (event.error === 'no-speech') {
+          // Quiet timeout, no intrusive toast
+        } else if (event.error === 'audio-capture') {
+          setSpeechError('No microphone detected. Please connect a microphone and try again.');
+        } else if (event.error !== 'aborted') {
+          setSpeechError(`Voice input error (${event.error})`);
+        }
+      };
+
+      recog.onend = () => {
+        setIsListening(false);
+        recognitionRef.current = null;
+      };
+
+      recognitionRef.current = recog;
+      recog.start();
+      textareaRef.current?.focus();
+    } catch (err) {
+      console.warn('Failed to start speech recognition:', err);
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (err.name === 'NotAllowedError') {
+        setSpeechError('Microphone permission denied. Please enable microphone access in browser settings.');
+      } else {
+        setSpeechError('Could not start voice recognition. Please try again.');
+      }
+    }
+  };
+
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     const trimmed = text.trim();
     if (!trimmed || isPending) return;
 
     if (isListening) {
-      try { recognitionRef.current?.stop(); } catch (err) {}
-      setIsListening(false);
+      stopListening();
     }
 
-    onSubmit(trimmed, () => setText(''));
+    onSubmit(trimmed, () => {
+      setText('');
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+    });
   };
 
   const handleKeyDown = (e) => {
@@ -111,35 +181,10 @@ export default function QuestionComposer({
     }
   };
 
-  const toggleListening = (e) => {
-    if (e) e.preventDefault();
-    setSpeechError(null);
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setSpeechError('Voice recognition is not supported in this browser. Please type your question.');
-      return;
-    }
-
-    if (isListening) {
-      try { recognitionRef.current?.stop(); } catch (err) {}
-      setIsListening(false);
-    } else {
-      try {
-        recognitionRef.current?.start();
-        setIsListening(true);
-        textareaRef.current?.focus();
-      } catch (err) {
-        console.warn('Speech start error:', err);
-        setIsListening(false);
-      }
-    }
-  };
-
   return (
     <div className="w-full font-sans select-none space-y-1.5">
       {/* Feedback alerts if disconnected, failed, or speech error */}
-      {!backendConnected && (
+      {connectionState === 'OFFLINE' && !backendConnected && (
         <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5 flex items-center justify-between">
           <span>Research service not configured. No investigation or experiment has started.</span>
         </div>
@@ -152,30 +197,38 @@ export default function QuestionComposer({
       )}
 
       {speechError && (
-        <div className="text-xs font-sans text-[#FF6500] px-3 pb-0.5 flex items-center justify-between">
+        <div className="text-xs font-sans text-[#F15A3A] px-3 pb-0.5 flex items-center justify-between transition-opacity duration-200">
           <span>{speechError}</span>
           <button
             type="button"
             onClick={() => setSpeechError(null)}
-            className="text-xs text-[#8A8F98] hover:text-[#F4F4F6] underline ml-2 font-sans"
+            className="text-xs text-[#8A8884] hover:text-[#E8E5DF] underline ml-2 font-sans cursor-pointer"
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Main Single Pill Bar Container (Image 2 style) */}
+      {/* Main Single Pill Bar Container */}
       <form
         onSubmit={handleSubmit}
+        onClick={(e) => {
+          // Focus input if click originates on container padding or non-button areas
+          if (e.target !== textareaRef.current && !e.target.closest('button')) {
+            textareaRef.current?.focus();
+          }
+        }}
         className={`w-full bg-[#1C1C20] hover:bg-[#202025] border ${
-          isListening ? 'border-[#FF6500] ring-1 ring-[#FF6500]/50' : 'border-[#2E2E34]'
-        } focus-within:border-[#FF6500] focus-within:ring-1 focus-within:ring-[#FF6500]/30 rounded-2xl px-4 py-2.5 shadow-2xl flex items-center gap-3 transition-all`}
+          isListening
+            ? 'border-[#F15A3A] ring-1 ring-[#F15A3A]/50'
+            : 'border-[#2E2E34] focus-within:border-[#F15A3A] focus-within:ring-1 focus-within:ring-[#F15A3A]/30'
+        } rounded-2xl px-4 py-2.5 shadow-2xl flex items-center gap-3 transition-all duration-300 ease-in-out`}
       >
         {/* Left "+" Icon / Quick Access Trigger */}
         <button
           type="button"
           onClick={() => textareaRef.current?.focus()}
-          className="text-[#8A8F98] hover:text-[#F4F4F6] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
+          className="text-[#8A8884] hover:text-[#E8E5DF] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
           title="Quick access commands"
           aria-label="Quick access"
         >
@@ -188,11 +241,11 @@ export default function QuestionComposer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isListening ? "Listening... Speak your research question" : "Type / for quick access or ask a research question..."}
+          placeholder={isListening ? "Listening… Speak your research question" : "Ask a direct question or describe a research task…"}
           rows={1}
           disabled={isPending}
           aria-label="Research question input"
-          className="flex-1 bg-transparent text-sm text-[#F4F4F6] placeholder-[#71717A] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[120px] py-0.5"
+          className="flex-1 bg-transparent text-sm text-[#E8E5DF] placeholder-[#71717A] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[120px] py-0.5"
         />
 
         {/* Right Action Stack: Microphone or Send Button */}
@@ -204,7 +257,7 @@ export default function QuestionComposer({
               disabled={isPending}
               aria-label="Send question"
               title="Send question (Enter)"
-              className="w-9 h-9 rounded-xl bg-[#FF6500] hover:bg-[#FF302A] text-white flex items-center justify-center transition-all shrink-0 cursor-pointer shadow-md scale-105"
+              className="w-9 h-9 rounded-xl bg-[#F15A3A] hover:bg-[#E44D31] text-white flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer shadow-md scale-105"
             >
               {isPending ? (
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -223,18 +276,18 @@ export default function QuestionComposer({
               disabled={isPending}
               aria-label={isListening ? "Stop listening" : "Start voice recognition"}
               title={isListening ? "Stop listening" : "Click to speak"}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 shrink-0 ${
                 isListening
-                  ? 'bg-[#FF6500] text-white shadow-lg animate-pulse ring-2 ring-[#FF6500]/50 cursor-pointer'
-                  : 'bg-white hover:bg-slate-200 cursor-pointer shadow'
+                  ? 'bg-[#F15A3A] text-white shadow-md ring-2 ring-[#F15A3A]/40 animate-pulse cursor-pointer'
+                  : 'bg-white hover:bg-slate-200 text-[#F15A3A] cursor-pointer shadow'
               }`}
             >
               {isListening ? (
                 /* Stop icon during active recording */
                 <span className="w-3.5 h-3.5 bg-white rounded-sm" />
               ) : (
-                /* Orange microphone icon (#FF6500) */
-                <svg className="w-4.5 h-4.5 text-[#FF6500]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                /* Orange microphone icon (#F15A3A) */
+                <svg className="w-4.5 h-4.5 text-[#F15A3A]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                   <line x1="12" y1="19" x2="12" y2="22" />
@@ -247,3 +300,4 @@ export default function QuestionComposer({
     </div>
   );
 }
+

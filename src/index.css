@@ -3,18 +3,18 @@
 
 @layer base {
   :root {
-    --bg-main: #080808;
-    --bg-left-nav: #050505;
-    --bg-right-panel: #030303;
-    --bg-card: #0B0B0B;
-    --bg-card-alt: #101012;
-    --bg-composer: #141416;
-    --border-subtle: #242424;
-    --border-emphasis: #343434;
-    --text-main: #F4F4F6;
-    --text-secondary: #8A8F98;
-    --accent-orange: #FF6500;
-    --accent-red: #FF302A;
+    --bg-main: #121212;
+    --bg-left-nav: #111111;
+    --bg-right-panel: #111111;
+    --bg-card: #181818;
+    --bg-card-alt: #1B1B1B;
+    --bg-composer: #1B1B1B;
+    --border-subtle: #303030;
+    --border-emphasis: #353535;
+    --text-main: #E8E5DF;
+    --text-secondary: #8A8884;
+    --accent-orange: #F15A3A;
+    --accent-red: #E44D31;
     --accent-crimson: #DF223A;
     --text-failure: #F87171;
   }
@@ -31,6 +31,14 @@
   code, pre, .font-mono {
     font-family: 'IBM Plex Mono', monospace;
   }
+
+  /* Existing headings become concise research-system identifiers while body
+     copy stays in Instrument Sans for readability. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+  }
 }
 
 /* Custom Scrollbars */
@@ -39,14 +47,14 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #050505;
+  background: #111111;
 }
 ::-webkit-scrollbar-thumb {
-  background: #242424;
+  background: #303030;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #343434;
+  background: #353535;
 }
 
 /* Panel Entrance & Keyframe Motion */
@@ -94,8 +102,8 @@
   transition: border-color 200ms ease, box-shadow 200ms ease;
 }
 .input-focus-orange:focus {
-  border-color: #FF6500 !important;
-  box-shadow: 0 0 0 2px rgba(255, 101, 0, 0.2) !important;
+  border-color: #F15A3A !important;
+  box-shadow: 0 0 0 2px rgba(241, 90, 58, 0.18) !important;
 }
 
 /* Text Wrapping & Safety */

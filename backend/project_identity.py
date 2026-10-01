@@ -10,9 +10,9 @@ CONFIG_PATH_2 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config
 # Default identity fallback if config file is missing
 DEFAULT_IDENTITY = {
     "project": {
-        "name": "AI Scientist",
+        "name": "Atlas",
         "type": "AI research assistant",
-        "description": "AI Scientist is a general-purpose AI assistant with autonomous deep research, reasoning, machine learning, and software execution capabilities.",
+        "description": "Atlas is a general-purpose AI assistant with autonomous deep research, reasoning, machine learning, and software execution capabilities.",
         "website": "https://github.com/ToshitSai/automl-scientist",
         "github": "https://github.com/ToshitSai/automl-scientist",
         "creator": {
@@ -20,8 +20,8 @@ DEFAULT_IDENTITY = {
             "role": "Founder / Creator",
             "education": "B.Tech CSE (AI/ML)",
             "focus": "AI, machine learning, software engineering, and autonomous AI research",
-            "bio": "Toshit Sai Galam is a B.Tech Computer Science student specializing in Artificial Intelligence and Machine Learning. He is developing AI Scientist as a general-purpose AI assistant with autonomous research capabilities.",
-            "projects": ["AI Scientist"],
+            "bio": "Toshit Sai Galam is a B.Tech Computer Science student specializing in Artificial Intelligence and Machine Learning. He is developing Atlas as a general-purpose AI assistant with autonomous research capabilities.",
+            "projects": ["Atlas"],
             "website": "",
             "github": "https://github.com/ToshitSai",
             "linkedin": ""
@@ -86,13 +86,13 @@ PROVIDER_IDENTITY_LEAK_RE = re.compile(
     r"\b(?:i am|i'm|i am an|i'm an|my specific version was|this version was|this assistant was|this ai was)"
     r"\s+(?:created|built|developed|founded|made|trained|launched)\s+by\s+"
     r"(?:mistral\s+ai|openai|anthropic|google|deepmind|gemini|claude|chatgpt|gpt)\b"
-    r"|\b(?:mistral\s+ai|openai|anthropic|google|deepmind|gemini|claude|chatgpt)\s+(?:created|built|developed|founded|made|trained|launched)\s+(?:me|you|this\s+(?:assistant|app|ai|project)|ai\s+scientist)\b",
+    r"|\b(?:mistral\s+ai|openai|anthropic|google|deepmind|gemini|claude|chatgpt)\s+(?:created|built|developed|founded|made|trained|launched)\s+(?:me|you|this\s+(?:assistant|app|ai|project)|atlas|ai\s+scientist)\b",
     re.IGNORECASE,
 )
 
-# Queries about underlying model powering AI Scientist
+# Queries about underlying model powering Atlas
 MODEL_POWER_RE = re.compile(
-    r"\b(what (model|llm|engine|architecture)\s+(powers|drives|runs|is behind)\s+(you|ai scientist))\b"
+    r"\b(what (model|llm|engine|architecture)\s+(powers|drives|runs|is behind)\s+(you|atlas|ai scientist))\b"
     r"|\b(what model powers you)\b"
     r"|\b(what model are you based on)\b"
     r"|\b(are you (powered by|using|run on)\s+(mistral|openai|gemini|anthropic|claude|gpt))\b"
@@ -101,12 +101,12 @@ MODEL_POWER_RE = re.compile(
     re.IGNORECASE
 )
 
-# Creator / Founder / Builder of AI Scientist ("you" / "u")
+# Creator / Founder / Builder of Atlas ("you" / "u")
 CREATOR_RE = re.compile(
-    r"\b(who('s|\s+(is|was|are|were))\s+(the\s+|your\s+|ur\s+|a\s+)?(founder|creator|author|builder|developer|maker|owner|designer)\s*(of\s+(you|u|ai scientist|this project|this assistant|this app|this platform|this bot|this ai))?)\b"
-    r"|\b(who\s+(created|built|made|founded|developed|designed|authored|started|established)\s+(you|u|this assistant|this app|this platform|ai scientist|this project|this bot|this ai|this))\b"
-    r"|\b(who('s|\s+is)\s+behind\s+(you|u|this project|ai scientist|this assistant|this platform|this app|this bot|this ai))\b"
-    r"|\b(who\s+(owns|started|established)\s+(you|u|ai scientist|this project|this assistant|this app|this bot))\b"
+    r"\b(who('s|\s+(is|was|are|were))\s+(the\s+|your\s+|ur\s+|a\s+)?(founder|creator|author|builder|developer|maker|owner|designer)\s*(of\s+(you|u|atlas|ai scientist|this project|this assistant|this app|this platform|this bot|this ai))?)\b"
+    r"|\b(who\s+(created|built|made|founded|developed|designed|authored|started|established)\s+(you|u|this assistant|this app|this platform|atlas|ai scientist|this project|this bot|this ai|this))\b"
+    r"|\b(who('s|\s+is)\s+behind\s+(you|u|this project|atlas|ai scientist|this assistant|this platform|this app|this bot|this ai))\b"
+    r"|\b(who\s+(owns|started|established)\s+(you|u|atlas|ai scientist|this project|this assistant|this app|this bot))\b"
     r"|\b(who('s|\s+is)\s+the\s+(creator|founder|author|builder|developer|maker|owner|designer)\b)"
     r"|\b(what\s+is\s+(the\s+name\s+of\s+)?(your|ur)?\s*creator'?s\s+name)\b"
     r"|\b(who\s+is\s+toshit(\s+sai)?(\s+galam)?)\b",
@@ -126,19 +126,19 @@ HALLUCINATED_IDENTITY_PATTERNS = [
 
 
 def _build_authoritative_project_identity_response() -> str:
-    """Return the canonical AI Scientist project identity response."""
+    """Return the canonical Atlas project identity response."""
     info = get_public_project_info()
     creator = info["creator"]
     return (
-        f"AI Scientist was created by **{creator['name']}**.\n\n"
+        f"{info['name']} was created by **{creator['name']}**.\n\n"
         f"He is a {creator['education']} student specializing in Artificial Intelligence and Machine Learning "
-        f"and is developing AI Scientist as a general-purpose AI assistant with autonomous research capabilities.\n\n"
-        f"AI Scientist is designed to combine conversational AI, reasoning, tools, and deep autonomous research."
+        f"and is developing {info['name']} as a general-purpose AI assistant with autonomous research capabilities.\n\n"
+        f"{info['name']} is designed to combine conversational AI, reasoning, tools, and deep autonomous research."
     )
 
 
 def _response_has_provider_identity_leak(response_text: str) -> bool:
-    """Generic safety check: reject provider self-identification when the user is asking about AI Scientist."""
+    """Generic safety check: reject provider self-identification when the user is asking about Atlas."""
     if not response_text:
         return False
     text = response_text.strip()
@@ -163,14 +163,14 @@ def _response_has_provider_identity_leak(response_text: str) -> bool:
     if not provider_claims:
         return False
 
-    if re.search(r"\b(?:created|built|developed|founded|made|trained|launched)\b.*\b(?:me|you|this|ai scientist)\b", text, re.IGNORECASE):
+    if re.search(r"\b(?:created|built|developed|founded|made|trained|launched)\b.*\b(?:me|you|this|atlas|ai scientist)\b", text, re.IGNORECASE):
         return True
 
     return False
 
 
 def sanitize_llm_identity_hallucinations(response_text: str, user_message: str = "") -> str:
-    """Reject provider identity leakage only for an AI Scientist identity question.
+    """Reject provider identity leakage only for an Atlas identity question.
 
     Provider names can occur legitimately in an answer about a third party or a
     technical topic.  Replacing such an answer with the creator profile would
@@ -210,10 +210,10 @@ CREATOR_PROJECTS_RE = re.compile(
 )
 
 PROJECT_INFO_RE = re.compile(
-    r"\b(what\s+is\s+ai\s+scientist)\b"
-    r"|\b(tell\s+me\s+about\s+ai\s+scientist)\b"
-    r"|\b(what\s+does\s+ai\s+scientist\s+do)\b"
-    r"|\b(what\s+is\s+the\s+purpose\s+of\s+ai\s+scientist)\b",
+    r"\b(what\s+is\s+(atlas|ai\s+scientist))\b"
+    r"|\b(tell\s+me\s+about\s+(atlas|ai\s+scientist))\b"
+    r"|\b(what\s+does\s+(atlas|ai\s+scientist)\s+do)\b"
+    r"|\b(what\s+is\s+the\s+purpose\s+of\s+(atlas|ai\s+scientist))\b",
     re.IGNORECASE
 )
 
@@ -229,10 +229,10 @@ def identity_system_instruction() -> str:
         f"You are the assistant operating inside the {info['name']} application. "
         f"The application identity is authoritative. "
         f"{creator_clause} When the user asks who created, founded, built, developed, or owns {info['name']}, "
-        "answer using the configured AI Scientist project profile. Do not substitute the identity of the underlying "
+        f"answer using the configured {info['name']} project profile. Do not substitute the identity of the underlying "
         "language model provider. The underlying model/provider is an implementation detail unless the user explicitly asks about it. "
         "Never invent creator information. If creator information is not configured, say that it is not available. "
-        "For 'who are you', answer as AI Scientist, not as Mistral/ChatGPT/OpenAI/Claude/Gemini."
+        f"For 'who are you', answer as {info['name']}, not as Mistral/ChatGPT/OpenAI/Claude/Gemini."
     )
 
 

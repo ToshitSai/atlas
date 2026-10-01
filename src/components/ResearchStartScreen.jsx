@@ -75,7 +75,7 @@ export default function ResearchStartScreen({ onSendChatMessage, isLaunching, on
             <textarea
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
-              placeholder="What would you like to investigate? (e.g. 'Improve credit-card fraud detection')"
+              placeholder="Ask a direct question or describe a research task…"
               rows={3}
               className="w-full bg-[#0B0F17] border border-[#212B3B] focus:border-cyan-500/70 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none font-sans leading-relaxed"
               onKeyDown={(e) => {

@@ -25,7 +25,7 @@ export default function ActivityPanel({ activities = [], running = false, starte
   return (
     <section className="rounded-xl border border-[#1E293B] bg-[#0B0F17] px-3 py-2.5 text-xs" aria-live="polite" aria-label="Assistant activity">
       <button type="button" onClick={() => setExpanded(value => !value)} className="w-full flex items-center justify-between gap-3 text-left text-slate-300">
-        <span className="font-medium">{running ? 'Working…' : `Worked${elapsed ? ` for ${elapsed}s` : ''} · ${shown.length} step${shown.length === 1 ? '' : 's'}`}</span>
+        <span className="font-medium">{running ? 'Investigating…' : `Investigated${elapsed ? ` for ${elapsed}s` : ''} · ${shown.length} step${shown.length === 1 ? '' : 's'}`}</span>
         <span className="text-slate-500">{expanded ? 'Hide' : 'Show'} activity</span>
       </button>
       {expanded && <div className="mt-2 space-y-2 max-h-64 overflow-y-auto pr-1">

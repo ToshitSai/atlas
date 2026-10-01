@@ -392,13 +392,12 @@ export default function ResearchChatWorkspace({
                       </svg>
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-100">AI Scientist</h3>
-                      <p className="text-xs text-slate-400">Autonomous Machine Learning Assistant</p>
+                      <h3 className="text-sm font-bold text-slate-100 font-sans">Atlas</h3>
+                      <p className="text-xs text-slate-400 font-sans">Autonomous AI Research System</p>
                     </div>
                   </div>
-                  <p className="text-sm text-slate-200 leading-relaxed">
-                    Hi! 👋 I'm AI Scientist, your autonomous research assistant.
-                    What machine learning problem or dataset would you like me to investigate?
+                  <p className="text-sm text-slate-200 leading-relaxed font-sans">
+                    Ready when you are. What should we investigate?
                   </p>
                 </div>
               </div>
@@ -423,7 +422,7 @@ export default function ResearchChatWorkspace({
                           <path d="M12 3a9 9 0 0 1 9 9" />
                         </svg>
                       </div>
-                      <h4 className="text-xs font-bold text-slate-100">AI Scientist</h4>
+                      <h4 className="text-xs font-bold text-slate-100">Atlas</h4>
                     </div>
 
                     <div className="text-sm text-slate-200 leading-relaxed min-w-0">
@@ -545,7 +544,7 @@ export default function ResearchChatWorkspace({
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask AI Scientist anything..."
+                placeholder="Ask Atlas anything..."
                 className="flex-1 min-w-0 bg-[#131822] border border-[#212B3B] focus:border-cyan-500/50 rounded-xl px-3.5 sm:px-4 py-2.5 min-h-[44px] text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none font-sans"
               />
               <button

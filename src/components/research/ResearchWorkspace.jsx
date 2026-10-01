@@ -69,7 +69,7 @@ export default function ResearchWorkspace({
         <div className="max-w-7xl mx-auto min-w-0 space-y-2">
           <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-cyan-400">
             <span className={running ? 'w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping' : 'w-1.5 h-1.5 rounded-full bg-cyan-400/50'} />
-            AI Scientist · Autonomous ML Research
+            Atlas · Autonomous ML Research
           </div>
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
             <div className="min-w-0 space-y-1">
