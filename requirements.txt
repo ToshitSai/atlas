@@ -21,6 +21,8 @@ python-multipart==0.0.9
 # Range (not exact pin) so it resolves on both the Vercel 3.12 runtime and newer
 # local Pythons that lack wheels for a single pinned build.
 psycopg[binary]>=3.2,<4
+# Verifies Clerk session tokens in FastAPI. Credentials remain with Clerk.
+clerk-backend-api>=6,<7
 # Symbolic math engine (backend/math_engine.py): equations, systems, derivatives,
 # integrals, limits — verified offline, no LLM needed. Pure-Python (sympy + its
 # mpmath dep, ~45MB installed), comfortably within the bundle limit. The router

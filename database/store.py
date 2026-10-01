@@ -179,10 +179,12 @@ class ResearchStore:
     # -------------------------------------------------------------- projects
     def create_project(self, project_id: str, name: str, objective: str, dataset_name: str, budget: int, provider: str,
                        max_experiments: int = 5, dataset_path: Optional[str] = None, test_path: Optional[str] = None,
-                       dataset_meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       dataset_meta: Optional[Dict[str, Any]] = None,
+                       owner_id: Optional[str] = None) -> Dict[str, Any]:
         import datetime
         project = {
             "id": project_id,
+            "ownerId": owner_id,
             "name": name or objective[:40],
             "objective": objective,
             "researchQuestion": None,
@@ -224,7 +226,10 @@ class ResearchStore:
         with self.lock:
             self.data.setdefault("projects", {})[project_id] = project
             self._db_write(
-                lambda: self.repo.save_project(project_id, project),
+                lambda: self.repo.save_project(
+                    project_id, project,
+                    user_id=self.repo.get_or_create_user(owner_id) if owner_id else None,
+                ),
                 file_fallback=lambda: self.save("projects", project_id))
         return project
 
@@ -242,17 +247,25 @@ class ResearchStore:
                 self._db_healthy = False
         return self.data.get("projects", {}).get(project_id)
 
-    def list_projects(self) -> List[Dict[str, Any]]:
+    def list_projects(self, owner_id: Optional[str] = None) -> List[Dict[str, Any]]:
         if self.repo is not None and self._db_healthy:
             try:
-                projects = self.repo.list_projects()
+                db_user_id = self.repo.get_user_id_by_external(owner_id) if owner_id else None
+                projects = self.repo.list_projects(user_id=db_user_id)
                 with self.lock:
                     self.data["projects"] = {p["id"]: p for p in projects}
                 return projects
             except Exception as e:
                 print(f"[STORE DB WARNING]: {e}")
                 self._db_healthy = False
-        return list(self.data.get("projects", {}).values())
+        projects = list(self.data.get("projects", {}).values())
+        return [project for project in projects if not owner_id or project.get("ownerId") == owner_id]
+
+    def project_owned_by(self, project_id: str, owner_id: str) -> bool:
+        if self.repo is not None and self._db_healthy:
+            return self.repo.project_owned_by(project_id, owner_id)
+        project = self.data.get("projects", {}).get(project_id)
+        return bool(project and project.get("ownerId") == owner_id)
 
     def update_project(self, project_id: str, updates: Dict[str, Any]):
         with self.lock:
@@ -613,11 +626,12 @@ class ResearchStore:
         sess = self.get_session(sid)
         return sess.get("messages", [])
 
-    def list_conversations(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def list_conversations(self, limit: int = 100, owner_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Return durable chat summaries, deriving a useful title when needed."""
         if self.repo is not None and self._db_healthy:
             try:
-                conversations = self.repo.list_conversations(limit=limit)
+                db_user_id = self.repo.get_user_id_by_external(owner_id) if owner_id else None
+                conversations = self.repo.list_conversations(user_id=db_user_id, limit=limit)
                 result = []
                 for conversation in conversations:
                     if not conversation.get("messageCount"):
@@ -636,7 +650,10 @@ class ResearchStore:
 
         with self.lock:
             summaries = []
+            prefix = f"{owner_id}:" if owner_id else ""
             for sid, session in self.data.get("sessions", {}).items():
+                if prefix and not sid.startswith(prefix):
+                    continue
                 messages = session.get("messages", [])
                 if not messages:
                     continue

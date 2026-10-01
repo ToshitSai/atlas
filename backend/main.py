@@ -14,17 +14,44 @@ from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import backend.config
 from database.store import store
 from backend import hf_datasets as hf
+from backend.auth import verified_clerk_user_id
 
 app = FastAPI(title="AutoML Scientist Engine API", version="2.0.0")
 
+
+class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
+    """Protect stateful API routes and reject cross-user project identifiers."""
+    public_paths = {"/api/health", "/api/config"}
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not path.startswith("/api/") or path in self.public_paths:
+            return await call_next(request)
+        try:
+            request.state.clerk_user_id = verified_clerk_user_id(request)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        parts = path.split("/")
+        if len(parts) >= 4 and parts[2] == "projects" and parts[3]:
+            if not store.project_owned_by(parts[3], request.state.clerk_user_id):
+                return JSONResponse(status_code=404, content={"detail": "Project not found."})
+        return await call_next(request)
+
+
+app.add_middleware(ClerkAuthenticationMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[origin.strip() for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "https://automl-scientist.vercel.app,http://localhost:3000,http://localhost:5173",
+    ).split(",") if origin.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -133,7 +160,7 @@ def health_check():
     return {
         "status": "healthy",
         "api": True,
-        "database": True,
+        "database": store.using_postgres(),
         "llm": llm_configured,
         "docker": docker_ready,
         "llmExecution": get_llm_telemetry(),
@@ -148,9 +175,10 @@ def config_status():
             "configured": bool(os.environ.get("OPENAI_API_KEY"))
         },
         "database": {
-            "configured": True,
-            "type": "File-backed JSON Store"
+            "configured": store.using_postgres(),
+            "type": "PostgreSQL" if store.using_postgres() else "Unavailable"
         },
+        "authentication": {"provider": "Clerk", "configured": bool(os.environ.get("CLERK_SECRET_KEY"))},
         "docker": {
             "available": safe_docker_check()
         },
@@ -193,7 +221,7 @@ def update_settings(payload: dict):
     return {"status": "ok", "settings": st}
 
 @app.post("/api/chat")
-async def chat_endpoint(payload: dict, activity_callback=None):
+async def chat_endpoint(payload: dict, request: Request, activity_callback=None):
     """
     Conversational AI Chat Endpoint powered by Intent Router.
     Routes incoming user messages into intents (CONFIRM_PENDING_ACTION, EXPLANATION, RESEARCH_START, RESEARCH_FOLLOWUP, RESEARCH_CONTROL, REPORT_REQUEST, TECHNICAL_DETAILS, CASUAL_CHAT).
@@ -202,7 +230,10 @@ async def chat_endpoint(payload: dict, activity_callback=None):
     from backend.intent_router import handle_intent_message
     message = payload.get("message", "").strip()
     active_project_id = payload.get("projectId")
-    conversation_id = payload.get("conversationId", "default-session")
+    user_id = request.state.clerk_user_id
+    if active_project_id and not store.project_owned_by(active_project_id, user_id):
+        raise HTTPException(status_code=404, detail="Project not found.")
+    conversation_id = f"{user_id}:{payload.get('conversationId', 'default-session')}"
     request_id = str(payload.get("requestId") or "")
     user_message_id = str(payload.get("messageId") or "")
     import uuid
@@ -628,7 +659,7 @@ async def chat_endpoint(payload: dict, activity_callback=None):
 
 
 @app.post("/api/chat/stream")
-async def chat_stream_endpoint(payload: dict):
+async def chat_stream_endpoint(payload: dict, request: Request):
     """SSE wrapper for deep-chat activity. Events originate from real planner,
     retrieval and synthesis callbacks; this endpoint never invents progress."""
     event_queue: queue.Queue = queue.Queue()
@@ -639,7 +670,7 @@ async def chat_stream_endpoint(payload: dict):
 
     def run_chat():
         try:
-            result_box["result"] = asyncio.run(chat_endpoint(payload, activity_callback=publish))
+            result_box["result"] = asyncio.run(chat_endpoint(payload, request, activity_callback=publish))
         except Exception as exc:
             result_box["error"] = str(exc)
         finally:
@@ -809,15 +840,15 @@ def datasets_approve(payload: dict):
         raise HTTPException(status_code=502, detail=f"Dataset approval/loading failed: {e}")
 
 @app.get("/api/conversations/{conversation_id}/messages")
-def get_conversation_messages(conversation_id: str):
+def get_conversation_messages(conversation_id: str, request: Request):
     """Return the stored per-message history for a conversation (section 3)."""
-    return store.get_messages(conversation_id)
+    return store.get_messages(f"{request.state.clerk_user_id}:{conversation_id}")
 
 
 @app.get("/api/conversations")
-def list_conversations():
+def list_conversations(request: Request):
     """List saved chats that have exchanged at least one message."""
-    return store.list_conversations()
+    return store.list_conversations(owner_id=request.state.clerk_user_id)
 
 
 @app.post("/api/files/analyze")
@@ -835,11 +866,12 @@ async def analyze_file(file: UploadFile = File(...)):
 
 
 @app.get("/api/projects")
-def list_projects():
-    return store.list_projects()
+def list_projects(request: Request):
+    return store.list_projects(owner_id=request.state.clerk_user_id)
 
 @app.post("/api/research")
 async def start_research(
+    request: Request,
     objective: str = Form(...),
     budget: int = Form(60),
     llm_provider: str = Form("Heuristic / Rule-based"),
@@ -902,6 +934,7 @@ async def start_research(
             dataset_path=dataset_path,
             test_path=None,
             dataset_meta=None,
+            owner_id=request.state.clerk_user_id,
         )
 
         try:

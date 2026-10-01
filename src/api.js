@@ -6,9 +6,26 @@
 const API_BASE = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api`;
 export const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
+// Clerk's getToken() hook can only be called inside React. App registers the
+// provider here so every API call (including SSE) carries the short-lived,
+// verified session token without ever putting user IDs or secrets in storage.
+let authTokenProvider = null;
+export function setAuthTokenProvider(provider) {
+  authTokenProvider = typeof provider === 'function' ? provider : null;
+}
+
+async function withAuthHeaders(headers = {}) {
+  const next = new Headers(headers);
+  if (authTokenProvider) {
+    const token = await authTokenProvider();
+    if (token) next.set('Authorization', `Bearer ${token}`);
+  }
+  return next;
+}
+
 async function safeFetchJson(url, options = {}) {
   try {
-    const res = await fetch(url, options);
+    const res = await fetch(url, { ...options, headers: await withAuthHeaders(options.headers) });
     const rawText = await res.text();
     let data;
 
@@ -104,7 +121,7 @@ export async function sendChatMessage(message, projectId = null, conversationId 
 
 export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}) {
   const response = await fetch(`${API_BASE}/chat/stream`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, ...correlation })
   });
   if (!response.ok || !response.body) throw new Error(`Server error (${response.status})`);

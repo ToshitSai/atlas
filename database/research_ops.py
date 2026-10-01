@@ -84,6 +84,27 @@ class ResearchOpsMixin:
         return self._query_one(
             "SELECT 1 FROM research_projects WHERE id=%s", (project_id,)) is not None
 
+    def get_user_id_by_external(self, external_id: Optional[str]) -> Optional[str]:
+        """Resolve a verified Clerk ``sub`` to the existing users-table UUID."""
+        if not external_id:
+            return None
+        row = self._query_one("SELECT id FROM users WHERE external_id=%s", (external_id,))
+        return row[0] if row else None
+
+    def project_owned_by(self, project_id: str, external_id: str) -> bool:
+        return self._query_one(
+            """SELECT 1 FROM research_projects p JOIN users u ON u.id=p.user_id
+               WHERE p.id=%s AND u.external_id=%s""",
+            (project_id, external_id),
+        ) is not None
+
+    def conversation_owned_by(self, conversation_id: str, external_id: str) -> bool:
+        return self._query_one(
+            """SELECT 1 FROM conversations c JOIN users u ON u.id=c.user_id
+               WHERE c.id=%s AND u.external_id=%s""",
+            (conversation_id, external_id),
+        ) is not None
+
     def save_project(self, project_id: str, data: Dict[str, Any],
                      user_id: Optional[str] = None) -> None:
         """Insert or update a project from a legacy-shape dict.

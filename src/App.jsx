@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '@clerk/react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import QuestionComposer from './components/QuestionComposer';
@@ -12,6 +13,7 @@ import HypothesesView from './components/HypothesesView';
 import ReportsView from './components/ReportsView';
 import HistoryView from './components/HistoryView';
 import SettingsModal from './components/SettingsModal';
+import AuthScreen from './components/AuthScreen';
 
 import {
   fetchHealth,
@@ -23,6 +25,7 @@ import {
   fetchProjectReport,
   fetchProjectBaselines,
   fetchProjectLiterature,
+  setAuthTokenProvider,
 } from './api';
 
 function createConversationId() {
@@ -54,6 +57,7 @@ const STAGE_NAME_MAP = {
 };
 
 export default function App() {
+  const { isLoaded: authLoaded, isSignedIn, getToken } = useAuth();
   // Navigation & Active View
   const [activeNav, setActiveNav] = useState('research'); // 'research' | 'experiments' | 'sources' | 'hypotheses' | 'reports' | 'history'
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -90,6 +94,15 @@ export default function App() {
 
   // Session History List
   const [historyItems, setHistoryItems] = useState([]);
+
+  useEffect(() => {
+    if (!authLoaded) return undefined;
+    setAuthTokenProvider(isSignedIn ? getToken : null);
+    return () => setAuthTokenProvider(null);
+  }, [authLoaded, isSignedIn, getToken]);
+
+  if (!authLoaded) return <div className="grid min-h-screen place-items-center bg-[#09070a] text-orange-400">Loading secure workspace…</div>;
+  if (!isSignedIn) return <AuthScreen />;
 
   // Check Backend Connection on Mount & Periodically
   const checkBackend = async () => {
