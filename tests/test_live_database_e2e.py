@@ -95,10 +95,13 @@ def test_live_chat_persists_to_postgres_and_survives_restart():
     assert any(marker in c for c in contents), contents[:3]
 
     # 3. Rows exist in the real database (direct psql check, no app code path).
+    # The backend keys messages by "{user_id}:{conversationId}" (main.py chat
+    # endpoint), so match the stored key by its unique conversation-id suffix
+    # rather than the bare id the client sent.
     import subprocess
     psql = r"C:\Program Files\PostgreSQL\17\bin\psql.exe"
     query = ("SELECT count(*) FROM messages "
-             f"WHERE conversation_id = '{conversation_id}' "
+             f"WHERE conversation_id LIKE '%{conversation_id}' "
              f"AND content LIKE '%{marker}%';")
     result = subprocess.run(
         [psql, "-h", "127.0.0.1", "-U", "postgres", "-d", "ai_scientist",

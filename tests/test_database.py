@@ -444,7 +444,14 @@ def test_related_text_scores_higher_than_unrelated():
     assert vm.cosine_similarity(query, related) > vm.cosine_similarity(query, unrelated)
 
 
-def test_semantic_memory_retrieval(fake_repo):
+def test_semantic_memory_retrieval(fake_repo, monkeypatch):
+    # Force the deterministic offline (hash) embedder. embed_text picks the first
+    # working provider per call, so with a live key a transient network/rate-limit
+    # error mid-test would mix real and hash embedding spaces and corrupt ranking.
+    # Deleting the keys keeps indexing and query in one consistent vector space,
+    # making this a hermetic unit test of the retrieval logic.
+    for key in ("OPENAI_API_KEY", "MISTRAL_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
     vm.add_memory(fake_repo, DEFAULT_USER_ID, "FACT",
                   "The user prefers concise answers about gradient descent")
     vm.add_memory(fake_repo, DEFAULT_USER_ID, "PREFERENCE",
@@ -454,7 +461,10 @@ def test_semantic_memory_retrieval(fake_repo):
     assert "gradient descent" in results[0]["content"].lower()
 
 
-def test_document_chunks_semantic_retrieval_with_sources(fake_repo):
+def test_document_chunks_semantic_retrieval_with_sources(fake_repo, monkeypatch):
+    # Hermetic offline embedder (see test_semantic_memory_retrieval rationale).
+    for key in ("OPENAI_API_KEY", "MISTRAL_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
     doc_id = vm.add_document_chunks(
         fake_repo, None, DEFAULT_USER_ID, "ML Notes",
         "XGBoost is a gradient boosted decision tree library. " * 10
