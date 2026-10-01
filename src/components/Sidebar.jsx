@@ -1,9 +1,10 @@
 import React from 'react';
+import AtlasLogo from './AtlasLogo';
 
 /**
- * Left Navigation Column (~210px wide on desktop).
- * Palette: #111111 background, #303030 borders, #F15A3A orange accent.
- * Destinations: Research, Experiments, Sources, Hypotheses, Reports, History, Research Settings.
+ * Sidebar Navigation:
+ * Fixed 210px left column. Dark #121212 canvas with muted #8A8884 icons,
+ * active accent orange #F15A3A.
  */
 export default function Sidebar({
   activeNav = 'research',
@@ -20,12 +21,7 @@ export default function Sidebar({
       id: 'research',
       label: 'Research',
       icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 3a9 9 0 0 1 9 9" />
-          <path d="M3 12a9 9 0 0 1 9-9" />
-          <path d="M12 21a9 9 0 0 1-9-9" />
-        </svg>
+        <AtlasLogo className="w-4 h-4" />
       ),
     },
     {
@@ -90,13 +86,8 @@ export default function Sidebar({
         <div className="flex items-center justify-between gap-2 px-1 pt-1">
           <div className="flex items-center gap-2 min-w-0">
             {/* Small orange scientific mark */}
-            <div className="w-6 h-6 rounded bg-[#F15A3A]/10 border border-[#F15A3A]/40 flex items-center justify-center shrink-0">
-              <svg className="w-3.5 h-3.5 text-[#F15A3A]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="3" className="fill-[#F15A3A]/20" />
-                <path d="M12 3a9 9 0 0 1 9 9" />
-                <path d="M3 12a9 9 0 0 1 9-9" />
-                <path d="M12 21a9 9 0 0 1-9-9" />
-              </svg>
+            <div className="w-7 h-7 rounded-lg bg-[#F15A3A]/10 border border-[#F15A3A]/40 flex items-center justify-center p-1 shrink-0">
+              <AtlasLogo className="w-full h-full" />
             </div>
             <div className="min-w-0">
               <span className="font-semibold text-sm tracking-normal text-[#E8E5DF] block leading-none truncate font-sans">

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ScientificInquiryCard from './ScientificInquiryCard';
 import ChatMarkdown from './ChatMarkdown';
+import ConfidenceBlock from './ConfidenceBlock';
 
 /**
  * Research Workspace View (Center Column):
@@ -19,6 +20,7 @@ export default function ResearchWorkspaceView({
   reportMd = null,
   backendConnected = false,
   connectionState = 'CONNECTING',
+  confidence = null,
   onRetryStage,
   canRetry = false,
   onDownloadReport,
@@ -51,6 +53,8 @@ export default function ResearchWorkspaceView({
         onRetry={onRetryStage}
         canRetry={canRetry}
       />
+
+      {sessionState === 'COMPLETE' && <ConfidenceBlock confidence={confidence} />}
 
       {/* Disconnected Backend Warning Banner */}
       {connectionState === 'OFFLINE' && !backendConnected && (

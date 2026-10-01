@@ -313,6 +313,7 @@ def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional
         "status": "ok",
         "report": report,
         "sourceCount": len(sources),
+        "sources": sources,
         "subqueries": subqueries,
         "trace": trace.to_dict(),
     }

@@ -2047,6 +2047,7 @@ def _handle_intent_message_impl(
                 "status": research.get("status"),
                 "sourceCount": research.get("sourceCount", 0),
             },
+            "sources": research.get("sources") or [],
             "researchRoute": classify_research_route(message),
             "activity": activity,
         }

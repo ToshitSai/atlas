@@ -396,6 +396,7 @@ class ResearchOpsMixin:
                        research_id: Optional[str] = None,
                        pending_action: Optional[Dict[str, Any]] = None,
                        activity: Optional[List[Dict[str, Any]]] = None,
+                       confidence: Optional[Dict[str, Any]] = None,
                        message_id: Optional[str] = None,
                        created_at: Optional[str] = None) -> Dict[str, Any]:
         """Insert one chat message. ``created_at`` (ISO) preserves original
@@ -414,6 +415,7 @@ class ResearchOpsMixin:
              Json({key: value for key, value in {
                  "pending_action": pending_action,
                  "activity": activity or [],
+                 "confidence": confidence,
              }.items() if value}),
              created_at))
         return {"id": mid, "conversation_id": conversation_id, "role": role,
@@ -443,6 +445,7 @@ class ResearchOpsMixin:
                 "research_id": r[6],
                 "pending_action": metadata.get("pending_action"),
                 "activity": metadata.get("activity") or [],
+                "confidence": metadata.get("confidence"),
             })
         return messages
 

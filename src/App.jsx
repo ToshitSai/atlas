@@ -12,6 +12,7 @@ import HypothesesView from './components/HypothesesView';
 import ReportsView from './components/ReportsView';
 import HistoryView from './components/HistoryView';
 import SettingsModal from './components/SettingsModal';
+import AtlasLogo from './components/AtlasLogo';
 
 import {
   fetchHealth,
@@ -79,6 +80,7 @@ export default function App() {
   const [normalAnswer, setNormalAnswer] = useState('');
   const [normalSources, setNormalSources] = useState([]);
   const [isBuiltInExplanation, setIsBuiltInExplanation] = useState(false);
+  const [responseConfidence, setResponseConfidence] = useState(null);
 
   // Deep Research Workspace Data
   const [stageEvents, setStageEvents] = useState([]);
@@ -139,6 +141,7 @@ export default function App() {
     setUserQuestion('');
     setNormalAnswer('');
     setNormalSources([]);
+    setResponseConfidence(null);
     setIsDeepResearch(false);
     setSessionState('IDLE');
     setErrorFeedback(null);
@@ -170,6 +173,7 @@ export default function App() {
     setNormalAnswer('');
     setNormalSources([]);
     setIsBuiltInExplanation(false);
+    setResponseConfidence(null);
     setReportMd(null);
     setLatestInsight(null);
     setStageEvents([]);
@@ -255,6 +259,7 @@ export default function App() {
             setReportMd(res.response);
             setLatestInsight(res.response.slice(0, 240) + '…');
           }
+          setResponseConfidence(res.confidence || null);
 
           if (res.project) {
             setActiveProject(res.project);
@@ -272,6 +277,7 @@ export default function App() {
 
         setSessionState('COMPLETE');
         setNormalAnswer(res.response || 'No response returned.');
+        setResponseConfidence(res.confidence || null);
         setIsBuiltInExplanation(res.action === 'NONE' || !sysSettings.apiKeySet);
 
         if (res.citationPolicy === 'required' && res.sources) {
@@ -388,13 +394,8 @@ export default function App() {
                 {!userQuestion && sessionState === 'IDLE' ? (
                   // Initial Welcome / Guidance View
                   <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-xl mx-auto space-y-4 animate-panel-entrance">
-                    <div className="w-12 h-12 rounded-xl bg-[#F15A3A]/10 border border-[#F15A3A]/40 flex items-center justify-center">
-                      <svg className="w-6 h-6 text-[#F15A3A]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M12 3a9 9 0 0 1 9 9" />
-                        <path d="M3 12a9 9 0 0 1 9-9" />
-                        <path d="M12 21a9 9 0 0 1-9-9" />
-                      </svg>
+                    <div className="w-12 h-12 rounded-xl bg-[#F15A3A]/10 border border-[#F15A3A]/40 p-2 flex items-center justify-center">
+                      <AtlasLogo className="w-full h-full" />
                     </div>
                     <div className="space-y-1 font-sans">
                       <h2 className="text-base font-semibold text-[#E8E5DF] font-sans tracking-normal">
@@ -417,6 +418,7 @@ export default function App() {
                     userQuestion={userQuestion}
                     answer={normalAnswer}
                     sources={normalSources}
+                    confidence={responseConfidence}
                     isLoading={isPending}
                   />
                 ) : (
@@ -432,6 +434,7 @@ export default function App() {
                     reportMd={reportMd}
                     backendConnected={backendConnected}
                     connectionState={connectionState}
+                    confidence={responseConfidence}
                     canRetry={sessionState === 'FAILED'}
                     onRetryStage={() => handleSendQuestion(userQuestion)}
                     onDownloadReport={handleDownloadReport}

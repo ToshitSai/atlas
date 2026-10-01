@@ -667,12 +667,20 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None)
         "required" if res.get("intent") in source_backed_intents else "not_expected"
     )
 
+    # Confidence is assessed only after routing/tools/retrieval have completed,
+    # so it can describe real evidence rather than a model's self-reported
+    # certainty. It is structured metadata; the client decides how much of it
+    # to show and never receives chain-of-thought.
+    from backend.confidence import assess_confidence
+    res["confidence"] = assess_confidence(message, res)
+
     store.record_message(
         conversation_id, "assistant", res.get("response", ""),
         intent=res.get("intent"), topic=res.get("lastTopic"),
         research_id=res.get("projectId") or active_project_id,
         pending_action=res.get("pendingAction"),
         activity=res.get("activity") or [],
+        confidence=res.get("confidence"),
         message_id=response_message_id,
     )
 

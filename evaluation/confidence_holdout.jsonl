@@ -1,0 +1,6 @@
+{"id":"gd-definition","question":"What is gradient descent?","expected_level":"high","correct":true}
+{"id":"overfitting","question":"What is overfitting?","expected_level":"high","correct":true}
+{"id":"fraud-best","question":"What is the best model for my fraud dataset?","expected_level":"medium","correct":true}
+{"id":"smote","question":"Will SMOTE improve my fraud model?","expected_level":"medium","correct":true}
+{"id":"rag-latest","question":"What are the latest findings on RAG?","expected_level":"low","correct":true}
+{"id":"ambiguous-ml","question":"Improve my model.","expected_level":"medium","correct":true}

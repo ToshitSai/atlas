@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import AtlasLogo from './AtlasLogo';
 
 export default function ResearchStartScreen({ onSendChatMessage, isLaunching, onOpenMenu }) {
   const [objective, setObjective] = useState('');
@@ -49,14 +50,9 @@ export default function ResearchStartScreen({ onSendChatMessage, isLaunching, on
         {/* Brand Symbol & Title */}
         <div className="flex flex-col items-center space-y-3 text-center">
           <div className="relative group">
-            <div className="absolute -inset-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl blur-md opacity-30 group-hover:opacity-50 transition duration-500 animate-pulse-slow"></div>
-            <div className="relative w-14 h-14 rounded-2xl bg-[#121824] border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-2xl">
-              <svg className="w-8 h-8 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" className="fill-cyan-400/20" />
-                <path d="M12 3a9 9 0 0 1 9 9" />
-                <path d="M3 12a9 9 0 0 1 9-9" />
-                <path d="M12 21a9 9 0 0 1-9-9" />
-              </svg>
+            <div className="absolute -inset-1.5 bg-gradient-to-r from-orange-500 to-amber-600 rounded-2xl blur-md opacity-30 group-hover:opacity-50 transition duration-500 animate-pulse-slow"></div>
+            <div className="relative w-14 h-14 rounded-2xl bg-[#121824] border border-[#F15A3A]/40 p-2 flex items-center justify-center shadow-2xl">
+              <AtlasLogo className="w-full h-full" />
             </div>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100 font-sans">

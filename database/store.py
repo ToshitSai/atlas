@@ -556,6 +556,7 @@ class ResearchStore:
                        research_id: Optional[str] = None,
                        pending_action: Optional[Dict[str, Any]] = None,
                        activity: Optional[List[Dict[str, Any]]] = None,
+                       confidence: Optional[Dict[str, Any]] = None,
                        max_history: int = 200,
                        message_id: Optional[str] = None):
         """Append a single conversational message to the session history.
@@ -578,6 +579,7 @@ class ResearchStore:
             "research_id": research_id,
             "pending_action": pending_action,
             "activity": activity or [],
+            "confidence": confidence,
         }
         with self.lock:
             if self.repo is not None and self._db_healthy:
@@ -590,6 +592,8 @@ class ResearchStore:
                 # tests/older deployments; only traces need the new metadata.
                 if activity:
                     repo_kwargs["activity"] = activity
+                if confidence:
+                    repo_kwargs["confidence"] = confidence
                 self._db_write(
                     lambda: self.repo.record_message(sid, role, content, **repo_kwargs),
                     file_fallback=lambda: self._record_message_file(msg, max_history))
