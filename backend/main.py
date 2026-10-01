@@ -24,6 +24,16 @@ from backend.auth import verified_clerk_user_id
 app = FastAPI(title="AutoML Scientist Engine API", version="2.0.0")
 
 
+def _clerk_auth_enabled() -> bool:
+    """Single source of truth for whether per-user ownership is enforced.
+
+    When Clerk auth is disabled every caller shares the "anonymous" identity, so
+    project ownership must NOT be enforced anywhere — otherwise a project that
+    /api/projects happily lists would 404 on /api/chat (visible-but-unusable).
+    """
+    return os.environ.get("CLERK_AUTH_ENABLED", "false").lower() in {"1", "true", "yes"}
+
+
 class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
     """Optional Clerk enforcement. Disabled until authentication is re-enabled."""
     public_paths = {"/api/health", "/api/config"}
@@ -32,7 +42,7 @@ class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if not path.startswith("/api/") or path in self.public_paths:
             return await call_next(request)
-        if os.environ.get("CLERK_AUTH_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+        if not _clerk_auth_enabled():
             request.state.clerk_user_id = "anonymous"
             return await call_next(request)
         try:
@@ -236,7 +246,10 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None)
     message = payload.get("message", "").strip()
     active_project_id = payload.get("projectId")
     user_id = request.state.clerk_user_id
-    if active_project_id and not store.project_owned_by(active_project_id, user_id):
+    # Ownership is only enforced when Clerk auth is enabled; with auth disabled the
+    # middleware skips per-project enforcement and /api/projects lists every
+    # project, so /api/chat must accept them too (otherwise: visible-but-404).
+    if _clerk_auth_enabled() and active_project_id and not store.project_owned_by(active_project_id, user_id):
         raise HTTPException(status_code=404, detail="Project not found.")
     conversation_id = f"{user_id}:{payload.get('conversationId', 'default-session')}"
     request_id = str(payload.get("requestId") or "")
