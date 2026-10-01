@@ -6,9 +6,7 @@ export default function AutoMLScientistLogo({ size = "md" }) {
   
   return (
     <div className="flex items-center gap-3 select-none">
-      <div className={`relative ${logoDimensions} flex items-center justify-center rounded-lg bg-[#F15A3A]/10 border border-[#F15A3A]/30 p-1 shrink-0`}>
-        <AtlasLogo className="w-full h-full" />
-      </div>
+      <AtlasLogo className={`${logoDimensions} shrink-0`} />
       <div>
         <div className="font-semibold text-slate-100 tracking-tight text-sm leading-none flex items-center gap-1.5">
           Atlas

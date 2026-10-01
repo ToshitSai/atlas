@@ -394,9 +394,7 @@ export default function App() {
                 {!userQuestion && sessionState === 'IDLE' ? (
                   // Initial Welcome / Guidance View
                   <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-xl mx-auto space-y-4 animate-panel-entrance">
-                    <div className="w-12 h-12 rounded-xl bg-[#F15A3A]/10 border border-[#F15A3A]/40 p-2 flex items-center justify-center">
-                      <AtlasLogo className="w-full h-full" />
-                    </div>
+                    <AtlasLogo className="w-10 h-10 shrink-0 drop-shadow-[0_0_12px_rgba(241,90,58,0.4)]" />
                     <div className="space-y-1 font-sans">
                       <h2 className="text-base font-semibold text-[#E8E5DF] font-sans tracking-normal">
                         Ready when you are. What should we investigate?

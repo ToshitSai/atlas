@@ -50,10 +50,7 @@ export default function ResearchStartScreen({ onSendChatMessage, isLaunching, on
         {/* Brand Symbol & Title */}
         <div className="flex flex-col items-center space-y-3 text-center">
           <div className="relative group">
-            <div className="absolute -inset-1.5 bg-gradient-to-r from-orange-500 to-amber-600 rounded-2xl blur-md opacity-30 group-hover:opacity-50 transition duration-500 animate-pulse-slow"></div>
-            <div className="relative w-14 h-14 rounded-2xl bg-[#121824] border border-[#F15A3A]/40 p-2 flex items-center justify-center shadow-2xl">
-              <AtlasLogo className="w-full h-full" />
-            </div>
+            <AtlasLogo className="w-14 h-14 shrink-0 drop-shadow-[0_0_16px_rgba(241,90,58,0.5)]" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100 font-sans">
             Research Nexus

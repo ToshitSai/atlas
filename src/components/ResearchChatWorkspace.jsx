@@ -385,9 +385,7 @@ export default function ResearchChatWorkspace({
               <div className="flex justify-start">
                 <div className="w-full min-w-0 bg-[#121722] border border-[#1E293B] rounded-2xl p-4 sm:p-6 shadow-xl space-y-4">
                   <div className="flex items-center gap-3 border-b border-[#1E293B]/70 pb-3">
-                    <div className="w-8 h-8 rounded-xl bg-[#F15A3A]/10 border border-[#F15A3A]/30 p-1 flex items-center justify-center shrink-0">
-                      <AtlasLogo className="w-full h-full" />
-                    </div>
+                    <AtlasLogo className="w-7 h-7 shrink-0" />
                     <div>
                       <h3 className="text-sm font-bold text-slate-100 font-sans">Atlas</h3>
                       <p className="text-xs text-slate-400 font-sans">Autonomous AI Research System</p>
@@ -413,9 +411,7 @@ export default function ResearchChatWorkspace({
                 ) : (
                   <div className="w-full min-w-0 bg-[#121722] border border-[#1E293B] rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 overflow-wrap-anywhere">
                     <div className="flex items-center gap-3 border-b border-[#1E293B]/70 pb-3">
-                      <div className="w-7 h-7 rounded-xl bg-[#F15A3A]/10 border border-[#F15A3A]/30 p-1 flex items-center justify-center shrink-0">
-                        <AtlasLogo className="w-full h-full" />
-                      </div>
+                      <AtlasLogo className="w-6 h-6 shrink-0" />
                       <h4 className="text-xs font-bold text-slate-100">Atlas</h4>
                     </div>
 
