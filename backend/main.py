@@ -25,12 +25,15 @@ app = FastAPI(title="AutoML Scientist Engine API", version="2.0.0")
 
 
 class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
-    """Protect stateful API routes and reject cross-user project identifiers."""
+    """Optional Clerk enforcement. Disabled until authentication is re-enabled."""
     public_paths = {"/api/health", "/api/config"}
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         if not path.startswith("/api/") or path in self.public_paths:
+            return await call_next(request)
+        if os.environ.get("CLERK_AUTH_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+            request.state.clerk_user_id = "anonymous"
             return await call_next(request)
         try:
             request.state.clerk_user_id = verified_clerk_user_id(request)
