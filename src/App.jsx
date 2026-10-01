@@ -101,9 +101,6 @@ export default function App() {
     return () => setAuthTokenProvider(null);
   }, [authLoaded, isSignedIn, getToken]);
 
-  if (!authLoaded) return <div className="grid min-h-screen place-items-center bg-[#09070a] text-orange-400">Loading secure workspace…</div>;
-  if (!isSignedIn) return <AuthScreen />;
-
   // Check Backend Connection on Mount & Periodically
   const checkBackend = async () => {
     try {
@@ -117,10 +114,14 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!authLoaded || !isSignedIn) return undefined;
     checkBackend();
     const interval = setInterval(checkBackend, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [authLoaded, isSignedIn]);
+
+  if (!authLoaded) return <div className="grid min-h-screen place-items-center bg-[#09070a] text-orange-400">Loading secure workspace…</div>;
+  if (!isSignedIn) return <AuthScreen />;
 
   // Handle New Question / Reset State
   const handleNewQuestion = () => {
