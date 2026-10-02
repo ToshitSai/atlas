@@ -2,11 +2,22 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
+const buildTimestamp = Date.now();
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
     react()
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: `assets/[name]-v${buildTimestamp}-[hash].js`,
+        chunkFileNames: `assets/[name]-v${buildTimestamp}-[hash].js`,
+        assetFileNames: `assets/[name]-v${buildTimestamp}-[hash].[ext]`
+      }
+    }
+  },
   server: {
     port: 3000,
     proxy: {
