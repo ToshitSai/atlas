@@ -34,7 +34,7 @@ export default function ResearchWorkspaceView({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4 animate-panel-entrance select-none font-sans min-w-0 pb-32">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-7 space-y-4 animate-panel-entrance select-none font-sans min-w-0 pb-32 w-full max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto">
       
       {/* Current user turn: visually conversational rather than a report field. */}
       <div className="ml-auto max-w-[92%] sm:max-w-[80%] flex justify-end gap-2.5 font-sans">
@@ -160,10 +160,31 @@ export default function ResearchWorkspaceView({
                 </div>
               )}
             </div>
+          ) : (reportMd || latestFinding) ? (
+            /* Synthesized findings display for literature/deep research */
+            <div className="bg-[#181818] border border-[#303030] rounded-xl p-4 sm:p-6 space-y-4 font-sans">
+              <div className="flex items-center justify-between gap-2 border-b border-[#303030] pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#F15A3A]" />
+                  <h3 className="text-sm sm:text-base font-semibold text-[#E8E5DF] font-sans">Synthesized Findings</h3>
+                </div>
+                <span className="text-[11px] text-[#8A8884] font-sans shrink-0 bg-[#1B1B1B] px-2.5 py-1 rounded-full border border-[#303030]">
+                  Literature & Web Synthesis
+                </span>
+              </div>
+              <div className="text-sm text-[#E8E5DF] font-sans leading-relaxed break-words overflow-wrap-anywhere">
+                <ChatMarkdown content={reportMd || latestFinding} />
+              </div>
+              <p className="text-[11px] text-[#8A8884] font-sans pt-2 border-t border-[#303030]">
+                Open the <span className="text-[#F15A3A] font-medium">Report</span> tab for the full report document and Markdown download.
+              </p>
+            </div>
           ) : (
             <div className="bg-[#181818] border border-[#303030] rounded-xl p-6 text-center font-sans">
               <p className="text-xs text-[#8A8884] italic font-sans">
-                Research results will appear here as the investigation progresses.
+                {sessionState === 'IN_PROGRESS' || sessionState === 'QUEUED'
+                  ? 'Research in progress... synthesized findings will appear here as the investigation progresses.'
+                  : 'Research results will appear here upon investigation completion.'}
               </p>
             </div>
           )}

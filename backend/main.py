@@ -236,7 +236,7 @@ def update_settings(payload: dict):
     return {"status": "ok", "settings": st}
 
 @app.post("/api/chat")
-async def chat_endpoint(payload: dict, request: Request, activity_callback=None):
+async def chat_endpoint(payload: dict, request: Request, activity_callback=None, token_callback=None):
     """
     Conversational AI Chat Endpoint powered by Intent Router.
     Routes incoming user messages into intents (CONFIRM_PENDING_ACTION, EXPLANATION, RESEARCH_START, RESEARCH_FOLLOWUP, RESEARCH_CONTROL, REPORT_REQUEST, TECHNICAL_DETAILS, CASUAL_CHAT).
@@ -385,6 +385,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None)
         payload_last_topic=payload_last_topic,
         conversation_history=conversation_history,
         activity_callback=activity_callback,
+        token_callback=token_callback,
     )
     res["researchRouting"] = routing_decision
     # Update provider health + routing log from the REAL per-provider outcomes
@@ -714,16 +715,29 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None)
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(payload: dict, request: Request):
     """SSE wrapper for deep-chat activity. Events originate from real planner,
-    retrieval and synthesis callbacks; this endpoint never invents progress."""
+    retrieval and synthesis callbacks; this endpoint never invents progress.
+
+    Also streams real answer tokens: when the routed intent generates a natural
+    language answer (general Q&A), the provider's token stream is forwarded as
+    ``event: token`` frames so the client renders text incrementally instead of
+    waiting for the single ``event: final`` frame.
+    """
     event_queue: queue.Queue = queue.Queue()
     result_box: Dict[str, Any] = {}
 
     def publish(event):
         event_queue.put({"type": "research_activity", **event})
 
+    def publish_token(delta):
+        # Forwarded verbatim from the provider stream; contains no credentials.
+        if delta:
+            event_queue.put({"type": "token", "text": delta})
+
     def run_chat():
         try:
-            result_box["result"] = asyncio.run(chat_endpoint(payload, request, activity_callback=publish))
+            result_box["result"] = asyncio.run(
+                chat_endpoint(payload, request, activity_callback=publish, token_callback=publish_token)
+            )
         except Exception as exc:
             result_box["error"] = str(exc)
         finally:
@@ -736,7 +750,10 @@ async def chat_stream_endpoint(payload: dict, request: Request):
             event = await asyncio.to_thread(event_queue.get)
             if event is None:
                 break
-            yield f"event: activity\ndata: {json.dumps(event)}\n\n"
+            if event.get("type") == "token":
+                yield f"event: token\ndata: {json.dumps({'text': event.get('text', '')})}\n\n"
+            else:
+                yield f"event: activity\ndata: {json.dumps(event)}\n\n"
         if result_box.get("error"):
             yield f"event: error\ndata: {json.dumps({'error': result_box['error']})}\n\n"
         else:

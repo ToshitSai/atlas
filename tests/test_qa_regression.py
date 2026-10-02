@@ -225,8 +225,10 @@ def test_frontend_uses_shared_conversation_id():
     # ...and BOTH transport calls reuse that same state value (not a fresh id).
     assert re.search(r"sendDeepResearchStream\([^;]*?\bconversationId\b", app, re.S), \
         "deep-research stream must reuse the shared conversationId"
-    assert re.search(r"sendChatMessage\([^;]*?\bconversationId\b", app, re.S), \
-        "normal chat call must reuse the shared conversationId"
+    # The normal-answer path streams over SSE (sendChatStream) so text renders
+    # token-by-token; it must still reuse the one shared conversationId.
+    assert re.search(r"sendChatStream\([^;]*?\bconversationId\b", app, re.S), \
+        "normal chat stream must reuse the shared conversationId"
     # The old always-new-random-id-per-message bug must stay gone.
     assert "useState(() => 'conv-' + Math.random()" not in app
 

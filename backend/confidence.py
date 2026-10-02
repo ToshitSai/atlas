@@ -47,6 +47,18 @@ def assess_confidence(question: str, result: Dict[str, Any]) -> Dict[str, Any] |
         level = "high"
         basis = ["an experiment was recorded as completed", "the result is distinguished from a proposal"]
         verification = "Inspect the recorded experiment configuration and repeat the evaluation on a fresh split."
+    # Literature can establish general findings, but it cannot establish that
+    # a technique will improve this user's model. Preserve that distinction
+    # even when the request used the deep-research pipeline.
+    elif personal_ml or _AMBIGUOUS.search(question):
+        level = "medium"
+        basis = [
+            "the recommendation depends on data and validation details that were not provided",
+            "no experiment was run on the user's dataset",
+        ]
+        if sources:
+            basis.insert(0, f"{len(sources)} retrieved source(s) support general guidance, not a dataset-specific outcome")
+        verification = "Run a leakage-safe comparison with an appropriate validation split and metric."
     elif is_research:
         if len(sources) >= 3:
             level = "high"
@@ -63,10 +75,6 @@ def assess_confidence(question: str, result: Dict[str, Any]) -> Dict[str, Any] |
         level = "high"
         basis = ["the response uses the deterministic mathematics path"]
         verification = "Recalculate independently from the displayed equation."
-    elif personal_ml or _AMBIGUOUS.search(question):
-        level = "medium"
-        basis = ["the recommendation depends on data and validation details that were not provided", "no experiment was run on the user's dataset"]
-        verification = "Run a leakage-safe comparison with an appropriate validation split and metric."
 
     claim: Dict[str, Any] = {
         "text": _claim_text(answer),

@@ -346,6 +346,246 @@ _PROVIDER_KEY_ENV = {
 
 _selected_provider: contextvars.ContextVar = contextvars.ContextVar("selected_llm_provider", default="auto")
 
+
+def _iter_sse_json(response):
+    """Yield parsed JSON objects from a line-delimited SSE byte stream.
+
+    Providers stream ``data: {json}`` lines terminated by ``data: [DONE]``
+    (OpenAI/Mistral) or by the closing of the HTTP body (Anthropic/Gemini).
+    Non-data lines (``event:``, heartbeats, blanks) are ignored.
+    """
+    for raw in response:
+        if not raw:
+            continue
+        line = raw.decode("utf-8", "replace").strip()
+        if not line or not line.startswith("data:"):
+            continue
+        payload = line[len("data:"):].strip()
+        if payload == "[DONE]":
+            return
+        if not payload:
+            continue
+        try:
+            yield json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+
+def _emit(on_token, text):
+    if text and on_token:
+        try:
+            on_token(text)
+        except Exception:
+            pass
+
+
+def stream_openai_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT,
+                      max_tokens: Optional[int] = None, on_token: Optional[Callable[[str], None]] = None) -> Optional[str]:
+    """Stream an OpenAI chat completion, invoking on_token(delta) as text arrives.
+
+    Returns the accumulated text. On a mid-stream failure after tokens were
+    already emitted, returns the partial text (the caller is committed to this
+    provider and must not restart, which would duplicate output). Returns None
+    only when nothing was emitted, so the caller can try the next provider.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    chunks: List[str] = []
+    try:
+        url = f"{api_base}/chat/completions"
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": max_tokens or int(os.environ.get("OPENAI_MAX_TOKENS", "4096")),
+            "stream": True,
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            for obj in _iter_sse_json(response):
+                try:
+                    delta = obj["choices"][0].get("delta", {}).get("content")
+                except (KeyError, IndexError, TypeError):
+                    delta = None
+                if delta:
+                    chunks.append(delta)
+                    _emit(on_token, delta)
+    except Exception as e:
+        print(f"[LLM Stream Warning] OpenAI streaming failed: {e}")
+        return "".join(chunks) if chunks else None
+    text = "".join(chunks)
+    return text or None
+
+
+def stream_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT,
+                       max_tokens: Optional[int] = None, on_token: Optional[Callable[[str], None]] = None) -> Optional[str]:
+    api_key = os.environ.get("MISTRAL_API_KEY")
+    if not api_key:
+        return None
+    model = os.environ.get("MISTRAL_MODEL", "mistral-tiny")
+    chunks: List[str] = []
+    try:
+        url = "https://api.mistral.ai/v1/chat/completions"
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens or int(os.environ.get("MISTRAL_MAX_TOKENS", "4096")),
+            "temperature": float(os.environ.get("MISTRAL_TEMPERATURE", "0.1")),
+            "messages": messages,
+            "stream": True,
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            for obj in _iter_sse_json(response):
+                try:
+                    delta = obj["choices"][0].get("delta", {}).get("content")
+                except (KeyError, IndexError, TypeError):
+                    delta = None
+                if delta:
+                    chunks.append(delta)
+                    _emit(on_token, delta)
+    except Exception as e:
+        print(f"[LLM Stream Warning] Mistral streaming failed: {e}")
+        return "".join(chunks) if chunks else None
+    text = "".join(chunks)
+    return text or None
+
+
+def stream_gemini_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT,
+                      max_tokens: Optional[int] = None, on_token: Optional[Callable[[str], None]] = None) -> Optional[str]:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    chunks: List[str] = []
+    try:
+        url = (f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
+               f":streamGenerateContent?alt=sse&key={api_key}")
+        headers = {"Content-Type": "application/json"}
+        full_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": full_text}]}],
+            "generationConfig": {
+                "maxOutputTokens": max_tokens or int(os.environ.get("GEMINI_MAX_TOKENS", "8192")),
+                "temperature": 0.2,
+            },
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            for obj in _iter_sse_json(response):
+                try:
+                    parts = obj["candidates"][0]["content"].get("parts", [])
+                except (KeyError, IndexError, TypeError):
+                    parts = []
+                for part in parts:
+                    t = part.get("text") if isinstance(part, dict) else None
+                    if t:
+                        chunks.append(t)
+                        _emit(on_token, t)
+    except Exception as e:
+        print(f"[LLM Stream Warning] Gemini streaming failed: {e}")
+        return "".join(chunks) if chunks else None
+    text = "".join(chunks)
+    return text or None
+
+
+def stream_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT,
+                         max_tokens: Optional[int] = None, on_token: Optional[Callable[[str], None]] = None) -> Optional[str]:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+    chunks: List[str] = []
+    try:
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens or int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096")),
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            for obj in _iter_sse_json(response):
+                if obj.get("type") == "content_block_delta":
+                    t = (obj.get("delta") or {}).get("text")
+                    if t:
+                        chunks.append(t)
+                        _emit(on_token, t)
+    except Exception as e:
+        print(f"[LLM Stream Warning] Anthropic streaming failed: {e}")
+        return "".join(chunks) if chunks else None
+    text = "".join(chunks)
+    return text or None
+
+
+_STREAM_FUNCS = {
+    "openai": stream_openai_api,
+    "gemini": stream_gemini_api,
+    "anthropic": stream_anthropic_api,
+    "mistral": stream_mistral_api,
+}
+
+
+def query_llm_stream(prompt: str, system_prompt: Optional[str] = None,
+                     on_token: Optional[Callable[[str], None]] = None,
+                     timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None,
+                     role: str = "main") -> Optional[str]:
+    """Stream one provider's answer, calling on_token(delta) as text arrives.
+
+    Returns the full text, or None when no configured provider could stream
+    (the caller then falls back to the non-streaming query_llm). Provider
+    selection mirrors query_llm's "auto" path — an explicitly selected provider
+    wins, then the router's capability preference, then the default capability
+    order — but there is NO parallel race: a token stream must come from exactly
+    one provider. Only providers with a configured key are attempted, and a
+    provider is committed to once it emits its first token (so a mid-stream
+    failure never triggers a duplicate restart).
+    """
+    if on_token is None:
+        return None
+    if not any_provider_configured():
+        return None
+    selected = (_selected_provider.get() or "auto").lower()
+    if selected != "auto" and selected in _STREAM_FUNCS:
+        order = [selected]
+    else:
+        preference = [n for n in (_provider_preference.get() or ()) if n in _STREAM_FUNCS]
+        if preference:
+            order = preference
+        elif role == "critic":
+            order = ["anthropic", "gemini", "openai", "mistral"]
+        else:
+            order = ["openai", "gemini", "anthropic", "mistral"]
+    start = time.monotonic()
+    for name in order:
+        env_name = _PROVIDER_KEY_ENV.get(name)
+        if env_name and not os.environ.get(env_name):
+            continue
+        fn = _STREAM_FUNCS.get(name)
+        if not fn:
+            continue
+        text = fn(prompt, system_prompt, timeout=timeout, max_tokens=max_tokens, on_token=on_token)
+        if text and text.strip():
+            print(f"[LLM STREAM] {name} streamed {len(text)} chars in {time.monotonic() - start:.2f}s")
+            return text
+    return None
+
 # Name -> provider call function. Built once so both the explicit-provider path
 # and the router's capability-ordered preference path share one source of truth.
 _PROVIDER_FUNCS = {
@@ -478,6 +718,142 @@ def engine_disclosure() -> str:
             "built-in rule-based engine, not a live model._")
 
 
+def _stream_openai(prompt: str, system_prompt: Optional[str], on_token: Callable[[str], None], timeout: int, max_tokens: Optional[int]) -> Optional[str]:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    url = f"{api_base}/chat/completions"
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    payload = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens or 4096, "stream": True}
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+    collected = []
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for line in resp:
+            line_str = line.decode("utf-8").strip()
+            if not line_str.startswith("data: "):
+                continue
+            data_str = line_str[6:].strip()
+            if data_str == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data_str)
+                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                if delta:
+                    collected.append(delta)
+                    on_token(delta)
+            except Exception:
+                pass
+    res = "".join(collected)
+    return res if res.strip() else None
+
+
+def _stream_gemini(prompt: str, system_prompt: Optional[str], on_token: Callable[[str], None], timeout: int, max_tokens: Optional[int]) -> Optional[str]:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    full_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+    payload = {"contents": [{"role": "user", "parts": [{"text": full_text}]}], "generationConfig": {"maxOutputTokens": max_tokens or 8192, "temperature": 0.2}}
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+    collected = []
+    last_len = 0
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for line in resp:
+            line_str = line.decode("utf-8").strip()
+            if not line_str.startswith("data: "):
+                continue
+            data_str = line_str[6:].strip()
+            try:
+                chunk = json.loads(data_str)
+                parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text_acc = "".join(p.get("text", "") for p in parts)
+                if len(text_acc) > last_len:
+                    delta = text_acc[last_len:]
+                    last_len = len(text_acc)
+                    collected.append(delta)
+                    on_token(delta)
+            except Exception:
+                pass
+    res = "".join(collected)
+    return res if res.strip() else None
+
+
+def _stream_anthropic(prompt: str, system_prompt: Optional[str], on_token: Callable[[str], None], timeout: int, max_tokens: Optional[int]) -> Optional[str]:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    payload = {"model": model, "max_tokens": max_tokens or 4096, "messages": [{"role": "user", "content": prompt}], "stream": True}
+    if system_prompt:
+        payload["system"] = system_prompt
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+    collected = []
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for line in resp:
+            line_str = line.decode("utf-8").strip()
+            if not line_str.startswith("data: "):
+                continue
+            data_str = line_str[6:].strip()
+            try:
+                chunk = json.loads(data_str)
+                if chunk.get("type") == "content_block_delta":
+                    delta = chunk.get("delta", {}).get("text")
+                    if delta:
+                        collected.append(delta)
+                        on_token(delta)
+            except Exception:
+                pass
+    res = "".join(collected)
+    return res if res.strip() else None
+
+
+def query_llm_stream(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    on_token: Optional[Callable[[str], None]] = None,
+    timeout: int = _DEFAULT_TIMEOUT,
+    max_tokens: Optional[int] = None,
+    role: str = "main",
+    provider: str = "auto",
+) -> Optional[str]:
+    """Stream LLM tokens in real-time to on_token callback, returning full text."""
+    if not on_token:
+        return query_llm(prompt, system_prompt, provider=provider, role=role, timeout=timeout, max_tokens=max_tokens)
+
+    stream_funcs = []
+    if os.environ.get("OPENAI_API_KEY"):
+        stream_funcs.append(_stream_openai)
+    if os.environ.get("GEMINI_API_KEY"):
+        stream_funcs.append(_stream_gemini)
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        stream_funcs.append(_stream_anthropic)
+
+    for fn in stream_funcs:
+        try:
+            res = fn(prompt, system_prompt, on_token, timeout, max_tokens)
+            if res and res.strip():
+                _trace_succeeded()
+                return res.strip()
+        except Exception as err:
+            print(f"[LLM STREAM WARNING] {fn.__name__} failed: {err}")
+
+    # Fallback to non-streaming query_llm if all stream functions fail
+    fallback = query_llm(prompt, system_prompt, provider=provider, role=role, timeout=timeout, max_tokens=max_tokens)
+    if fallback and isinstance(fallback, str) and on_token:
+        on_token(fallback)
+    return fallback if isinstance(fallback, str) else None
+
+
 def query_llm(
     prompt: str,
     system_prompt: Optional[str] = None,
@@ -485,34 +861,25 @@ def query_llm(
     role: str = "main",
     timeout: int = _DEFAULT_TIMEOUT,
     max_tokens: Optional[int] = None,
-    return_details: bool = False
+    return_details: bool = False,
+    on_token: Optional[Callable[[str], None]] = None,
 ) -> Any:
     """
     Unified multi-provider LLM caller supporting OpenAI, Gemini, Anthropic Claude, and Mistral.
-
-    provider="auto" (default) races all configured providers IN PARALLEL via a
-    thread pool; the first successful (non-None) result is returned immediately.
-    The classic role preference (main: OpenAI -> Gemini -> Anthropic -> Mistral;
-    critic: Anthropic -> Gemini -> OpenAI -> Mistral) only acts as a tie-break:
-    if several succeed at the same time the first to complete wins.
-
-    When the Model Router (backend.model_router) has set a capability-ordered
-    provider preference for this request via set_provider_preference(), the
-    "auto" path instead tries those providers IN ORDER with graceful fallback
-    (sequential, bounded by the same budget/deadline). This selects the
-    capability-appropriate model first while still degrading to the next
-    provider on failure. With no preference set, the parallel race is unchanged.
-
-    An EXPLICIT provider ("openai" | "gemini" | "anthropic" | "mistral") is
-    honoured strictly (§15): only that provider is called and there is NO silent
-    cross-provider fallback. An explicitly selected provider without a key
-    returns None (callers surface a capability error) instead of pretending
-    another provider answered.
-
-    The wait is capped by the `timeout` parameter (default ~60s, env LLM_TIMEOUT_SECONDS)
-    and by the request's overall LLM budget (set_llm_budget) when one is active;
-    otherwise LLM_BUDGET (default 90s) applies so long-form answers can finish.
     """
+    if on_token is not None and any_provider_configured():
+        try:
+            streamed = query_llm_stream(prompt, system_prompt, on_token=on_token, timeout=timeout, max_tokens=max_tokens, role=role, provider=provider)
+            if streamed and streamed.strip():
+                return streamed.strip() if not return_details else {
+                    "text": streamed.strip(),
+                    "finish_reason": "stop",
+                    "provider": provider,
+                    "model": "streamed"
+                }
+        except Exception as stream_err:
+            print(f"[QUERY_LLM STREAM DELEGATION WARNING]: {stream_err}")
+
     submitted_at = time.monotonic()
     _increment_telemetry(submitted=1)
     _trace_attempted()
@@ -521,9 +888,6 @@ def query_llm(
         provider = _selected_provider.get() or "auto"
     sequential = False
     if provider != "auto":
-        # Explicit selection is strict (§15): only the requested provider is
-        # called — no silent cross-provider fallback. Built at call time so
-        # tests can monkeypatch provider functions.
         table = {
             "openai": ("OPENAI_API_KEY", call_openai_api),
             "gemini": ("GEMINI_API_KEY", call_gemini_api),
@@ -535,8 +899,7 @@ def query_llm(
             return None
         env_name, fn = table[provider]
         if not os.environ.get(env_name):
-            print(f"[LLM Client Warning] provider '{provider}' explicitly selected "
-                  f"but {env_name} is not configured")
+            print(f"[LLM Client Warning] provider '{provider}' explicitly selected but {env_name} is not configured")
             return None
         providers = (fn,)
     else:

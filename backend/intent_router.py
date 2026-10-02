@@ -3,9 +3,9 @@ import ast
 import json
 import operator
 import re
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from backend.llm import (
-    query_llm, query_llm_with_continuation, any_provider_configured, set_llm_budget, clear_llm_budget, DEFAULT_REQUEST_BUDGET,
+    query_llm, query_llm_with_continuation, query_llm_stream, any_provider_configured, set_llm_budget, clear_llm_budget, DEFAULT_REQUEST_BUDGET,
 )
 from backend.calculator import try_evaluate
 from database.store import store
@@ -1415,7 +1415,7 @@ def _starter_code_example(message: str, history: Optional[List[Dict[str, Any]]])
     return None
 
 
-def _general_answer(message: str, topic: Optional[str], history_ctx: str = "") -> str:
+def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", on_token: Optional[Callable[[str], None]] = None) -> str:
     """Answer a general question: built-in knowledge -> LLM -> honest fallback.
 
     No research/dataset/training language is injected (owner directive §2/§3).
@@ -1462,6 +1462,20 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "") -
         "pronouns using prior turns only when the current message has no explicit subject.\n"
         f"CURRENT USER MESSAGE: {message}"
     )
+    # Real token streaming: when the caller supplied an on_token sink (the SSE
+    # chat-stream path), stream the answer from a single provider so the client
+    # renders it incrementally instead of waiting for the full response. Falls
+    # back to the non-streaming continuation path when streaming is unavailable
+    # or yields nothing (no configured provider, or a mid-stream failure before
+    # any token was emitted).
+    if on_token is not None:
+        try:
+            streamed = query_llm_stream(prompt, GENERAL_ASSISTANT_SYSTEM_PROMPT, on_token=on_token, timeout=60)
+        except Exception:
+            streamed = None
+        if streamed and streamed.strip():
+            return streamed.strip()
+
     res_dict = query_llm_with_continuation(prompt, GENERAL_ASSISTANT_SYSTEM_PROMPT, timeout=60, query_fn=query_llm)
     llm_answer = res_dict.get("text") if isinstance(res_dict, dict) else res_dict
     if llm_answer and llm_answer.strip():
@@ -1500,6 +1514,7 @@ def handle_intent_message(
     payload_last_topic: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     activity_callback=None,
+    token_callback: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1533,7 +1548,8 @@ def handle_intent_message(
         else:
             result = _handle_intent_message_impl(message, active_project_id, session_id,
                                                  payload_pending_action, payload_last_topic,
-                                                 conversation_history, activity_callback)
+                                                 conversation_history, activity_callback,
+                                                 token_callback)
         # The API preserves its existing response shape and adds an optional,
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
@@ -1552,6 +1568,7 @@ def _handle_intent_message_impl(
     payload_last_topic: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     activity_callback=None,
+    token_callback: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
@@ -1879,7 +1896,7 @@ def _handle_intent_message_impl(
             }
 
         history_ctx = _conversation_context(sid)
-        answer = _general_answer(message, topic, history_ctx)
+        answer = _general_answer(message, topic, history_ctx, on_token=token_callback)
         # Pronoun follow-up ("why is it useful?") where the canned definition
         # would just be re-pasted: prefer a context-aware LLM answer about the
         # recent topic. Skipped when a real knowledge answer already fits.
@@ -1961,7 +1978,7 @@ def _handle_intent_message_impl(
             f"Solve the following programming request with correct, runnable code "
             f"and a brief explanation.\n{ctx_line}Request: \"{message}\""
         )
-        code_answer = query_llm(prompt, CODING_SYSTEM_PROMPT)
+        code_answer = query_llm(prompt, CODING_SYSTEM_PROMPT, on_token=token_callback)
         if not (code_answer and code_answer.strip()):
             code_answer = (
                 "I can help write that, but I couldn't reach a code-capable model "
@@ -2231,6 +2248,7 @@ def _handle_intent_message_impl(
             "the user's specific context. If the question embeds a wrong factual "
             "assumption, correct that premise first, then continue the reasoning.",
             timeout=15,
+            on_token=token_callback,
         )
         if answer and answer.strip():
             answer = answer.strip()
@@ -2281,6 +2299,7 @@ def _handle_intent_message_impl(
                 f"Writing request: {message}",
                 "You are a skilled writing assistant. Produce exactly what was asked, "
                 "well-structured and on-topic.",
+                on_token=token_callback,
             )
             resp_text = answer.strip() if (answer and answer.strip()) else (
                 "This writing task needs a connected LLM provider, which isn't reachable "
@@ -2308,6 +2327,7 @@ def _handle_intent_message_impl(
             f"included below, analyze it (structure, bugs, improvements). Otherwise ask "
             f"for the code and describe what you will evaluate.\nRequest: {message}",
             CODING_SYSTEM_PROMPT,
+            on_token=token_callback,
         )
         resp_text = answer.strip() if (answer and answer.strip()) else (
             "I can review and analyze code or a project structure — paste the code (or "

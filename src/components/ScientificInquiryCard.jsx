@@ -24,7 +24,15 @@ export default function ScientificInquiryCard({
     IDLE: 'Autonomous Research Pipeline',
   };
 
-  const headingText = headingMap[sessionState] || 'Autonomous Research Pipeline';
+  const headingText = (() => {
+    const base = headingMap[sessionState] || 'Autonomous Research Pipeline';
+    // A "Complete" header must never contradict the step list: if any stage was
+    // explicitly skipped as not applicable, say so honestly.
+    if (sessionState === 'COMPLETE' && stageEvents.some((e) => e.status === 'skipped')) {
+      return 'Completed with Limited Scope';
+    }
+    return base;
+  })();
 
   // 13 Required Stages (1-indexed)
   const STAGES = [
@@ -72,6 +80,8 @@ export default function ScientificInquiryCard({
         return <span className="text-[#F15A3A] font-bold animate-running-pulse">●</span>;
       case 'failed':
         return <span className="text-[#F87171] font-bold">✕</span>;
+      case 'skipped':
+        return <span className="text-[#6B6966] font-bold" title="Skipped — not applicable">⊘</span>;
       case 'pending':
       default:
         return <span className="text-[#8A8884]">○</span>;
@@ -123,14 +133,15 @@ export default function ScientificInquiryCard({
                 <span className={`truncate text-xs font-sans ${
                   status === 'completed' ? 'text-[#E8E5DF] font-medium' :
                   status === 'running' ? 'text-[#F15A3A] font-medium' :
-                  status === 'failed' ? 'text-[#F87171] font-medium' : 'text-[#8A8884] font-normal'
+                  status === 'failed' ? 'text-[#F87171] font-medium' :
+                  status === 'skipped' ? 'text-[#6B6966] font-normal' : 'text-[#8A8884] font-normal'
                 }`}>
                   {stage.name}
                 </span>
               </div>
 
               {/* Event detail and timestamp if supplied */}
-              {(detail || timestamp) && (status === 'completed' || status === 'running' || status === 'failed') && (
+              {(detail || timestamp) && (status === 'completed' || status === 'running' || status === 'failed' || status === 'skipped') && (
                 <div className="ml-11 mt-0.5 text-[11px] text-[#8A8884] font-sans leading-tight break-words overflow-wrap-anywhere">
                   {detail}
                   {timestamp && <span className="ml-1.5 text-[10px] font-mono opacity-70">[{timestamp}]</span>}

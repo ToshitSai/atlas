@@ -6,7 +6,7 @@ import AtlasLogo from './AtlasLogo';
 /** Focused direct-answer thread, without document-style Question/Answer cards. */
 export default function NormalAnswerView({ userQuestion = '', answer = '', sources = [], confidence = null, isLoading = false }) {
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-3xl mx-auto w-full space-y-7 animate-panel-entrance select-none font-sans pb-32">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full space-y-7 animate-panel-entrance select-none font-sans pb-32">
       <article className="ml-auto max-w-[90%] sm:max-w-[78%] flex justify-end gap-2.5">
         <div className="bg-[#1B1B1B] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[#E8E5DF] leading-relaxed break-words overflow-wrap-anywhere">
           {userQuestion}

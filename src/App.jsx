@@ -291,42 +291,55 @@ export default function App() {
 
         if (res) {
           setSessionState('COMPLETE');
-          // Reconcile the 13-step list against what actually executed:
-          //  - Step 1 (scoping) and step 13 (report) always complete here.
-          //  - Dataset/experiment stages that never ran AND had no dataset
-          //    target are marked "skipped — not applicable" with a reason, so
-          //    the header can honestly read "Completed with Limited Scope"
-          //    instead of showing unchecked circles next to "Complete".
-          const ranExperiments = !!res.project;
-          setStageEvents((prev) => {
-            const ranIndices = new Set(prev.map((e) => e.stageIndex));
-            const kept = prev.filter((e) => e.stageIndex !== 1 && e.stageIndex !== 13);
-            const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const next = [
-              { stageIndex: 1, status: 'completed', detail: 'Research problem analyzed and scoped', timestamp: now },
-              ...kept,
-              { stageIndex: 13, status: 'completed', detail: 'Final research report compiled', timestamp: now },
-            ];
-            if (!ranExperiments) {
-              for (const s of DATASET_DEPENDENT_STAGES) {
-                if (!ranIndices.has(s)) {
-                  next.push({
-                    stageIndex: s,
-                    status: 'skipped',
-                    detail: 'Skipped — not applicable: no dataset attached, so experiment stages did not run',
-                    timestamp: now,
-                  });
-                }
-              }
-            }
-            return next;
-          });
-
-          if (res.response) {
-            setReportMd(res.response);
-            setLatestInsight(res.response.slice(0, 240) + '…');
+          const reportText = res.report || res.response || '';
+          if (reportText) {
+            setReportMd(reportText);
+            setLatestInsight(reportText.slice(0, 300) + '…');
+          }
+          if (res.sources && Array.isArray(res.sources)) {
+            setValidatedSources(res.sources);
           }
           setResponseConfidence(res.confidence || null);
+
+          // Reconcile the 13-step list against what actually executed:
+          // Ensure EVERY stage from 1 to 13 reaches a terminal state (completed, skipped, or failed).
+          const ranExperiments = !!res.project;
+          setStageEvents((prev) => {
+            const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const existingMap = new Map(prev.map((e) => [e.stageIndex, e]));
+            const ALL_STAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+            
+            return ALL_STAGES.map((s) => {
+              const existing = existingMap.get(s);
+              if (existing) {
+                return {
+                  ...existing,
+                  status: existing.status === 'failed' ? 'failed' : 'completed',
+                  timestamp: existing.timestamp || now,
+                };
+              }
+              if (s === 1) {
+                return { stageIndex: 1, status: 'completed', detail: 'Research problem analyzed and scoped', timestamp: now };
+              }
+              if (s === 13) {
+                return { stageIndex: 13, status: 'completed', detail: 'Final research report compiled', timestamp: now };
+              }
+              if (!ranExperiments && DATASET_DEPENDENT_STAGES.includes(s)) {
+                return {
+                  stageIndex: s,
+                  status: 'skipped',
+                  detail: 'Skipped — not applicable: literature investigation (no dataset attached)',
+                  timestamp: now,
+                };
+              }
+              return {
+                stageIndex: s,
+                status: 'skipped',
+                detail: 'Skipped — not applicable to query scope',
+                timestamp: now,
+              };
+            });
+          });
 
           if (res.project) {
             setActiveProject(res.project);
@@ -582,7 +595,7 @@ export default function App() {
                 transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                 className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20"
               >
-                <div className="max-w-3xl xl:max-w-4xl 2xl:max-w-5xl mx-auto w-full">
+                <div className={isDeepResearch ? "max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto w-full" : "max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full"}>
                   <QuestionComposer
                     onSubmit={handleSendQuestion}
                     isPending={isPending}

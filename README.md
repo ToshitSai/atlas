@@ -1,4 +1,4 @@
-# AI Scientist — Autonomous ML Research Platform
+# Atlas — Autonomous ML Research Platform
 
 An autonomous machine-learning research assistant inspired by Sakana AI's
 *AI Scientist-v2*. You describe a research goal in plain English, it discovers a
@@ -240,7 +240,7 @@ The app deploys to Vercel as a static frontend + a Python serverless API.
 
 - **Repository:** `github.com/ToshitSai/automl-scientist`
 - **Production branch:** `main` (pushing to `main` triggers a production deploy)
-- **Live URL:** `https://automl-scientist.vercel.app`
+- **Live URL:** `https://automl-scientist.vercel.app/atlas` (temporary legacy URL; Atlas custom domain pending)
 - **Build:** `npm run build` → `dist/` (configured in `vercel.json`)
 - **API:** `vercel.json` rewrites `/api/*` → `api/index.py`, which exposes the
   FastAPI app (`backend.main:app`) as the serverless handler. The frontend calls

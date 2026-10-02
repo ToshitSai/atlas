@@ -28,6 +28,13 @@ def test_multi_source_research_is_source_supported_not_experiment_claim():
     assert result["evidence"]["experiment_ids"] == []
 
 
+def test_sources_do_not_turn_personal_ml_prediction_into_a_high_confidence_result():
+    sources = [{"url": f"https://example.org/{n}"} for n in range(4)]
+    result = assess_confidence("Will SMOTE improve my fraud model?", {"intent": "DEEP_RESEARCH", "response": "SMOTE may help.", "sources": sources})
+    assert result["overall"]["level"] == "medium"
+    assert "no experiment" in "; ".join(result["basis"]).lower()
+
+
 def test_hypothesis_is_marked_proposed_not_confident_fact():
     result = assess_confidence("Improve my model", {"intent": "RESEARCH_START", "response": "Hypothesis: class weighting may improve recall."})
     assert result["claims"][0]["kind"] == "hypothesis"

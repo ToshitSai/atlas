@@ -119,10 +119,15 @@ export async function sendChatMessage(message, projectId = null, conversationId 
   });
 }
 
-export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}) {
+// Shared SSE reader for /api/chat/stream. Emits three frame kinds:
+//   activity -> onActivity(data)   (real planner/retrieval/synthesis steps)
+//   token    -> onToken(text)      (incremental answer text from the provider)
+//   final    -> resolves with the authoritative result dict
+//   error    -> rejects
+async function streamChat(body, { onActivity = () => {}, onToken = () => {} } = {}) {
   const response = await fetch(`${API_BASE}/chat/stream`, {
     method: 'POST', headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, ...correlation })
+    body: JSON.stringify(body)
   });
   if (!response.ok || !response.body) throw new Error(`Server error (${response.status})`);
   const reader = response.body.getReader();
@@ -134,8 +139,9 @@ export async function sendDeepResearchStream(message, projectId = null, conversa
     if (!raw) return;
     const data = JSON.parse(raw);
     if (kind === 'activity') onActivity(data);
+    else if (kind === 'token') { if (data.text) onToken(data.text); }
     else if (kind === 'final') finalResult = data;
-    else if (kind === 'error') throw new Error(data.error || 'Research stream failed');
+    else if (kind === 'error') throw new Error(data.error || 'Stream failed');
   };
   while (true) {
     const { value, done } = await reader.read();
@@ -148,8 +154,24 @@ export async function sendDeepResearchStream(message, projectId = null, conversa
   // consume a valid unterminated final frame instead of reporting a false error.
   buffer += decoder.decode();
   if (buffer.trim()) consumeFrame(buffer);
-  if (!finalResult) throw new Error('Research stream ended without a final response.');
+  if (!finalResult) throw new Error('Stream ended without a final response.');
   return finalResult;
+}
+
+export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}, onToken = () => {}) {
+  return streamChat(
+    { message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, ...correlation },
+    { onActivity, onToken }
+  );
+}
+
+// Normal-answer path over SSE so answer text renders token-by-token. The final
+// frame still carries the authoritative, post-processed response for reconcile.
+export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {} } = {}) {
+  return streamChat(
+    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory: [] },
+    { onActivity, onToken }
+  );
 }
 
 export async function sendControlSignal(projectId, signal) {
