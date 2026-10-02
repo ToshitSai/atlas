@@ -50,7 +50,7 @@ export default function ResearchStartScreen({ onSendChatMessage, isLaunching, on
         {/* Brand Symbol & Title */}
         <div className="flex flex-col items-center space-y-3 text-center">
           <div className="relative group">
-            <AtlasLogo className="w-14 h-14 shrink-0 drop-shadow-[0_0_16px_rgba(241,90,58,0.5)]" />
+            <AtlasLogo className="w-14 h-14 shrink-0" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100 font-sans">
             Research Nexus
