@@ -22,7 +22,7 @@ import {
   fetchProjects,
   fetchProjectDetails,
   sendDeepResearchStream,
-  sendChatMessage,
+  sendChatStream,
   fetchProjectReport,
   fetchProjectBaselines,
   fetchProjectLiterature,
@@ -335,15 +335,20 @@ export default function App() {
           if (onSuccess) onSuccess();
         }
       } else {
-        // Simple Question / Normal Answer Path
-        const res = await sendChatMessage(
-          queryText,
-          activeProject?.id,
-          conversationId
-        );
+        // Simple Question / Normal Answer Path — stream real answer tokens so
+        // text renders incrementally instead of a skeleton followed by the whole
+        // answer at once. The final frame carries the authoritative,
+        // post-processed response, which reconciles any raw-token drift.
+        let streamed = '';
+        const res = await sendChatStream(queryText, activeProject?.id, conversationId, {
+          onToken: (delta) => {
+            streamed += delta;
+            setNormalAnswer(streamed);
+          },
+        });
 
         setSessionState('COMPLETE');
-        setNormalAnswer(res.response || 'No response returned.');
+        setNormalAnswer(res.response || streamed || 'No response returned.');
         setResponseConfidence(res.confidence || null);
         setIsBuiltInExplanation(res.action === 'NONE' || !sysSettings.apiKeySet);
 
@@ -477,9 +482,6 @@ export default function App() {
                       <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#E8E5DF] font-sans">
                         {greeting.main}
                       </h1>
-                      <p className="text-sm text-[#8A8884] font-sans max-w-md">
-                        {greeting.sub}
-                      </p>
                     </motion.div>
 
                     {/* Centered Command Search Bar */}
@@ -493,24 +495,6 @@ export default function App() {
                         placeholder={ROTATING_PLACEHOLDERS[placeholderIdx]}
                         isEmptyState={true}
                       />
-                    </div>
-
-                    {/* Quick Research Suggestions */}
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs">
-                      {[
-                        "Improve credit card fraud detection recall",
-                        "Compare XGBoost vs Random Forest",
-                        "Explain overfitting remedies",
-                      ].map((promptText, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => handleSendQuestion(promptText)}
-                          className="px-3.5 py-1.5 rounded-xl bg-[#1B1B1C] hover:bg-[#252528] border border-[#2E2E34] text-[#A1A1AA] hover:text-[#E8E5DF] transition-all cursor-pointer font-sans"
-                        >
-                          {promptText}
-                        </button>
-                      ))}
                     </div>
                   </motion.div>
                 ) : (
@@ -529,7 +513,7 @@ export default function App() {
                         answer={normalAnswer}
                         sources={normalSources}
                         confidence={responseConfidence}
-                        isLoading={isPending}
+                        isLoading={isPending && !normalAnswer}
                       />
                     ) : (
                       // Deep Research Workspace View
@@ -598,7 +582,7 @@ export default function App() {
                 transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                 className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20"
               >
-                <div className="max-w-3xl mx-auto w-full">
+                <div className="max-w-3xl xl:max-w-4xl 2xl:max-w-5xl mx-auto w-full">
                   <QuestionComposer
                     onSubmit={handleSendQuestion}
                     isPending={isPending}
