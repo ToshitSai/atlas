@@ -5,7 +5,7 @@ import React from 'react';
  */
 export default function Header({ onOpenMobileNav }) {
   return (
-    <div className="lg:hidden absolute top-3 left-3 z-30">
+    <div className="lg:hidden fixed top-3 left-3 z-40 pointer-events-auto">
       <button
         type="button"
         onClick={onOpenMobileNav}
