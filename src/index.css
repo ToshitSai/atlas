@@ -99,11 +99,11 @@
 }
 
 .input-focus-orange {
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+  transition: border-color 200ms ease;
 }
 .input-focus-orange:focus {
-  border-color: #F15A3A !important;
-  box-shadow: 0 0 0 2px rgba(241, 90, 58, 0.18) !important;
+  border-color: #404040 !important;
+  box-shadow: none !important;
 }
 
 /* Text Wrapping & Safety */

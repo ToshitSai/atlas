@@ -220,9 +220,9 @@ export default function QuestionComposer({
         }}
         className={`w-full bg-[#1C1C20] hover:bg-[#202025] border ${
           isListening
-            ? 'border-[#F15A3A] ring-1 ring-[#F15A3A]/50'
-            : 'border-[#2E2E34] focus-within:border-[#F15A3A] focus-within:ring-1 focus-within:ring-[#F15A3A]/30'
-        } rounded-2xl px-4 py-2.5 shadow-2xl flex items-center gap-3 transition-all duration-300 ease-in-out`}
+            ? 'border-[#F15A3A]'
+            : 'border-[#2E2E34] focus-within:border-[#404040]'
+        } rounded-2xl px-4 py-2.5 flex items-center gap-3 transition-all duration-300 ease-in-out`}
       >
         {/* Left "+" Icon / Quick Access Trigger */}
         <button
