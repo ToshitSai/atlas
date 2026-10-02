@@ -21,7 +21,7 @@ from database.store import store
 from backend import hf_datasets as hf
 from backend.auth import verified_clerk_user_id
 
-app = FastAPI(title="AutoML Scientist Engine API", version="2.0.0")
+app = FastAPI(title="Atlas Research API", version="2.0.0")
 
 
 def _clerk_auth_enabled() -> bool:
@@ -62,7 +62,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in os.environ.get(
         "CORS_ALLOWED_ORIGINS",
-        "https://automl-scientist.vercel.app,http://localhost:3000,http://localhost:5173",
+        "https://atlas-scientist.vercel.app,https://automl-scientist.vercel.app,http://localhost:3000,http://localhost:5173",
     ).split(",") if origin.strip()],
     allow_credentials=False,
     allow_methods=["*"],

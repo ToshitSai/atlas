@@ -14,6 +14,7 @@ from clerk_backend_api import AuthenticateRequestOptions, authenticate_request
 def _authorized_parties() -> list[str]:
     configured = os.environ.get("CLERK_AUTHORIZED_PARTIES", "")
     values = configured.split(",") if configured else [
+        "https://atlas-scientist.vercel.app",
         "https://automl-scientist.vercel.app",
         "http://localhost:3000",
         "http://localhost:5173",
