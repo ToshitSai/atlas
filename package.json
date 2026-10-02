@@ -1,5 +1,5 @@
 {
-  "name": "automl-scientist",
+  "name": "atlas",
   "version": "1.0.0",
   "description": "Autonomous ML Research Platform inspired by Sakana AI's AI Scientist-v2",
   "type": "module",
