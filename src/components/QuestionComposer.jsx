@@ -20,6 +20,8 @@ export default function QuestionComposer({
   backendConnected = false,
   connectionState = 'CONNECTING',
   errorFeedback = null,
+  placeholder = null,
+  isEmptyState = false,
 }) {
   const [text, setText] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -59,7 +61,7 @@ export default function QuestionComposer({
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 140)}px`;
     }
   }, [text]);
 
@@ -184,17 +186,15 @@ export default function QuestionComposer({
   return (
     <div className="w-full font-sans select-none space-y-1.5">
       {/* Feedback alerts if disconnected, failed, or speech error */}
-      {connectionState === 'OFFLINE' && !backendConnected && (
-        <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5 flex items-center justify-between">
-          <span>Research service not configured. No investigation or experiment has started.</span>
-        </div>
-      )}
-
-      {errorFeedback && (
+      {errorFeedback ? (
         <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5">
           {errorFeedback}
         </div>
-      )}
+      ) : (connectionState === 'OFFLINE' && !backendConnected) ? (
+        <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5 flex items-center justify-between">
+          <span>Research service not configured. No investigation or experiment has started.</span>
+        </div>
+      ) : null}
 
       {speechError && (
         <div className="text-xs font-sans text-[#F15A3A] px-3 pb-0.5 flex items-center justify-between transition-opacity duration-200">
@@ -241,11 +241,16 @@ export default function QuestionComposer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isListening ? "Listening… Speak your research question" : "Ask a direct question or describe a research task…"}
+          placeholder={
+            placeholder ||
+            (isListening
+              ? "Listening… Speak your research question"
+              : "Ask a direct question or describe a research task…")
+          }
           rows={1}
           disabled={isPending}
           aria-label="Research question input"
-          className="flex-1 bg-transparent text-sm text-[#E8E5DF] placeholder-[#71717A] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[120px] py-0.5"
+          className="flex-1 bg-transparent text-sm text-[#E8E5DF] placeholder-[#71717A] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[140px] py-0.5"
         />
 
         {/* Right Action Stack: Microphone or Send Button */}

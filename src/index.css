@@ -35,8 +35,8 @@
   /* Existing headings become concise research-system identifiers while body
      copy stays in Instrument Sans for readability. */
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'IBM Plex Mono', monospace !important;
-    font-weight: 500;
+    font-family: 'Instrument Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight: 600;
     letter-spacing: -0.015em;
   }
 }

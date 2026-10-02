@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import QuestionComposer from './components/QuestionComposer';
@@ -13,6 +14,7 @@ import ReportsView from './components/ReportsView';
 import HistoryView from './components/HistoryView';
 import SettingsModal from './components/SettingsModal';
 import AtlasLogo from './components/AtlasLogo';
+import { getDynamicGreeting, ROTATING_PLACEHOLDERS } from './utils/greeting';
 
 import {
   fetchHealth,
@@ -40,8 +42,14 @@ function isLikelyDeepResearch(text) {
   );
 }
 
-// Stage mapping to 13 Scientific Inquiry stages
+// Stage mapping to the 13 Scientific Inquiry stages.
+// Keys cover BOTH emitters: the orchestrator path (uppercase stages from
+// agents/orchestrator.py) and the deep-research path (lowercase stages from
+// backend/step_trace.py Stages). Without the lowercase keys every deep-research
+// event collapsed onto step 2, so steps 03/04/09 never lit up even though the
+// literature search, source evaluation and synthesis really ran.
 const STAGE_NAME_MAP = {
+  // Orchestrator (dataset + experiment) path — uppercase
   PLANNING: 2,
   DATASET_SEARCH: 5,
   DATASET_EVALUATION: 5,
@@ -52,9 +60,47 @@ const STAGE_NAME_MAP = {
   EXPERIMENT_EXEC: 8,
   ERROR_ANALYSIS: 10,
   REPORT_GEN: 13,
+  // Deep-research (literature) path — lowercase step_trace.Stages
+  research_question: 1,
+  planning: 2,
+  web_search: 3,
+  literature_search: 3,
+  source_reading: 4,
+  verification: 4,
+  cross_checking: 11,
+  synthesis: 9,
+  dataset_search: 5,
+  dataset_inspection: 5,
+  dataset_ranking: 5,
+  dataset_selection: 5,
+  dataset_analysis: 6,
+  baseline_training: 6,
+  hypothesis_generation: 7,
+  experiment_execution: 8,
+  error_analysis: 10,
+  report_generation: 13,
+  report: 13,
 };
 
+// Experiment/dataset stages that require an attached dataset target. On the
+// literature-only deep-research path they legitimately never execute, so they
+// are marked "skipped — not applicable" rather than left as ambiguous unchecked
+// circles next to a completion header.
+const DATASET_DEPENDENT_STAGES = [5, 6, 7, 8, 10, 11, 12];
+
 export default function App() {
+  // Dynamic Time-Based Greeting & Placeholder States
+  const [greeting, setGreeting] = useState(() => getDynamicGreeting());
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+
+  // Rotate input placeholders when in empty state
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPlaceholderIdx((prev) => (prev + 1) % ROTATING_PLACEHOLDERS.length);
+    }, 8000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Navigation & Active View
   const [activeNav, setActiveNav] = useState('research'); // 'research' | 'experiments' | 'sources' | 'hypotheses' | 'reports' | 'history'
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -108,8 +154,6 @@ export default function App() {
       setBackendConnected(true);
       setConnectionState('CONNECTED');
 
-      // Settings are supplementary: a settings failure must not mark a healthy
-      // research API as offline.
       try {
         const settings = await fetchSettings();
         setSysSettings(settings);
@@ -117,8 +161,6 @@ export default function App() {
         // Health is authoritative for the connection status.
       }
     } catch (e) {
-      // Avoid a visible error for a transient startup/network race. A later
-      // successful check clears this timer before the offline state is shown.
       if (connectionFailureTimer.current) clearTimeout(connectionFailureTimer.current);
       connectionFailureTimer.current = setTimeout(() => {
         setBackendConnected(false);
@@ -138,6 +180,7 @@ export default function App() {
 
   // Handle New Question / Reset State
   const handleNewQuestion = () => {
+    setGreeting(getDynamicGreeting());
     setUserQuestion('');
     setNormalAnswer('');
     setNormalSources([]);
@@ -248,12 +291,36 @@ export default function App() {
 
         if (res) {
           setSessionState('COMPLETE');
-          // Complete stage 1 & 13
-          setStageEvents((prev) => [
-            { stageIndex: 1, status: 'completed', detail: 'Research problem analyzed and scoped', timestamp: new Date().toLocaleTimeString() },
-            ...prev.filter((e) => e.stageIndex !== 1 && e.stageIndex !== 13),
-            { stageIndex: 13, status: 'completed', detail: 'Final research report compiled', timestamp: new Date().toLocaleTimeString() },
-          ]);
+          // Reconcile the 13-step list against what actually executed:
+          //  - Step 1 (scoping) and step 13 (report) always complete here.
+          //  - Dataset/experiment stages that never ran AND had no dataset
+          //    target are marked "skipped — not applicable" with a reason, so
+          //    the header can honestly read "Completed with Limited Scope"
+          //    instead of showing unchecked circles next to "Complete".
+          const ranExperiments = !!res.project;
+          setStageEvents((prev) => {
+            const ranIndices = new Set(prev.map((e) => e.stageIndex));
+            const kept = prev.filter((e) => e.stageIndex !== 1 && e.stageIndex !== 13);
+            const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const next = [
+              { stageIndex: 1, status: 'completed', detail: 'Research problem analyzed and scoped', timestamp: now },
+              ...kept,
+              { stageIndex: 13, status: 'completed', detail: 'Final research report compiled', timestamp: now },
+            ];
+            if (!ranExperiments) {
+              for (const s of DATASET_DEPENDENT_STAGES) {
+                if (!ranIndices.has(s)) {
+                  next.push({
+                    stageIndex: s,
+                    status: 'skipped',
+                    detail: 'Skipped — not applicable: no dataset attached, so experiment stages did not run',
+                    timestamp: now,
+                  });
+                }
+              }
+            }
+            return next;
+          });
 
           if (res.response) {
             setReportMd(res.response);
@@ -390,52 +457,102 @@ export default function App() {
             
             {/* View Switching based on activeNav destination */}
             {activeNav === 'research' && (
-              <>
+              <AnimatePresence mode="wait">
                 {!userQuestion && sessionState === 'IDLE' ? (
-                  // Initial Welcome / Guidance View
-                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-xl mx-auto space-y-4 animate-panel-entrance">
-                    <AtlasLogo className="w-10 h-10 shrink-0" />
-                    <div className="space-y-1 font-sans">
-                      <h2 className="text-base font-semibold text-[#E8E5DF] font-sans tracking-normal">
-                        Ready when you are. What should we investigate?
-                      </h2>
+                  // Initial Centered Start Screen View
+                  <motion.div
+                    key="start-screen"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] } }}
+                    className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-2xl mx-auto space-y-6 my-auto select-none"
+                  >
+                    <motion.div
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ duration: 0.4 }}
+                      className="flex flex-col items-center space-y-3"
+                    >
+                      <AtlasLogo className="w-12 h-12 shrink-0" />
+                      <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#E8E5DF] font-sans">
+                        {greeting.main}
+                      </h1>
+                      <p className="text-sm text-[#8A8884] font-sans max-w-md">
+                        {greeting.sub}
+                      </p>
+                    </motion.div>
+
+                    {/* Centered Command Search Bar */}
+                    <div className="w-full max-w-xl">
+                      <QuestionComposer
+                        onSubmit={handleSendQuestion}
+                        isPending={isPending}
+                        backendConnected={backendConnected}
+                        connectionState={connectionState}
+                        errorFeedback={errorFeedback}
+                        placeholder={ROTATING_PLACEHOLDERS[placeholderIdx]}
+                        isEmptyState={true}
+                      />
                     </div>
 
-                    {connectionState === 'OFFLINE' && (
-                      <div className="p-3 rounded-xl bg-[#F87171]/10 border border-[#F87171]/30 text-xs font-sans text-[#F87171] w-full">
-                        Research service not configured. No investigation or experiment has started.
-                      </div>
-                    )}
-                  </div>
-                ) : !isDeepResearch ? (
-                  // Simple Question Normal Answer View
-                  <NormalAnswerView
-                    userQuestion={userQuestion}
-                    answer={normalAnswer}
-                    sources={normalSources}
-                    confidence={responseConfidence}
-                    isLoading={isPending}
-                  />
+                    {/* Quick Research Suggestions */}
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs">
+                      {[
+                        "Improve credit card fraud detection recall",
+                        "Compare XGBoost vs Random Forest",
+                        "Explain overfitting remedies",
+                      ].map((promptText, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => handleSendQuestion(promptText)}
+                          className="px-3.5 py-1.5 rounded-xl bg-[#1B1B1C] hover:bg-[#252528] border border-[#2E2E34] text-[#A1A1AA] hover:text-[#E8E5DF] transition-all cursor-pointer font-sans"
+                        >
+                          {promptText}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
                 ) : (
-                  // Deep Research Workspace View (Activity Card, Experiments, Report)
-                  <ResearchWorkspaceView
-                    userQuestion={userQuestion}
-                    routingMode={routingMode}
-                    sessionState={sessionState}
-                    stageEvents={stageEvents}
-                    experiments={experiments}
-                    currentExperiment={currentExperiment}
-                    latestFinding={latestInsight}
-                    reportMd={reportMd}
-                    backendConnected={backendConnected}
-                    connectionState={connectionState}
-                    confidence={responseConfidence}
-                    canRetry={sessionState === 'FAILED'}
-                    onRetryStage={() => handleSendQuestion(userQuestion)}
-                    onDownloadReport={handleDownloadReport}
-                  />
+                  // Conversation Workspace View
+                  <motion.div
+                    key="conversation-view"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                    className="flex-1 flex flex-col w-full h-full min-h-0"
+                  >
+                    {!isDeepResearch ? (
+                      // Simple Question Normal Answer View
+                      <NormalAnswerView
+                        userQuestion={userQuestion}
+                        answer={normalAnswer}
+                        sources={normalSources}
+                        confidence={responseConfidence}
+                        isLoading={isPending}
+                      />
+                    ) : (
+                      // Deep Research Workspace View
+                      <ResearchWorkspaceView
+                        userQuestion={userQuestion}
+                        routingMode={routingMode}
+                        sessionState={sessionState}
+                        stageEvents={stageEvents}
+                        experiments={experiments}
+                        currentExperiment={currentExperiment}
+                        latestFinding={latestInsight}
+                        reportMd={reportMd}
+                        backendConnected={backendConnected}
+                        connectionState={connectionState}
+                        confidence={responseConfidence}
+                        canRetry={sessionState === 'FAILED'}
+                        onRetryStage={() => handleSendQuestion(userQuestion)}
+                        onDownloadReport={handleDownloadReport}
+                      />
+                    )}
+                  </motion.div>
                 )}
-              </>
+              </AnimatePresence>
             )}
 
             {activeNav === 'experiments' && (
@@ -473,18 +590,26 @@ export default function App() {
               />
             )}
 
-            {/* Anchored Bottom Command Composer (Reserved padding prevents covering content) */}
-            <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20">
-              <div className="max-w-3xl mx-auto w-full">
-                <QuestionComposer
-                  onSubmit={handleSendQuestion}
-                  isPending={isPending}
-                  backendConnected={backendConnected}
-                  connectionState={connectionState}
-                  errorFeedback={errorFeedback}
-                />
-              </div>
-            </div>
+            {/* Anchored Bottom Command Composer (shown only when in active conversation view) */}
+            {activeNav === 'research' && (userQuestion || sessionState !== 'IDLE') && (
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20"
+              >
+                <div className="max-w-3xl mx-auto w-full">
+                  <QuestionComposer
+                    onSubmit={handleSendQuestion}
+                    isPending={isPending}
+                    backendConnected={backendConnected}
+                    connectionState={connectionState}
+                    errorFeedback={errorFeedback}
+                    isEmptyState={false}
+                  />
+                </div>
+              </motion.div>
+            )}
           </main>
         </div>
       </div>
