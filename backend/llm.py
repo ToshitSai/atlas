@@ -733,22 +733,31 @@ def _stream_openai(prompt: str, system_prompt: Optional[str], on_token: Callable
     payload = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens or 4096, "stream": True}
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
     collected = []
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        for line in resp:
-            line_str = line.decode("utf-8").strip()
-            if not line_str.startswith("data: "):
-                continue
-            data_str = line_str[6:].strip()
-            if data_str == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data_str)
-                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                if delta:
-                    collected.append(delta)
-                    on_token(delta)
-            except Exception:
-                pass
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for line in resp:
+                line_str = line.decode("utf-8").strip()
+                if not line_str.startswith("data: "):
+                    continue
+                data_str = line_str[6:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                    if delta:
+                        collected.append(delta)
+                        on_token(delta)
+                except Exception:
+                    pass
+    except Exception:
+        # Commitment: once tokens have reached the client, a mid-stream drop must
+        # not trigger a restart on another provider (that would duplicate text the
+        # user already saw). Return the partial answer; only a pre-token failure
+        # (nothing collected) propagates so the caller can fall through.
+        if collected:
+            return "".join(collected)
+        raise
     res = "".join(collected)
     return res if res.strip() else None
 
@@ -765,23 +774,28 @@ def _stream_gemini(prompt: str, system_prompt: Optional[str], on_token: Callable
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
     collected = []
     last_len = 0
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        for line in resp:
-            line_str = line.decode("utf-8").strip()
-            if not line_str.startswith("data: "):
-                continue
-            data_str = line_str[6:].strip()
-            try:
-                chunk = json.loads(data_str)
-                parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                text_acc = "".join(p.get("text", "") for p in parts)
-                if len(text_acc) > last_len:
-                    delta = text_acc[last_len:]
-                    last_len = len(text_acc)
-                    collected.append(delta)
-                    on_token(delta)
-            except Exception:
-                pass
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for line in resp:
+                line_str = line.decode("utf-8").strip()
+                if not line_str.startswith("data: "):
+                    continue
+                data_str = line_str[6:].strip()
+                try:
+                    chunk = json.loads(data_str)
+                    parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                    text_acc = "".join(p.get("text", "") for p in parts)
+                    if len(text_acc) > last_len:
+                        delta = text_acc[last_len:]
+                        last_len = len(text_acc)
+                        collected.append(delta)
+                        on_token(delta)
+                except Exception:
+                    pass
+    except Exception:
+        if collected:
+            return "".join(collected)
+        raise
     res = "".join(collected)
     return res if res.strip() else None
 
@@ -798,21 +812,26 @@ def _stream_anthropic(prompt: str, system_prompt: Optional[str], on_token: Calla
         payload["system"] = system_prompt
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
     collected = []
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        for line in resp:
-            line_str = line.decode("utf-8").strip()
-            if not line_str.startswith("data: "):
-                continue
-            data_str = line_str[6:].strip()
-            try:
-                chunk = json.loads(data_str)
-                if chunk.get("type") == "content_block_delta":
-                    delta = chunk.get("delta", {}).get("text")
-                    if delta:
-                        collected.append(delta)
-                        on_token(delta)
-            except Exception:
-                pass
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for line in resp:
+                line_str = line.decode("utf-8").strip()
+                if not line_str.startswith("data: "):
+                    continue
+                data_str = line_str[6:].strip()
+                try:
+                    chunk = json.loads(data_str)
+                    if chunk.get("type") == "content_block_delta":
+                        delta = chunk.get("delta", {}).get("text")
+                        if delta:
+                            collected.append(delta)
+                            on_token(delta)
+                except Exception:
+                    pass
+    except Exception:
+        if collected:
+            return "".join(collected)
+        raise
     res = "".join(collected)
     return res if res.strip() else None
 
