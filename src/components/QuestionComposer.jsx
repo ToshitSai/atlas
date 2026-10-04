@@ -218,17 +218,17 @@ export default function QuestionComposer({
             textareaRef.current?.focus();
           }
         }}
-        className={`w-full bg-[#1C1C20] hover:bg-[#202025] border ${
+        className={`w-full bg-white hover:bg-[#fffefb] border ${
           isListening
-            ? 'border-[#F15A3A]'
-            : 'border-[#2E2E34] focus-within:border-[#404040]'
-        } rounded-2xl px-4 py-2.5 flex items-center gap-3 transition-all duration-300 ease-in-out`}
+            ? 'border-[#F5C900]'
+            : 'border-[#E9E7E1] focus-within:border-[#B8890A]'
+        } rounded-[22px] px-3 py-2.5 flex items-center gap-2 sm:gap-3 shadow-[0_8px_30px_rgba(20,18,10,.07)] transition-all duration-300 ease-in-out`}
       >
         {/* Left "+" Icon / Quick Access Trigger */}
         <button
           type="button"
           onClick={() => textareaRef.current?.focus()}
-          className="text-[#8A8884] hover:text-[#E8E5DF] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
+          className="text-[#A8A29E] hover:text-[#44403B] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
           title="Quick access commands"
           aria-label="Quick access"
         >
@@ -250,7 +250,7 @@ export default function QuestionComposer({
           rows={1}
           disabled={isPending}
           aria-label="Research question input"
-          className="flex-1 bg-transparent text-sm text-[#E8E5DF] placeholder-[#71717A] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[140px] py-0.5"
+          className="flex-1 bg-transparent text-[15px] text-[#0D0C0A] placeholder-[#A8A29E] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[140px] py-0.5"
         />
 
         {/* Right Action Stack: Microphone or Send Button */}
@@ -262,7 +262,7 @@ export default function QuestionComposer({
               disabled={isPending}
               aria-label="Send question"
               title="Send question (Enter)"
-              className="w-9 h-9 rounded-xl bg-[#F15A3A] hover:bg-[#E44D31] text-white flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer shadow-md scale-105"
+              className="w-8 h-8 rounded-full bg-[#0D0C0A] hover:scale-110 text-[#FFD800] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer"
             >
               {isPending ? (
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

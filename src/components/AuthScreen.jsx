@@ -251,22 +251,9 @@ export default function AuthScreen({ onLoginSuccess }) {
   };
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100vw',
-        height: '100vh',
-        backgroundColor: TOKENS.colors.bg,
-        fontFamily: TOKENS.fonts.sans,
-        color: TOKENS.colors.ink,
-        overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}
-    >
+    <div className="relative w-full min-h-screen bg-[#FAFAF9] font-sans text-[#0D0C0A] overflow-y-auto flex items-center justify-center p-4 sm:p-6 md:p-8 lg:p-12">
       {/* 10 FLOATING PIXEL PARTICLES DRIFTING UP ENDLESSLY */}
-      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         {PARTICLES.map((p) => (
           <motion.div
             key={p.id}
@@ -293,179 +280,73 @@ export default function AuthScreen({ onLoginSuccess }) {
         ))}
       </div>
 
-      {/* SPLIT LAYOUT CONTAINER */}
-      <div
-        style={{
-          position: 'relative',
-          zIndex: 10,
-          width: '100%',
-          maxWidth: '1100px',
-          height: '100%',
-          maxHeight: '680px',
-          display: 'grid',
-          gridTemplateColumns: '1fr 480px',
-          gap: '40px',
-          padding: '24px 40px',
-          boxSizing: 'border-box',
-          alignItems: 'center'
-        }}
-      >
+      {/* RESPONSIVE LAYOUT CONTAINER */}
+      <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-center lg:justify-between gap-8 lg:gap-12 py-4 sm:py-8">
         {/* LEFT BRAND PANEL */}
         <motion.div
-          initial={{ opacity: 0, x: -24 }}
-          animate={{ opacity: 1, x: 0 }}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            paddingRight: '20px'
-          }}
+          className="w-full lg:w-1/2 flex flex-col justify-center max-w-xl"
         >
           {/* Logo + Brand */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+          <div className="flex items-center gap-3 mb-4 sm:mb-6">
             <AtlasPixelGrid cellSize={14} gap={3} />
-            <span style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.01em', color: TOKENS.colors.ink }}>
+            <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#0D0C0A]">
               Atlas
             </span>
           </div>
 
-          <h1
-            style={{
-              fontSize: '32px',
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              color: TOKENS.colors.ink,
-              margin: '0 0 12px 0',
-              lineHeight: 1.2
-            }}
-          >
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-[#0D0C0A] mb-3 leading-tight">
             Research at machine speed.
           </h1>
 
-          <p
-            style={{
-              fontSize: '15px',
-              color: TOKENS.colors.body,
-              lineHeight: 1.5,
-              margin: '0 0 28px 0',
-              maxWidth: '440px'
-            }}
-          >
+          <p className="text-sm sm:text-base text-[#44403B] leading-relaxed mb-6 max-w-lg">
             Autonomous machine learning research platform for hypothesis formulation, literature synthesis, and experiment execution.
           </p>
 
           {/* 3 AMBER FEATURE CHIPS */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '440px' }}>
+          <div className="hidden sm:flex flex-col gap-3 max-w-lg">
             {/* Chip 1 */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 14px',
-                backgroundColor: TOKENS.colors.card,
-                border: `1px solid ${TOKENS.colors.line}`,
-                borderRadius: '14px',
-                boxShadow: '0 2px 8px rgba(20,18,10,0.03)'
-              }}
-            >
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '10px',
-                  backgroundColor: '#FCF7DF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: TOKENS.colors.amber,
-                  flexShrink: 0
-                }}
-              >
+            <div className="flex items-center gap-3 p-3 bg-white border border-[#E9E7E1] rounded-2xl shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-[#FCF7DF] flex items-center justify-center text-[#B8890A] shrink-0">
                 <IconMicroscope size={18} />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: TOKENS.colors.ink, lineHeight: 1.2 }}>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-semibold text-[#0D0C0A] leading-tight">
                   Autonomous Literature Synthesis
                 </span>
-                <span style={{ fontSize: '11px', color: TOKENS.colors.muted, lineHeight: 1.3, marginTop: '2px' }}>
+                <span className="text-[11px] text-[#A8A29E] leading-tight mt-0.5 truncate">
                   42+ arXiv & venue sources parsed concurrently
                 </span>
               </div>
             </div>
 
             {/* Chip 2 */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 14px',
-                backgroundColor: TOKENS.colors.card,
-                border: `1px solid ${TOKENS.colors.line}`,
-                borderRadius: '14px',
-                boxShadow: '0 2px 8px rgba(20,18,10,0.03)'
-              }}
-            >
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '10px',
-                  backgroundColor: '#FCF7DF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: TOKENS.colors.amber,
-                  flexShrink: 0
-                }}
-              >
+            <div className="flex items-center gap-3 p-3 bg-white border border-[#E9E7E1] rounded-2xl shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-[#FCF7DF] flex items-center justify-center text-[#B8890A] shrink-0">
                 <IconLayers size={18} />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: TOKENS.colors.ink, lineHeight: 1.2 }}>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-semibold text-[#0D0C0A] leading-tight">
                   Dataset & Benchmark Matching
                 </span>
-                <span style={{ fontSize: '11px', color: TOKENS.colors.muted, lineHeight: 1.3, marginTop: '2px' }}>
+                <span className="text-[11px] text-[#A8A29E] leading-tight mt-0.5 truncate">
                   Domain-shift & out-of-distribution evaluation
                 </span>
               </div>
             </div>
 
             {/* Chip 3 */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 14px',
-                backgroundColor: TOKENS.colors.card,
-                border: `1px solid ${TOKENS.colors.line}`,
-                borderRadius: '14px',
-                boxShadow: '0 2px 8px rgba(20,18,10,0.03)'
-              }}
-            >
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '10px',
-                  backgroundColor: '#FCF7DF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: TOKENS.colors.amber,
-                  flexShrink: 0
-                }}
-              >
+            <div className="flex items-center gap-3 p-3 bg-white border border-[#E9E7E1] rounded-2xl shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-[#FCF7DF] flex items-center justify-center text-[#B8890A] shrink-0">
                 <IconAtom size={18} />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: TOKENS.colors.ink, lineHeight: 1.2 }}>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-semibold text-[#0D0C0A] leading-tight">
                   Hypothesis & Experiment Execution
                 </span>
-                <span style={{ fontSize: '11px', color: TOKENS.colors.muted, lineHeight: 1.3, marginTop: '2px' }}>
+                <span className="text-[11px] text-[#A8A29E] leading-tight mt-0.5 truncate">
                   Automated hyperparameter & model ablation pipelines
                 </span>
               </div>
@@ -473,19 +354,11 @@ export default function AuthScreen({ onLoginSuccess }) {
           </div>
         </motion.div>
 
-        {/* RIGHT LOGIN CARD (White, radius 22, shadow 0 8px 30px, hairline border) */}
+        {/* RIGHT LOGIN CARD */}
         <motion.div
           animate={shake ? { x: [-8, 8, -6, 6, -3, 3, 0] } : {}}
           transition={{ duration: 0.4 }}
-          style={{
-            backgroundColor: TOKENS.colors.card,
-            border: `1px solid ${TOKENS.colors.line}`,
-            borderRadius: '22px',
-            boxShadow: '0 8px 30px rgba(20,18,10,0.07)',
-            padding: '32px 36px',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
+          className="w-full lg:w-[450px] shrink-0 bg-white border border-[#E9E7E1] rounded-[22px] shadow-xl p-6 sm:p-8 flex flex-col"
         >
           {/* Card Header */}
           <div style={{ marginBottom: '24px' }}>
