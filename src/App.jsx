@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '@clerk/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import QuestionComposer from './components/QuestionComposer';
-import ScientificInquiryCard from './components/ScientificInquiryCard';
-import RightSidebar from './components/RightSidebar';
 import NormalAnswerView from './components/NormalAnswerView';
 import ResearchWorkspaceView from './components/ResearchWorkspaceView';
 import ExperimentsView from './components/ExperimentsView';
@@ -13,19 +12,18 @@ import HypothesesView from './components/HypothesesView';
 import ReportsView from './components/ReportsView';
 import HistoryView from './components/HistoryView';
 import SettingsModal from './components/SettingsModal';
-import AtlasLogo from './components/AtlasLogo';
+import AuthScreen from './components/AuthScreen';
+import AtlasLanding from './components/AtlasLanding';
 import { getDynamicGreeting, ROTATING_PLACEHOLDERS } from './utils/greeting';
 
 import {
   fetchHealth,
   fetchSettings,
-  fetchProjects,
-  fetchProjectDetails,
+  fetchConversations,
+  fetchConversationMessages,
   sendDeepResearchStream,
   sendChatStream,
-  fetchProjectReport,
-  fetchProjectBaselines,
-  fetchProjectLiterature,
+  setAuthTokenProvider,
 } from './api';
 
 function createConversationId() {
@@ -88,7 +86,17 @@ const STAGE_NAME_MAP = {
 // circles next to a completion header.
 const DATASET_DEPENDENT_STAGES = [5, 6, 7, 8, 10, 11, 12];
 
-export default function App() {
+function WorkspaceApp({ onSignOut }) {
+  const { getToken } = useAuth();
+
+  // Register Clerk's short-lived token provider before any conversation or
+  // health request is sent. Without this, the real workspace rendered but
+  // every chat request was rejected by the protected FastAPI API.
+  useEffect(() => {
+    setAuthTokenProvider(getToken);
+    return () => setAuthTokenProvider(null);
+  }, [getToken]);
+
   // Dynamic Time-Based Greeting & Placeholder States
   const [greeting, setGreeting] = useState(() => getDynamicGreeting());
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
@@ -140,6 +148,9 @@ export default function App() {
 
   // Session History List
   const [historyItems, setHistoryItems] = useState([]);
+  // Keep every exchange in the visible session thread; the current response
+  // payload below is only the active turn's workspace state.
+  const [conversationTurns, setConversationTurns] = useState([]);
 
   // Check Backend Connection on Mount & Periodically
   const checkBackend = async () => {
@@ -178,6 +189,24 @@ export default function App() {
     };
   }, []);
 
+  // Hydrate the real authenticated conversation list on startup. This is
+  // intentionally separate from the active turn state so a refresh cannot
+  // erase previously persisted conversations from the sidebar.
+  useEffect(() => {
+    let cancelled = false;
+    fetchConversations().then((items) => {
+      if (cancelled || !Array.isArray(items)) return;
+      setHistoryItems(items.map((item) => ({
+        id: item.id || item.conversationId,
+        conversationId: item.id || item.conversationId,
+        question: item.title || item.question || 'Conversation',
+        timestamp: item.updatedAt || item.createdAt || 'Recent',
+        isDeep: Boolean(item.isDeep || item.mode === 'deep_research'),
+      })));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Handle New Question / Reset State
   const handleNewQuestion = () => {
     setGreeting(getDynamicGreeting());
@@ -197,6 +226,7 @@ export default function App() {
     setNextExperiment(null);
     setReportMd(null);
     setActiveProject(null);
+    setConversationTurns([]);
     setConversationId(createConversationId());
     setActiveNav('research');
   };
@@ -209,6 +239,14 @@ export default function App() {
     setIsPending(true);
     setErrorFeedback(null);
     setActiveNav('research');
+    const deepCheck = isLikelyDeepResearch(queryText);
+    const turnId = `${conversationId}:${Date.now()}`;
+    const requestId = createConversationId();
+    const messageId = turnId;
+    const priorHistory = conversationTurns.flatMap((turn) => [
+      { role: 'user', content: turn.question },
+      ...(turn.answer ? [{ role: 'assistant', content: turn.answer }] : []),
+    ]).slice(-20);
 
     // A submitted turn owns the response area immediately. Clearing every
     // previous response payload prevents one question's answer from being
@@ -221,29 +259,27 @@ export default function App() {
     setLatestInsight(null);
     setStageEvents([]);
 
-    // Disconnected Backend Guard (Req §1 & §15)
-    if (connectionState === 'CONNECTING') {
-      setIsPending(false);
-      return;
-    }
-    if (!backendConnected) {
-      setIsPending(false);
-      setSessionState('FAILED');
-      setErrorFeedback('Research service not configured. No investigation or experiment has started.');
-      return;
-    }
+    // Do not discard a real user request while the startup health probe is
+    // still catching up with Clerk session restoration. The chat request
+    // carries its own token and is the authoritative connectivity check;
+    // failures are surfaced by the request error handler below.
 
     if (onSuccess) onSuccess();
 
+    setConversationTurns((prev) => [...prev, {
+      id: turnId, question: queryText, answer: '', sources: [], confidence: null,
+      mode: deepCheck ? 'deep' : 'normal', isLoading: true,
+    }]);
+
     // Determine initial routing intention
-    const deepCheck = isLikelyDeepResearch(queryText);
     setIsDeepResearch(deepCheck);
     setRoutingMode(deepCheck ? 'AUTO: Deep Research' : 'AUTO: Normal Answer');
     setSessionState(deepCheck ? 'QUEUED' : 'IN_PROGRESS');
 
     // Create history item entry
     const newHistoryEntry = {
-      id: Date.now(),
+      id: conversationId,
+      conversationId,
       question: queryText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isDeep: deepCheck,
@@ -274,6 +310,20 @@ export default function App() {
             };
             if (existing >= 0) updated[existing] = evtObj;
             else updated.push(evtObj);
+            // The backend trace is ordered, but browser/event delivery can
+            // batch frames. When a later stage arrives, close any earlier
+            // stage that is still shown as running so the timeline can never
+            // claim stage 09 is active while stage 01 is unfinished.
+            for (let prior = 1; prior < idx; prior += 1) {
+              const priorIndex = updated.findIndex((e) => e.stageIndex === prior);
+              if (priorIndex >= 0 && ['running', 'pending'].includes(updated[priorIndex].status)) {
+                updated[priorIndex] = {
+                  ...updated[priorIndex],
+                  status: 'completed',
+                  detail: updated[priorIndex].detail || 'Completed before the next research stage began',
+                };
+              }
+            }
             return updated;
           });
         };
@@ -284,8 +334,8 @@ export default function App() {
           conversationId,
           null,
           null,
-          { requestId: createConversationId() },
-          [],
+          { requestId, messageId },
+          priorHistory,
           onActivity
         );
 
@@ -296,6 +346,9 @@ export default function App() {
             setReportMd(reportText);
             setLatestInsight(reportText.slice(0, 300) + '…');
           }
+          setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
+            ? { ...turn, answer: reportText, sources: res.sources || [], confidence: res.confidence || null, isLoading: false }
+            : turn));
           if (res.sources && Array.isArray(res.sources)) {
             setValidatedSources(res.sources);
           }
@@ -356,13 +409,21 @@ export default function App() {
         const res = await sendChatStream(queryText, activeProject?.id, conversationId, {
           onToken: (delta) => {
             streamed += delta;
-            setNormalAnswer(streamed);
+            console.debug('[Atlas raw stream chunk]', delta);
+            setNormalAnswer((prev) => prev + delta);
+            setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, answer: `${turn.answer || ''}${delta}` } : turn));
           },
+          conversationHistory: priorHistory,
+          correlation: { requestId, messageId },
         });
 
         setSessionState('COMPLETE');
+        console.debug('[Atlas raw stream final]', res.response || streamed || '');
         setNormalAnswer(res.response || streamed || 'No response returned.');
         setResponseConfidence(res.confidence || null);
+        setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
+          ? { ...turn, answer: res.response || streamed || 'No response returned.', sources: res.sources || [], confidence: res.confidence || null, isLoading: false }
+          : turn));
         setIsBuiltInExplanation(res.action === 'NONE' || !sysSettings.apiKeySet);
 
         if (res.citationPolicy === 'required' && res.sources) {
@@ -372,11 +433,39 @@ export default function App() {
         if (onSuccess) onSuccess();
       }
     } catch (err) {
+      setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
+        ? { ...turn, isLoading: false, error: err.message }
+        : turn));
       setSessionState('FAILED');
       setErrorFeedback(`Submission failed: ${err.message}`);
     } finally {
       setIsPending(false);
     }
+  };
+
+  const handleSelectConversation = async (item) => {
+    const selectedId = item?.conversationId || item?.id;
+    if (!selectedId) return;
+    const messages = await fetchConversationMessages(selectedId);
+    const rows = Array.isArray(messages) ? messages : (messages?.messages || []);
+    const turns = [];
+    let current = null;
+    for (const message of rows) {
+      if (message.role === 'user') {
+        current = { id: message.id || `${selectedId}:${turns.length}`, question: message.content || '', answer: '', sources: [], confidence: null, isLoading: false, mode: 'normal' };
+        turns.push(current);
+      } else if (message.role === 'assistant' && current) {
+        current.answer = message.content || '';
+      }
+    }
+    setConversationId(selectedId);
+    setConversationTurns(turns);
+    setUserQuestion(turns.at(-1)?.question || '');
+    setNormalAnswer(turns.at(-1)?.answer || '');
+    setIsDeepResearch(false);
+    setSessionState(turns.length ? 'COMPLETE' : 'IDLE');
+    setErrorFeedback(null);
+    setActiveNav('research');
   };
 
   // Initialize and synchronize URL path (/atlas, /atlas/experiments, etc.)
@@ -439,8 +528,23 @@ export default function App() {
     history: 'Session History',
   };
 
+  if (activeNav === 'research') {
+    return (
+      <AtlasLanding 
+        greeting={greeting}
+        onSendMessage={handleSendQuestion}
+        conversationTurns={conversationTurns}
+        isPending={isPending}
+        onNewChat={handleNewQuestion}
+        backendConnected={backendConnected}
+        connectionState={connectionState}
+        errorFeedback={errorFeedback}
+      />
+    );
+  }
+
   return (
-    <div className="flex h-screen w-screen bg-[#121212] text-[#E8E5DF] font-sans overflow-hidden select-none">
+    <div className="flex h-screen w-screen bg-[#FAFAF9] text-[#0D0C0A] font-sans overflow-hidden select-none">
       
       {/* 1. Left Navigation Column (~210px wide) */}
       <Sidebar
@@ -471,44 +575,28 @@ export default function App() {
         <div className="flex-1 min-w-0 flex overflow-hidden relative">
           
           {/* 2. Center Workspace Area (Flexible width) */}
-          <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative bg-[#121212]">
+          <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative bg-[#FAFAF9]">
             
             {/* View Switching based on activeNav destination */}
             {activeNav === 'research' && (
               <AnimatePresence mode="wait">
                 {!userQuestion && sessionState === 'IDLE' ? (
-                  // Initial Centered Start Screen View
+                  // Initial Atlas Landing Screen View
                   <motion.div
                     key="start-screen"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] } }}
-                    className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-2xl mx-auto space-y-6 my-auto select-none"
+                    className="flex-1 w-full h-full min-h-0"
                   >
-                    <motion.div
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ duration: 0.4 }}
-                      className="flex flex-col items-center space-y-3"
-                    >
-                      <AtlasLogo className="w-12 h-12 shrink-0" />
-                      <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#E8E5DF] font-sans">
-                        {greeting.main}
-                      </h1>
-                    </motion.div>
-
-                    {/* Centered Command Search Bar */}
-                    <div className="w-full max-w-xl">
-                      <QuestionComposer
-                        onSubmit={handleSendQuestion}
-                        isPending={isPending}
-                        backendConnected={backendConnected}
-                        connectionState={connectionState}
-                        errorFeedback={errorFeedback}
-                        placeholder={ROTATING_PLACEHOLDERS[placeholderIdx]}
-                        isEmptyState={true}
-                      />
-                    </div>
+                    <AtlasLanding 
+                      greeting={greeting}
+                      onSendMessage={handleSendQuestion}
+                      backendConnected={backendConnected}
+                      connectionState={connectionState}
+                      errorFeedback={errorFeedback}
+                      onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                    />
                   </motion.div>
                 ) : (
                   // Conversation Workspace View
@@ -527,6 +615,7 @@ export default function App() {
                         sources={normalSources}
                         confidence={responseConfidence}
                         isLoading={isPending && !normalAnswer}
+                        turns={conversationTurns}
                       />
                     ) : (
                       // Deep Research Workspace View
@@ -542,6 +631,7 @@ export default function App() {
                         backendConnected={backendConnected}
                         connectionState={connectionState}
                         confidence={responseConfidence}
+                        priorTurns={conversationTurns.slice(0, -1)}
                         canRetry={sessionState === 'FAILED'}
                         onRetryStage={() => handleSendQuestion(userQuestion)}
                         onDownloadReport={handleDownloadReport}
@@ -583,7 +673,7 @@ export default function App() {
             {activeNav === 'history' && (
               <HistoryView
                 historyItems={historyItems}
-                onSelectHistoryItem={(item) => handleSendQuestion(item.question)}
+                onSelectHistoryItem={handleSelectConversation}
               />
             )}
 
@@ -616,7 +706,51 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={sysSettings}
+        onSignOut={onSignOut}
       />
     </div>
   );
+}
+
+export default function App() {
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const { isLoaded, isSignedIn, signOut } = useAuth();
+  const [isLocalAuth, setIsLocalAuth] = useState(() => {
+    return localStorage.getItem('atlas_authenticated') === 'true';
+  });
+
+  useEffect(() => {
+    const handlePopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const isAuthenticated = Boolean(isSignedIn || isLocalAuth);
+
+  const handleLoginSuccess = () => {
+    localStorage.setItem('atlas_authenticated', 'true');
+    setIsLocalAuth(true);
+    window.history.pushState({}, '', '/atlas');
+    setCurrentPath('/atlas');
+  };
+
+  const handleSignOut = async () => {
+    localStorage.removeItem('atlas_authenticated');
+    setIsLocalAuth(false);
+    try {
+      if (signOut) await signOut();
+    } catch (err) {
+      console.warn('[SIGN OUT NOTICE]', err);
+    }
+    window.history.pushState({}, '', '/login');
+    setCurrentPath('/login');
+  };
+
+  if (!isLoaded && !isLocalAuth) return null;
+
+  if (currentPath === '/login' || currentPath === '/auth' || !isAuthenticated) {
+    return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  return <WorkspaceApp onSignOut={handleSignOut} />;
 }

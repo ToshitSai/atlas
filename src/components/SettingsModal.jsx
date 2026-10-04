@@ -9,6 +9,7 @@ export default function SettingsModal({
   onClose,
   settings = {},
   onSaveSettings,
+  onSignOut,
 }) {
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'settings'
 
@@ -140,7 +141,19 @@ export default function SettingsModal({
           </div>
         )}
 
-        <div className="pt-2 border-t border-[#303030] flex justify-end font-sans">
+        <div className="pt-2 border-t border-[#303030] flex items-center justify-between font-sans">
+          {onSignOut ? (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onSignOut();
+              }}
+              className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 font-semibold text-xs transition-colors cursor-pointer font-sans"
+            >
+              Sign Out
+            </button>
+          ) : <div />}
           <button
             type="button"
             onClick={onClose}
