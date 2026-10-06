@@ -255,6 +255,14 @@ export default function AuthScreen({ onLoginSuccess }) {
   const handleGoogleClick = async () => {
     setGoogleSpinning(true);
     setAuthError('');
+    let redirected = false;
+
+    const timeoutTimer = setTimeout(() => {
+      if (!redirected) {
+        handleLocalFallback();
+      }
+    }, 800);
+
     try {
       if (clerkSignIn?.isLoaded && clerkSignIn?.signIn) {
         await clerkSignIn.signIn.authenticateWithRedirect({
@@ -262,12 +270,15 @@ export default function AuthScreen({ onLoginSuccess }) {
           redirectUrl: '/sso-callback',
           redirectUrlComplete: '/atlas',
         });
+        redirected = true;
+        clearTimeout(timeoutTimer);
         return;
       }
     } catch (err) {
       console.warn('[CLERK OAUTH NOTICE - Fallback to local session]', err?.message || err);
     }
 
+    clearTimeout(timeoutTimer);
     handleLocalFallback();
   };
 
