@@ -25,7 +25,7 @@ def post(url: str, question: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--base-url", default="https://automl-scientist.vercel.app")
+    parser.add_argument("--base-url", default="https://atlas-scientist.vercel.app")
     parser.add_argument("--version", default="unknown")
     parser.add_argument("--out", type=Path, default=Path("eval_results"))
     args = parser.parse_args()

@@ -4,16 +4,44 @@ import React, { useState } from 'react';
  * User Profile & Research Settings Modal:
  * Tabbed modal allowing switching between User Profile details and Research Settings/Telemetry.
  */
+function getInitials(name) {
+  if (!name || typeof name !== 'string') return 'US';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function SettingsModal({
   isOpen = false,
   onClose,
   settings = {},
   onSaveSettings,
   onSignOut,
+  userProfile = {},
+  onUpdateUserProfile,
 }) {
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'settings'
+  const [editedName, setEditedName] = useState(userProfile.name || 'Toshit Sai Galam');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Sync state when profile prop changes
+  React.useEffect(() => {
+    setEditedName(userProfile.name || 'Toshit Sai Galam');
+  }, [userProfile.name]);
 
   if (!isOpen) return null;
+
+  const handleSaveUsername = (e) => {
+    e?.preventDefault();
+    if (!editedName.trim()) return;
+    if (onUpdateUserProfile) {
+      onUpdateUserProfile({ name: editedName.trim() });
+    }
+    setIsEditingName(false);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-panel-entrance" role="dialog" aria-modal="true">
@@ -60,21 +88,62 @@ export default function SettingsModal({
             <div className="flex items-center gap-3.5 p-3 rounded-xl bg-[#1B1B1B] border border-[#303030]">
               <div className="relative shrink-0">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#F15A3A] to-[#FF9100] flex items-center justify-center font-bold text-sm text-white shadow-md border border-[#F15A3A]/40 font-sans">
-                  TS
+                  {getInitials(userProfile.name || editedName)}
                 </div>
                 <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#1B1B1B]" title="Active" />
               </div>
               <div className="min-w-0 flex-1 font-sans">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-semibold text-[#E8E5DF] truncate font-sans">Toshit Sai Galam</h4>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#F15A3A]/20 text-[#F15A3A] border border-[#F15A3A]/40 font-sans">
-                    Pro
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-[#E8E5DF] truncate font-sans">
+                    {userProfile.name || 'Research User'}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingName(!isEditingName)}
+                    className="text-[11px] px-2 py-0.5 rounded bg-[#F15A3A]/15 text-[#F15A3A] hover:bg-[#F15A3A]/25 border border-[#F15A3A]/40 font-semibold cursor-pointer font-sans transition-colors shrink-0"
+                  >
+                    {isEditingName ? 'Cancel' : 'Edit Name'}
+                  </button>
                 </div>
-                <p className="text-xs text-[#8A8884] truncate font-sans mt-0.5">toshitsai.galam@gmail.com</p>
-                <span className="text-[11px] text-[#F15A3A] font-medium block mt-1 font-sans">Lead ML Researcher</span>
+                <p className="text-xs text-[#8A8884] truncate font-sans mt-0.5">
+                  {userProfile.email || 'researcher@institution.edu'}
+                </p>
+                <span className="text-[11px] text-[#F15A3A] font-medium block mt-1 font-sans">
+                  {userProfile.role || 'Lead ML Researcher'}
+                </span>
               </div>
             </div>
+
+            {/* Editable Username Form */}
+            {isEditingName && (
+              <form onSubmit={handleSaveUsername} className="p-3 rounded-xl bg-[#222222] border border-[#F15A3A]/40 space-y-2 font-sans animate-fadeIn">
+                <label className="text-[11px] font-semibold text-[#E8E5DF] block font-sans">
+                  Edit Display Username
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    placeholder="Enter new username"
+                    className="flex-1 bg-[#141414] border border-[#404040] focus:border-[#F15A3A] rounded-lg px-2.5 py-1.5 text-xs text-[#E8E5DF] outline-none font-sans"
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 rounded-lg bg-[#F15A3A] hover:bg-[#E44D31] text-white font-semibold text-xs cursor-pointer font-sans transition-colors"
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {savedSuccess && (
+              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs text-center font-medium font-sans">
+                ✓ Username updated successfully!
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2 font-sans">
               <div className="p-2.5 rounded-lg bg-[#1B1B1B] border border-[#303030] space-y-0.5">

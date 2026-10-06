@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSignIn, useSignUp, useClerk } from '@clerk/react';
+import { supabase, getSupabaseConfigError } from '../lib/supabase';
 
 // ============================================================================
 // DESIGN SYSTEM TOKENS
@@ -168,22 +168,6 @@ export default function AuthScreen({ onLoginSuccess }) {
   const [shake, setShake] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  let clerkSignIn = null;
-  let clerkSignUp = null;
-
-  try {
-    clerkSignIn = useSignIn();
-  } catch (e) {}
-  try {
-    clerkSignUp = useSignUp();
-  } catch (e) {}
-
-  const clerkErrorMessage = (err, fallback) => {
-    const first = err?.errors?.[0];
-    const message = first?.longMessage || first?.message || err?.longMessage || err?.message;
-    return typeof message === 'string' && message.trim() ? message : fallback;
-  };
-
   // Read URL query params on mount to handle OAuth failure redirects (e.g. user cancelled at consent screen)
   React.useEffect(() => {
     try {
@@ -195,21 +179,28 @@ export default function AuthScreen({ onLoginSuccess }) {
     } catch (e) {}
   }, []);
 
-  const verifyAuthServiceLoaded = () => {
-    const pubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-    if (!pubKey) {
-      const msg = 'VITE_CLERK_PUBLISHABLE_KEY is not set';
-      console.error(`[AUTH CONFIG ERROR] ${msg}`);
-      setAuthError(msg);
-      return false;
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setAuthError('Please enter your institutional email to reset your password.');
+      return;
     }
-    if (!clerkSignIn?.isLoaded) {
-      const msg = 'Authentication service is initializing or Clerk SDK failed to load. Please verify VITE_CLERK_PUBLISHABLE_KEY and network connection.';
-      console.error(`[AUTH INITIALIZATION ERROR] ${msg}`);
-      setAuthError(msg);
-      return false;
+    const configError = getSupabaseConfigError();
+    if (configError) {
+      setAuthError(configError);
+      return;
     }
-    return true;
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) {
+        setAuthError(error.message);
+      } else {
+        setAuthError('Password reset instructions have been sent to your institutional email.');
+      }
+    } catch (err) {
+      setAuthError(err.message || 'Failed to send password reset email.');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -223,7 +214,10 @@ export default function AuthScreen({ onLoginSuccess }) {
       return;
     }
 
-    if (!verifyAuthServiceLoaded()) {
+    const configError = getSupabaseConfigError();
+    if (configError) {
+      console.error(`[SUPABASE CONFIG ERROR] ${configError}`);
+      setAuthError(configError);
       return;
     }
 
@@ -231,41 +225,46 @@ export default function AuthScreen({ onLoginSuccess }) {
 
     try {
       if (mode === 'signin') {
-        const result = await clerkSignIn.signIn.create({
-          identifier: email.trim(),
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
           password,
         });
-        if (result.status === 'complete' && result.createdSessionId) {
-          await clerkSignIn.setActive({ session: result.createdSessionId });
-          setIsCalibrating(false);
-          const finalName = deriveUsernameFromEmail(email, displayName);
+        if (error) {
+          console.error('[SUPABASE SIGNIN ERROR]', error);
+          setAuthError(error.message || 'Invalid email or password. Please try again.');
+          return;
+        }
+        if (data?.session) {
+          const finalName = data.user?.user_metadata?.full_name || deriveUsernameFromEmail(email, displayName);
+          if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
+          return;
+        }
+      } else if (mode === 'signup') {
+        const finalName = deriveUsernameFromEmail(email, displayName);
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: {
+              full_name: finalName,
+            }
+          }
+        });
+        if (error) {
+          console.error('[SUPABASE SIGNUP ERROR]', error);
+          setAuthError(error.message || 'Sign-up failed. Please try again.');
+          return;
+        }
+        if (data?.session) {
           if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
           return;
         } else {
-          setAuthError('Additional authentication factor required. Please check your Clerk verification setup.');
-        }
-      } else if (mode === 'signup') {
-        if (clerkSignUp?.isLoaded && clerkSignUp?.signUp) {
-          const result = await clerkSignUp.signUp.create({
-            emailAddress: email.trim(),
-            password,
-          });
-          if (result.status === 'complete' && result.createdSessionId) {
-            await clerkSignUp.setActive({ session: result.createdSessionId });
-            setIsCalibrating(false);
-            const finalName = deriveUsernameFromEmail(email, displayName);
-            if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
-            return;
-          } else {
-            setAuthError('Sign-up incomplete. Please complete email verification.');
-          }
-        } else {
-          setAuthError('Authentication sign-up service is initializing. Please try again.');
+          setAuthError('Sign-up successful! Please check your email to confirm your account.');
         }
       }
     } catch (err) {
       console.error('[AUTH SUBMIT ERROR]', err);
-      setAuthError(clerkErrorMessage(err, 'Invalid email or password. Please try again.'));
+      setAuthError(err.message || 'Invalid email or password. Please try again.');
     } finally {
       setIsCalibrating(false);
     }
@@ -275,20 +274,29 @@ export default function AuthScreen({ onLoginSuccess }) {
     setGoogleSpinning(true);
     setAuthError('');
 
-    if (!verifyAuthServiceLoaded()) {
+    const configError = getSupabaseConfigError();
+    if (configError) {
+      console.error(`[SUPABASE CONFIG ERROR] ${configError}`);
+      setAuthError(configError);
       setGoogleSpinning(false);
       return;
     }
 
     try {
-      await clerkSignIn.signIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/atlas',
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/sso-callback`,
+        }
       });
+      if (error) {
+        console.error('[SUPABASE GOOGLE OAUTH ERROR]', error);
+        setAuthError(error.message || 'Google Sign-In failed.');
+        setGoogleSpinning(false);
+      }
     } catch (err) {
-      console.error('[CLERK GOOGLE OAUTH ERROR]', err);
-      setAuthError(clerkErrorMessage(err, 'Google Sign-In failed or was cancelled. Please try again.'));
+      console.error('[SUPABASE GOOGLE OAUTH ERROR]', err);
+      setAuthError(err.message || 'Google Sign-In failed or was cancelled. Please try again.');
       setGoogleSpinning(false);
     }
   };
@@ -547,9 +555,7 @@ export default function AuthScreen({ onLoginSuccess }) {
                 {mode === 'signin' && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setAuthError('Password reset instructions have been sent to your institutional email if registered.');
-                    }}
+                    onClick={handleForgotPassword}
                     style={{
                       background: 'none',
                       border: 'none',

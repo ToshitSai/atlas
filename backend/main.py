@@ -19,12 +19,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import backend.config
 from database.store import store
 from backend import hf_datasets as hf
-from backend.auth import verified_clerk_user_id
+from backend.auth import verified_supabase_user_id
 
 app = FastAPI(title="Atlas Research API", version="2.0.0")
 
 
-class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
+class SupabaseAuthenticationMiddleware(BaseHTTPMiddleware):
     """Enforces verified authentication for all protected /api/ endpoints."""
     public_paths = {"/api/health", "/api/config"}
 
@@ -33,7 +33,7 @@ class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
         if not path.startswith("/api/") or path in self.public_paths:
             return await call_next(request)
         try:
-            request.state.clerk_user_id = verified_clerk_user_id(request)
+            request.state.user_id = verified_supabase_user_id(request)
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         except Exception as exc:
@@ -41,12 +41,12 @@ class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
 
         parts = path.split("/")
         if len(parts) >= 4 and parts[2] == "projects" and parts[3]:
-            if not store.project_owned_by(parts[3], request.state.clerk_user_id):
+            if not store.project_owned_by(parts[3], request.state.user_id):
                 return JSONResponse(status_code=404, content={"detail": "Project not found."})
         return await call_next(request)
 
 
-app.add_middleware(ClerkAuthenticationMiddleware)
+app.add_middleware(SupabaseAuthenticationMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -236,7 +236,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     from backend.answer_pipeline import normalize_question, classify_mode, structured_response
     message = normalize_question(payload.get("message"))
     active_project_id = payload.get("projectId")
-    user_id = request.state.clerk_user_id
+    user_id = request.state.user_id
     if active_project_id and not store.project_owned_by(active_project_id, user_id):
         raise HTTPException(status_code=404, detail="Project not found.")
     conversation_id = f"{user_id}:{payload.get('conversationId', 'default-session')}"
@@ -923,13 +923,13 @@ def datasets_approve(payload: dict):
 @app.get("/api/conversations/{conversation_id}/messages")
 def get_conversation_messages(conversation_id: str, request: Request):
     """Return the stored per-message history for a conversation (section 3)."""
-    return store.get_messages(f"{request.state.clerk_user_id}:{conversation_id}")
+    return store.get_messages(f"{request.state.user_id}:{conversation_id}")
 
 
 @app.get("/api/conversations")
 def list_conversations(request: Request):
     """List saved chats that have exchanged at least one message."""
-    return store.list_conversations(owner_id=request.state.clerk_user_id)
+    return store.list_conversations(owner_id=request.state.user_id)
 
 
 @app.post("/api/files/analyze")
@@ -948,7 +948,7 @@ async def analyze_file(file: UploadFile = File(...)):
 
 @app.get("/api/projects")
 def list_projects(request: Request):
-    return store.list_projects(owner_id=request.state.clerk_user_id)
+    return store.list_projects(owner_id=request.state.user_id)
 
 @app.post("/api/research")
 async def start_research(
@@ -1015,7 +1015,7 @@ async def start_research(
             dataset_path=dataset_path,
             test_path=None,
             dataset_meta=None,
-            owner_id=request.state.clerk_user_id,
+            owner_id=request.state.user_id,
         )
 
         try:

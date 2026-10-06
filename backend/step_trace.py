@@ -17,6 +17,21 @@ from dataclasses import dataclass, field, asdict
 from threading import Lock
 
 
+# Canonical order shared by the UI and all orchestrators. Repeated events for
+# one stage are still allowed, but a later stage may never leave an earlier
+# stage running in the persisted trace.
+_STAGE_ORDER = {
+    name: index for index, name in enumerate([
+        "research_question", "planning", "web_search", "literature_search",
+        "source_reading", "verification", "dataset_search", "dataset_inspection",
+        "dataset_ranking", "dataset_selection", "dataset_analysis",
+        "baseline_training", "hypothesis_generation", "experiment_execution",
+        "error_analysis", "synthesis", "cross_checking", "report_generation",
+        "report", "completed",
+    ], start=1)
+}
+
+
 @dataclass
 class StepEvent:
     """Single step in a multi-step operation."""
@@ -58,11 +73,28 @@ class StepTrace:
             detail=detail,
             metadata=metadata,
         )
+        prior_closed = []
         with self._lock:
+            current_order = _STAGE_ORDER.get(stage)
+            if status == "running" and current_order is not None:
+                for prior in self.steps:
+                    if (prior.status == "running"
+                            and _STAGE_ORDER.get(prior.stage, 0) < current_order):
+                        prior.status = "completed"
+                        prior.detail = prior.detail or "Completed before the next research stage began"
+                        prior.timestamp = int(time.time() * 1000)
+                        prior_closed.append(prior)
             self.steps.append(step)
         # Callbacks (SSE publishers, pollers) receive the plain dict form so
         # consumers never depend on the dataclass internals.
         payload = step.to_dict()
+        for closed in prior_closed:
+            closed_payload = closed.to_dict()
+            for cb in self._callbacks:
+                try:
+                    cb(closed_payload)
+                except Exception:
+                    pass
         for cb in self._callbacks:
             try:
                 cb(payload)

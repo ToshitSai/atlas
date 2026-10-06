@@ -3,7 +3,7 @@ import urllib.parse
 import json
 import time
 
-url = "https://automl-scientist.vercel.app/api/research"
+url = "https://atlas-scientist.vercel.app/api/research"
 timestamp = int(time.time())
 objective_text = f"Improve fraud detection on this dataset while improving recall without increasing false-positives ({timestamp})"
 
@@ -30,7 +30,7 @@ try:
     print("STATUS UPON CREATION:", data["project"].get("status"))
 
     print("\nFetching updated project details...")
-    proj_url = f"https://automl-scientist.vercel.app/api/projects/{project_id}"
+    proj_url = f"https://atlas-scientist.vercel.app/api/projects/{project_id}"
     p_res = urllib.request.urlopen(proj_url)
     p_data = json.loads(p_res.read().decode('utf-8'))
     print(f"Status: {p_data.get('status')}")

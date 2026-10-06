@@ -1,7 +1,7 @@
 import urllib.request
 import urllib.error
 
-url = "https://automl-scientist.vercel.app/api/health"
+url = "https://atlas-scientist.vercel.app/api/health"
 print("Checking:", url)
 try:
     res = urllib.request.urlopen(url)

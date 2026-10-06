@@ -1,4 +1,8 @@
 {
+  "alias": [
+    "atlas-scientist.vercel.app",
+    "automl-scientist.vercel.app"
+  ],
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {

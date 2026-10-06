@@ -1,4 +1,4 @@
-// Initial state for AutoML Scientist platform.
+// Initial empty state for Atlas.
 // Unconfigured/empty placeholders when no active backend project is loaded.
 
 export const INITIAL_PROJECTS = [];

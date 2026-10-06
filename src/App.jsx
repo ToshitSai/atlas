@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth, useUser, AuthenticateWithRedirectCallback } from '@clerk/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -15,6 +14,7 @@ import SettingsModal from './components/SettingsModal';
 import AuthScreen from './components/AuthScreen';
 import AtlasLanding from './components/AtlasLanding';
 import { getDynamicGreeting, ROTATING_PLACEHOLDERS } from './utils/greeting';
+import { supabase } from './lib/supabase';
 
 import {
   fetchHealth,
@@ -23,7 +23,6 @@ import {
   fetchConversationMessages,
   sendDeepResearchStream,
   sendChatStream,
-  setAuthTokenProvider,
 } from './api';
 
 function createConversationId() {
@@ -87,15 +86,6 @@ const STAGE_NAME_MAP = {
 const DATASET_DEPENDENT_STAGES = [5, 6, 7, 8, 10, 11, 12];
 
 function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
-  const { getToken } = useAuth();
-
-  // Register Clerk's short-lived token provider before any conversation or
-  // health request is sent. Without this, the real workspace rendered but
-  // every chat request was rejected by the protected FastAPI API.
-  useEffect(() => {
-    setAuthTokenProvider(getToken);
-    return () => setAuthTokenProvider(null);
-  }, [getToken]);
 
   // Dynamic Time-Based Greeting & Placeholder States
   const [greeting, setGreeting] = useState(() => getDynamicGreeting());
@@ -719,8 +709,8 @@ function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
-  const { isLoaded, isSignedIn, signOut } = useAuth();
-  const { user } = useUser();
+  const [session, setSession] = useState(null);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   const [userProfile, setUserProfile] = useState({
     name: 'Lead Researcher',
@@ -729,16 +719,38 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (user) {
-      const fullName = user.fullName || user.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Lead Researcher';
-      const emailAddr = user.primaryEmailAddress?.emailAddress || 'researcher@institution.edu';
-      setUserProfile({
-        name: fullName,
-        email: emailAddr,
-        role: 'Lead ML Researcher',
-      });
-    }
-  }, [user]);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setIsLoaded(true);
+      if (session?.user) {
+        const metadata = session.user.user_metadata || {};
+        const fullName = metadata.full_name || metadata.name || session.user.email?.split('@')[0] || 'Lead Researcher';
+        setUserProfile((prev) => ({
+          ...prev,
+          name: fullName,
+          email: session.user.email || 'researcher@institution.edu',
+        }));
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setIsLoaded(true);
+      if (session?.user) {
+        const metadata = session.user.user_metadata || {};
+        const fullName = metadata.full_name || metadata.name || session.user.email?.split('@')[0] || 'Lead Researcher';
+        setUserProfile((prev) => ({
+          ...prev,
+          name: fullName,
+          email: session.user.email || 'researcher@institution.edu',
+        }));
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
 
   const handleUpdateUserProfile = (updatedFields) => {
     setUserProfile((prev) => ({ ...prev, ...updatedFields }));
@@ -750,7 +762,7 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const isAuthenticated = Boolean(isSignedIn);
+  const isAuthenticated = Boolean(session?.user);
 
   const handleLoginSuccess = (userData) => {
     if (userData && userData.name) {
@@ -765,29 +777,30 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
-      if (signOut) await signOut();
+      await supabase.auth.signOut();
     } catch (err) {
       console.warn('[SIGN OUT NOTICE]', err);
     }
+    setSession(null);
     window.history.pushState({}, '', '/login');
     setCurrentPath('/login');
   };
 
   if (!isLoaded) return null;
 
-  if (currentPath === '/sso-callback') {
-    return (
-      <AuthenticateWithRedirectCallback
-        signInFallbackRedirectUrl="/atlas"
-        signUpFallbackRedirectUrl="/atlas"
-        signInForceRedirectUrl="/atlas"
-        signUpForceRedirectUrl="/atlas"
-      />
-    );
+  if (currentPath === '/sso-callback' || currentPath.startsWith('/sso-callback')) {
+    if (isAuthenticated) {
+      window.history.replaceState({}, '', '/atlas');
+      setCurrentPath('/atlas');
+    }
   }
 
-  if (currentPath === '/login' || currentPath === '/auth' || !isAuthenticated) {
+  if (!isAuthenticated) {
     return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (currentPath === '/login' || currentPath === '/auth') {
+    window.history.replaceState({}, '', '/atlas');
   }
 
   return (

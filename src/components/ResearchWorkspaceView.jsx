@@ -24,6 +24,7 @@ export default function ResearchWorkspaceView({
   onRetryStage,
   canRetry = false,
   onDownloadReport,
+  priorTurns = [],
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [expandedExpId, setExpandedExpId] = useState(null);
@@ -35,6 +36,19 @@ export default function ResearchWorkspaceView({
 
   return (
     <div className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-7 space-y-4 animate-panel-entrance select-none font-sans min-w-0 pb-32 w-full max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto">
+
+      {priorTurns.map((turn) => (
+        <React.Fragment key={turn.id}>
+          <div className="ml-auto max-w-[92%] sm:max-w-[80%] flex justify-end gap-2.5">
+            <div className="bg-[#1B1B1B] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[#E8E5DF] leading-relaxed break-words">{turn.question}</div>
+            <div className="mt-0.5 w-7 h-7 rounded-full border border-[#353535] bg-[#181818] text-[10px] font-mono text-[#8A8884] flex items-center justify-center shrink-0">Y</div>
+          </div>
+          {turn.answer && <div className="flex items-start gap-3 pl-1 pb-2 border-b border-[#303030]/70">
+            <span className="mt-1 text-[#F15A3A] text-sm">✦</span>
+            <div className="min-w-0 flex-1 text-sm text-[#E8E5DF] leading-relaxed"><ChatMarkdown content={turn.answer} /></div>
+          </div>}
+        </React.Fragment>
+      ))}
       
       {/* Current user turn: visually conversational rather than a report field. */}
       <div className="ml-auto max-w-[92%] sm:max-w-[80%] flex justify-end gap-2.5 font-sans">

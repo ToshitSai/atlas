@@ -372,10 +372,17 @@ const RAW_ANSWER_CONTENT = {
   block3: `**Why it happens.** Linear probing optimizes the logit scale without touching the embedding geometry, so confidence and accuracy drift apart. Temperature scaling fixes most of it post-hoc, but a contrastive objective keeps calibration intact *during* training.\n\n**Caveat.** Under severe covariate shift, all methods overconfidence — the ECE gap narrows to noise. I'd treat the 63% improvement as in-domain only.\n\nWant me to escalate this into a full deep-research run with experiments?`
 };
 
+function getInitials(name) {
+  if (!name || typeof name !== 'string') return 'US';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
-export default function AtlasLanding({ onSendMessage, onOpenAuth, conversationTurns = [], isPending = false, onNewChat }) {
+export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, userProfile = {} }) {
   // Step state: 0 (idle) -> 1 (thinking) -> 2 (streaming) -> 3 (done)
   const [step, setStep] = useState(0);
   const [inputText, setInputText] = useState('');
@@ -652,7 +659,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, conversationTu
 
         {/* Bottom Profile Row */}
         <div
-          onClick={() => onOpenAuth && onOpenAuth()}
+          onClick={() => (onOpenSettings ? onOpenSettings() : onOpenAuth && onOpenAuth())}
           style={{
             padding: '12px 14px',
             borderTop: `1px solid ${TOKENS.colors.line}`,
@@ -679,14 +686,14 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, conversationTu
                 color: TOKENS.colors.ink
               }}
             >
-              TG
+              {getInitials(userProfile?.name || 'Toshit Sai Galam')}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: '13px', fontWeight: 600, color: TOKENS.colors.ink, lineHeight: 1.2 }}>
-                Toshit Galam
+                {userProfile?.name || 'Toshit Sai Galam'}
               </span>
               <span style={{ fontSize: '11px', color: TOKENS.colors.muted, lineHeight: 1.2 }}>
-                Pro · Research
+                {userProfile?.role || 'Pro · Research'}
               </span>
             </div>
           </div>
@@ -830,7 +837,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, conversationTu
                       margin: 0
                     }}
                   >
-                    Hello, Toshit.
+                    Hello, {(userProfile?.name || 'Toshit Sai Galam').split(' ')[0]}.
                   </h1>
 
                   <p

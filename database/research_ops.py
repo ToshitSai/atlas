@@ -85,24 +85,24 @@ class ResearchOpsMixin:
             "SELECT 1 FROM research_projects WHERE id=%s", (project_id,)) is not None
 
     def get_user_id_by_external(self, external_id: Optional[str]) -> Optional[str]:
-        """Resolve a verified Clerk ``sub`` to the existing users-table UUID."""
+        """Resolve a verified user sub to the existing users-table UUID or ID."""
         if not external_id:
             return None
-        row = self._query_one("SELECT id FROM users WHERE external_id=%s", (external_id,))
+        row = self._query_one("SELECT id FROM users WHERE external_id=%s OR id::text=%s", (external_id, external_id))
         return row[0] if row else None
 
     def project_owned_by(self, project_id: str, external_id: str) -> bool:
         return self._query_one(
-            """SELECT 1 FROM research_projects p JOIN users u ON u.id=p.user_id
-               WHERE p.id=%s AND u.external_id=%s""",
-            (project_id, external_id),
+            """SELECT 1 FROM research_projects p LEFT JOIN users u ON u.id=p.user_id
+               WHERE p.id=%s AND (p.user_id::text=%s OR u.external_id=%s OR u.id::text=%s)""",
+            (project_id, external_id, external_id, external_id),
         ) is not None
 
     def conversation_owned_by(self, conversation_id: str, external_id: str) -> bool:
         return self._query_one(
-            """SELECT 1 FROM conversations c JOIN users u ON u.id=c.user_id
-               WHERE c.id=%s AND u.external_id=%s""",
-            (conversation_id, external_id),
+            """SELECT 1 FROM conversations c LEFT JOIN users u ON u.id=c.user_id
+               WHERE c.id=%s AND (c.user_id::text=%s OR u.external_id=%s OR u.id::text=%s)""",
+            (conversation_id, external_id, external_id, external_id),
         ) is not None
 
     def save_project(self, project_id: str, data: Dict[str, Any],

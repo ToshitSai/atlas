@@ -6,6 +6,13 @@ import AtlasLogo from './AtlasLogo';
  * Fixed 210px left column. Dark #121212 canvas with muted #8A8884 icons,
  * active accent orange #F15A3A.
  */
+function getInitials(name) {
+  if (!name || typeof name !== 'string') return 'US';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function Sidebar({
   activeNav = 'research',
   onSelectNav,
@@ -15,6 +22,7 @@ export default function Sidebar({
   onMobileClose,
   backendConnected = true,
   connectionState = 'CONNECTED',
+  userProfile = {},
 }) {
   const navItems = [
     {
@@ -81,14 +89,14 @@ export default function Sidebar({
   const content = (
     <div className="flex flex-col h-full justify-between select-none">
       {/* Top Header & New Question Action */}
-      <div className="p-3 border-b border-[#303030] space-y-3">
+      <div className="p-3 border-b border-[#E9E7E1] space-y-3">
         {/* Brand Mark & Title */}
         <div className="flex items-center justify-between gap-2 px-1 pt-1">
           <div className="flex items-center gap-2 min-w-0">
             {/* Small orange scientific mark */}
             <AtlasLogo className="w-6 h-6 shrink-0" />
             <div className="min-w-0">
-              <span className="font-semibold text-sm tracking-normal text-[#E8E5DF] block leading-none truncate font-sans">
+                <span className="font-bold text-[15px] tracking-normal text-[#0D0C0A] block leading-none truncate font-sans">
                 Atlas
               </span>
             </div>
@@ -116,7 +124,7 @@ export default function Sidebar({
             onNewQuestion();
             onMobileClose?.();
           }}
-          className="w-full py-2 px-3 rounded bg-[#F15A3A] hover:bg-[#E44D31] text-white text-xs font-semibold flex items-center justify-center gap-1.5 btn-transition cursor-pointer shadow-sm font-sans"
+          className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-[#fffefb] border border-[#E9E7E1] text-[#44403B] text-[13.5px] font-semibold flex items-center justify-center gap-1.5 btn-transition cursor-pointer shadow-sm font-sans"
           aria-label="New question"
         >
           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -145,8 +153,8 @@ export default function Sidebar({
               aria-current={isActive ? 'page' : undefined}
               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded text-xs text-left nav-item-transition ${
                 isActive
-                  ? 'bg-[#1B1B1B] text-[#E8E5DF] font-medium border-l-2 border-[#F15A3A]'
-                  : 'text-[#8A8884] hover:text-[#E8E5DF] hover:bg-[#1B1B1B] font-normal'
+                  ? 'bg-white text-[#0D0C0A] font-medium border-l-2 border-[#FFD800]'
+                  : 'text-[#44403B] hover:text-[#0D0C0A] hover:bg-black/[0.035] font-normal'
               }`}
             >
               <span className={isActive ? 'text-[#F15A3A]' : 'text-[#8A8884]'}>
@@ -159,7 +167,7 @@ export default function Sidebar({
       </nav>
 
       {/* User Profile Section at Bottom (Replaces Research Settings) */}
-      <div className="p-2 border-t border-[#303030] bg-[#111111] font-sans">
+      <div className="p-2 border-t border-[#E9E7E1] bg-[#F4F4F2] font-sans">
         <button
           type="button"
           onClick={() => {
@@ -173,7 +181,7 @@ export default function Sidebar({
             {/* Avatar with Online Indicator */}
             <div className="relative shrink-0">
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#F15A3A] to-[#FF9100] flex items-center justify-center font-bold text-xs text-white shadow-sm font-sans border border-[#F15A3A]/30">
-                TS
+                {getInitials(userProfile?.name || 'Toshit Sai Galam')}
               </div>
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#111111]" title="Online" />
             </div>
@@ -181,12 +189,12 @@ export default function Sidebar({
             {/* Profile Info */}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1">
-                <span className="text-xs font-semibold text-[#E8E5DF] truncate group-hover:text-white font-sans leading-tight">
-                  Toshit Sai Galam
+                <span className="text-xs font-semibold text-[#0D0C0A] truncate group-hover:text-black font-sans leading-tight">
+                  {userProfile?.name || 'Toshit Sai Galam'}
                 </span>
               </div>
               <span className="text-[11px] text-[#8A8884] truncate block font-sans leading-tight mt-0.5">
-                Lead Researcher
+                {userProfile?.role || 'Lead ML Researcher'}
               </span>
             </div>
           </div>
@@ -206,7 +214,7 @@ export default function Sidebar({
   return (
     <>
       {/* Desktop Fixed Left Rail (~210px) */}
-      <aside className="hidden lg:block w-[210px] shrink-0 h-screen bg-[#111111] border-r border-[#303030] z-20">
+      <aside className="hidden lg:block w-[262px] shrink-0 h-screen bg-[#F4F4F2] border-r border-[#E9E7E1] z-20">
         {content}
       </aside>
 
@@ -214,7 +222,7 @@ export default function Sidebar({
       {isMobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Navigation drawer">
           <div className="fixed inset-0 bg-black/75" onClick={onMobileClose} aria-hidden="true" />
-          <aside className="relative w-[210px] max-w-[80vw] h-full bg-[#111111] border-r border-[#303030] shadow-2xl z-10">
+          <aside className="relative w-[262px] max-w-[80vw] h-full bg-[#F4F4F2] border-r border-[#E9E7E1] shadow-2xl z-10">
             {content}
           </aside>
         </div>

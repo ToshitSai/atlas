@@ -120,6 +120,8 @@ CONCEPT_KNOWLEDGE = {
     "ai": "Artificial Intelligence (AI) is technology that enables computers and machines to simulate human intelligence—such as understanding language, recognizing visual patterns, learning from experience, and solving complex problems.",
     "machine learning": "Machine Learning (ML) is a branch of artificial intelligence where algorithms automatically detect patterns in data to make predictions or decisions without being explicitly programmed for every scenario.",
     "ml": "Machine Learning (ML) is a branch of artificial intelligence where algorithms automatically detect patterns in data to make predictions or decisions without being explicitly programmed for every scenario.",
+    "llm": "A large language model (LLM) is a neural network trained on large collections of text to predict and generate language. It can summarize, explain, translate, and write code by using patterns learned during training, but its output still needs verification because it can be incomplete or incorrect.",
+    "large language model": "A large language model (LLM) is a neural network trained on large collections of text to predict and generate language. It can summarize, explain, translate, and write code by using patterns learned during training, but its output still needs verification because it can be incomplete or incorrect.",
     "deep learning": "Deep Learning is a subset of machine learning based on multi-layered artificial neural networks. It is particularly effective at processing complex, high-dimensional unstructured data like images, audio, and natural language.",
     "neural network": "An artificial neural network is a machine learning model inspired by biological brains. It consists of connected layers of nodes (neurons) that learn hierarchical representations of input data.",
     "neural networks": "An artificial neural network is a machine learning model inspired by biological brains. It consists of connected layers of nodes (neurons) that learn hierarchical representations of input data.",
@@ -1717,7 +1719,7 @@ def _handle_intent_message_impl(
         from backend.web_search import search_web
 
         entity = extract_entity_candidate(message) or message.strip()
-        history_ctx = _conversation_context(sid)
+        history_ctx = _conversation_context(sid, client_history=conversation_history)
         search_results = []
         try:
             search_results = search_web(f"{entity} biography", limit=5)
@@ -1895,7 +1897,7 @@ def _handle_intent_message_impl(
                 "lastTopic": sess.get("last_topic")
             }
 
-        history_ctx = _conversation_context(sid)
+        history_ctx = _conversation_context(sid, client_history=conversation_history)
         answer = _general_answer(message, topic, history_ctx, on_token=token_callback)
         # Pronoun follow-up ("why is it useful?") where the canned definition
         # would just be re-pasted: prefer a context-aware LLM answer about the
@@ -2232,7 +2234,10 @@ def _handle_intent_message_impl(
                 subjects = [t for t in sess["recent_topics"][-2:] if t in KNOWLEDGE]
         # Pronoun comparisons must carry their resolved subjects into the prompt,
         # or the model just sees "compare the two" and asks what 'the two' is.
+        reasoning_history = _conversation_context(sid, client_history=conversation_history)
         cmp_prompt = (
+            f"{reasoning_history}"
+            f"Treat the history above as context for the CURRENT USER MESSAGE. "
             f"Answer this comparison/reasoning question with a structured response "
             f"(criteria, trade-offs, and a bottom-line recommendation): {message}"
         )
@@ -2603,12 +2608,15 @@ def _handle_intent_message_impl(
             "- Summarize technical documents and structure scientific writing\n"
             "- Evaluate competing approaches with multi-factor technical reasoning\n"
             "- Run autonomous ML research pipelines and execute real experiments\n\n"
-            "Ready when you are. What should we investigate?"
+            "Ask me a question or describe a research task to begin."
         )
     elif "hello" in msg_clean:
-        content = "Ready when you are. What should we investigate?"
+        content = "Hello! I'm Atlas. I can answer questions, explain technical topics, write code, or help with a research task."
     else:
-        content = "Ready when you are. What should we investigate?"
+        # This is a real conversational fallback, never the landing/empty
+        # state copy.  The landing component owns its welcome text; assistant
+        # turns must always contain content specific to the current request.
+        content = "I’m Atlas. Tell me what you’d like to understand, build, or investigate."
 
     store.update_session(sid, {"last_assistant_message": content})
 

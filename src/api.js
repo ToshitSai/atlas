@@ -6,19 +6,20 @@
 const API_BASE = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api`;
 export const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
-// Clerk's getToken() hook can only be called inside React. App registers the
-// provider here so every API call (including SSE) carries the short-lived,
-// verified session token without ever putting user IDs or secrets in storage.
-let authTokenProvider = null;
-export function setAuthTokenProvider(provider) {
-  authTokenProvider = typeof provider === 'function' ? provider : null;
-}
+import { supabase } from './lib/supabase';
 
 async function withAuthHeaders(headers = {}) {
   const next = new Headers(headers);
-  if (authTokenProvider) {
-    const token = await authTokenProvider();
-    if (token) next.set('Authorization', `Bearer ${token}`);
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (token) {
+      next.set('Authorization', `Bearer ${token}`);
+    } else {
+      console.warn('[AUTH] Supabase session token unavailable for API request');
+    }
+  } catch (err) {
+    console.error('[AUTH HEADER ERROR]', err);
   }
   return next;
 }
@@ -125,11 +126,28 @@ export async function sendChatMessage(message, projectId = null, conversationId 
 //   final    -> resolves with the authoritative result dict
 //   error    -> rejects
 async function streamChat(body, { onActivity = () => {}, onToken = () => {} } = {}) {
-  const response = await fetch(`${API_BASE}/chat/stream`, {
+  let response = await fetch(`${API_BASE}/chat/stream`, {
     method: 'POST', headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body)
   });
-  if (!response.ok || !response.body) throw new Error(`Server error (${response.status})`);
+  // A session token can refresh. Retry once on 401 before surfacing an auth failure.
+  if (response.status === 401) {
+    response = await fetch(`${API_BASE}/chat/stream`, {
+      method: 'POST', headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body)
+    });
+  }
+  if (!response.ok || !response.body) {
+    let detail = '';
+    try { detail = (await response.clone().text()).slice(0, 500); } catch { detail = ''; }
+    console.error('[API STREAM ERROR]', { status: response.status, body: detail });
+    let message = `Server error (${response.status})`;
+    try {
+      const parsed = JSON.parse(detail);
+      message = parsed.detail || parsed.error || parsed.message || message;
+    } catch { /* keep status-only message for non-JSON responses */ }
+    throw new Error(message);
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = ''; let finalResult = null;
@@ -167,9 +185,9 @@ export async function sendDeepResearchStream(message, projectId = null, conversa
 
 // Normal-answer path over SSE so answer text renders token-by-token. The final
 // frame still carries the authoritative, post-processed response for reconcile.
-export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {} } = {}) {
+export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {} } = {}) {
   return streamChat(
-    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory: [] },
+    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, ...correlation },
     { onActivity, onToken }
   );
 }
