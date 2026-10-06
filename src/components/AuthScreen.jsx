@@ -195,6 +195,23 @@ export default function AuthScreen({ onLoginSuccess }) {
     } catch (e) {}
   }, []);
 
+  const verifyAuthServiceLoaded = () => {
+    const pubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+    if (!pubKey) {
+      const msg = 'Authentication error: VITE_CLERK_PUBLISHABLE_KEY environment variable is not configured.';
+      console.error(`[AUTH CONFIG ERROR] ${msg}`);
+      setAuthError(msg);
+      return false;
+    }
+    if (!clerkSignIn?.isLoaded) {
+      const msg = 'Authentication service is initializing or Clerk SDK failed to load. Please verify VITE_CLERK_PUBLISHABLE_KEY and network connection.';
+      console.error(`[AUTH INITIALIZATION ERROR] ${msg}`);
+      setAuthError(msg);
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -206,26 +223,26 @@ export default function AuthScreen({ onLoginSuccess }) {
       return;
     }
 
+    if (!verifyAuthServiceLoaded()) {
+      return;
+    }
+
     setIsCalibrating(true);
 
     try {
       if (mode === 'signin') {
-        if (clerkSignIn?.isLoaded && clerkSignIn?.signIn) {
-          const result = await clerkSignIn.signIn.create({
-            identifier: email.trim(),
-            password,
-          });
-          if (result.status === 'complete' && result.createdSessionId) {
-            await clerkSignIn.setActive({ session: result.createdSessionId });
-            setIsCalibrating(false);
-            const finalName = deriveUsernameFromEmail(email, displayName);
-            if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
-            return;
-          } else {
-            setAuthError('Additional authentication factor required. Please check your Clerk verification setup.');
-          }
+        const result = await clerkSignIn.signIn.create({
+          identifier: email.trim(),
+          password,
+        });
+        if (result.status === 'complete' && result.createdSessionId) {
+          await clerkSignIn.setActive({ session: result.createdSessionId });
+          setIsCalibrating(false);
+          const finalName = deriveUsernameFromEmail(email, displayName);
+          if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
+          return;
         } else {
-          setAuthError('Authentication service is initializing. Please try again.');
+          setAuthError('Additional authentication factor required. Please check your Clerk verification setup.');
         }
       } else if (mode === 'signup') {
         if (clerkSignUp?.isLoaded && clerkSignUp?.signUp) {
@@ -243,7 +260,7 @@ export default function AuthScreen({ onLoginSuccess }) {
             setAuthError('Sign-up incomplete. Please complete email verification.');
           }
         } else {
-          setAuthError('Authentication service is initializing. Please try again.');
+          setAuthError('Authentication sign-up service is initializing. Please try again.');
         }
       }
     } catch (err) {
@@ -258,17 +275,17 @@ export default function AuthScreen({ onLoginSuccess }) {
     setGoogleSpinning(true);
     setAuthError('');
 
+    if (!verifyAuthServiceLoaded()) {
+      setGoogleSpinning(false);
+      return;
+    }
+
     try {
-      if (clerkSignIn?.isLoaded && clerkSignIn?.signIn) {
-        await clerkSignIn.signIn.authenticateWithRedirect({
-          strategy: 'oauth_google',
-          redirectUrl: '/sso-callback',
-          redirectUrlComplete: '/atlas',
-        });
-      } else {
-        setAuthError('Authentication service is initializing. Please try again.');
-        setGoogleSpinning(false);
-      }
+      await clerkSignIn.signIn.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/atlas',
+      });
     } catch (err) {
       console.error('[CLERK GOOGLE OAUTH ERROR]', err);
       setAuthError(clerkErrorMessage(err, 'Google Sign-In failed or was cancelled. Please try again.'));
@@ -723,7 +740,14 @@ export default function AuthScreen({ onLoginSuccess }) {
           {/* Local Dev Session Option */}
           <button
             type="button"
-            onClick={() => setAuthError('Standard authentication required. Please sign in using email & password or Google OAuth.')}
+            onClick={() => {
+              const isDev = import.meta.env.MODE === 'development';
+              if (!isDev) {
+                setAuthError('Local research sessions are disabled in production. Please sign in using email & password or Google OAuth.');
+              } else {
+                if (onLoginSuccess) onLoginSuccess({ email: 'local.dev@institution.edu', name: 'Local Researcher' });
+              }
+            }}
             style={{
               width: '100%',
               height: '38px',

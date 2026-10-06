@@ -54,7 +54,7 @@ app.add_middleware(
         "CORS_ALLOWED_ORIGINS",
         "https://atlas-scientist.vercel.app,https://automl-scientist.vercel.app,http://localhost:3000,http://localhost:5173",
     ).split(",") if origin.strip()],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
