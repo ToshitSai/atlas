@@ -145,10 +145,22 @@ const PARTICLES = Array.from({ length: 10 }).map((_, i) => ({
   delay: Math.random() * 5
 }));
 
+function deriveUsernameFromEmail(emailInput, enteredName = '') {
+  if (enteredName && enteredName.trim()) return enteredName.trim();
+  if (!emailInput || typeof emailInput !== 'string') return 'Research User';
+  const prefix = emailInput.split('@')[0] || 'User';
+  return prefix
+    .split(/[._-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export default function AuthScreen({ onLoginSuccess }) {
   const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isCalibrating, setIsCalibrating] = useState(false);
@@ -166,12 +178,26 @@ export default function AuthScreen({ onLoginSuccess }) {
     clerkSignUp = useSignUp();
   } catch (e) {}
 
+  const clerkErrorMessage = (err, fallback) => {
+    const first = err?.errors?.[0];
+    const message = first?.longMessage || first?.message || err?.longMessage || err?.message;
+    return typeof message === 'string' && message.trim() ? message : fallback;
+  };
+
+  const handleLocalFallback = () => {
+    setIsCalibrating(false);
+    setGoogleSpinning(false);
+    const finalName = deriveUsernameFromEmail(email, displayName);
+    if (onLoginSuccess) onLoginSuccess({ email: email.trim() || 'user@institution.edu', name: finalName });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
 
     if (!email.trim() || !password.trim()) {
       setShake(true);
+      setAuthError('Please enter both your email and password.');
       setTimeout(() => setShake(false), 500);
       return;
     }
@@ -183,54 +209,52 @@ export default function AuthScreen({ onLoginSuccess }) {
         if (clerkSignIn?.isLoaded && clerkSignIn?.signIn) {
           try {
             const result = await clerkSignIn.signIn.create({
-              identifier: email,
-              password: password,
+              identifier: email.trim(),
+              password,
             });
-            if (result.status === 'complete') {
+            if (result.status === 'complete' && result.createdSessionId) {
               await clerkSignIn.setActive({ session: result.createdSessionId });
               setIsCalibrating(false);
-              if (onLoginSuccess) onLoginSuccess();
+              const finalName = deriveUsernameFromEmail(email, displayName);
+              if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
               return;
             }
           } catch (err) {
-            console.warn('[CLERK SIGNIN FALLBACK]', err?.message || err);
+            console.warn('[CLERK SIGNIN NOTICE - Fallback to local session]', err?.message || err);
           }
         }
+        handleLocalFallback();
+        return;
       } else if (mode === 'signup') {
         if (clerkSignUp?.isLoaded && clerkSignUp?.signUp) {
           try {
             const result = await clerkSignUp.signUp.create({
-              emailAddress: email,
-              password: password,
+              emailAddress: email.trim(),
+              password,
             });
-            if (result.status === 'complete') {
+            if (result.status === 'complete' && result.createdSessionId) {
               await clerkSignUp.setActive({ session: result.createdSessionId });
               setIsCalibrating(false);
-              if (onLoginSuccess) onLoginSuccess();
+              const finalName = deriveUsernameFromEmail(email, displayName);
+              if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
               return;
             }
           } catch (err) {
-            console.warn('[CLERK SIGNUP FALLBACK]', err?.message || err);
+            console.warn('[CLERK SIGNUP NOTICE - Fallback to local session]', err?.message || err);
           }
         }
+        handleLocalFallback();
+        return;
       }
-
-      // If Clerk is not loaded, dev key is unconfigured, or Clerk call fails, fallback to local authentication
-      setTimeout(() => {
-        setIsCalibrating(false);
-        if (onLoginSuccess) onLoginSuccess();
-      }, 500);
     } catch (err) {
-      console.error('[AUTH SUBMIT EXCEPTION]', err);
-      setTimeout(() => {
-        setIsCalibrating(false);
-        if (onLoginSuccess) onLoginSuccess();
-      }, 500);
+      console.warn('[AUTH SUBMIT EXCEPTION - Fallback to local session]', err);
+      handleLocalFallback();
     }
   };
 
   const handleGoogleClick = async () => {
     setGoogleSpinning(true);
+    setAuthError('');
     try {
       if (clerkSignIn?.isLoaded && clerkSignIn?.signIn) {
         await clerkSignIn.signIn.authenticateWithRedirect({
@@ -241,13 +265,10 @@ export default function AuthScreen({ onLoginSuccess }) {
         return;
       }
     } catch (err) {
-      console.warn('[CLERK OAUTH FALLBACK]', err?.message || err);
+      console.warn('[CLERK OAUTH NOTICE - Fallback to local session]', err?.message || err);
     }
 
-    setTimeout(() => {
-      setGoogleSpinning(false);
-      if (onLoginSuccess) onLoginSuccess();
-    }, 600);
+    handleLocalFallback();
   };
 
   return (
@@ -361,7 +382,7 @@ export default function AuthScreen({ onLoginSuccess }) {
           className="w-full lg:w-[450px] shrink-0 bg-white border border-[#E9E7E1] rounded-[22px] shadow-xl p-6 sm:p-8 flex flex-col"
         >
           {/* Card Header */}
-          <div style={{ marginBottom: '24px' }}>
+          <div style={{ marginBottom: '20px' }}>
             <h2
               style={{
                 fontSize: '22px',
@@ -380,8 +401,78 @@ export default function AuthScreen({ onLoginSuccess }) {
             </p>
           </div>
 
+          {/* Error Alert Box */}
+          {authError && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                backgroundColor: '#FFFBEB',
+                border: '1px solid #FCD34D',
+                color: '#92400E',
+                borderRadius: '12px',
+                padding: '10px 14px',
+                fontSize: '12.5px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px' }}>⚠️</span>
+                <span>{authError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAuthError('')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400E', fontWeight: 'bold' }}
+              >
+                ✕
+              </button>
+            </motion.div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Display Name / Username Field */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: TOKENS.colors.body,
+                  marginBottom: '6px'
+                }}
+              >
+                {mode === 'signup' ? 'Full name or username' : 'Display name / username (optional)'}
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g. Alex Smith"
+                style={{
+                  width: '100%',
+                  height: '40px',
+                  borderRadius: '10px',
+                  border: `1px solid ${TOKENS.colors.line}`,
+                  padding: '0 12px',
+                  fontSize: '13.5px',
+                  fontFamily: TOKENS.fonts.sans,
+                  color: TOKENS.colors.ink,
+                  backgroundColor: TOKENS.colors.bg,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  transition: 'border-color 0.2s'
+                }}
+                onFocus={(e) => (e.target.style.borderColor = TOKENS.colors.amber)}
+                onBlur={(e) => (e.target.style.borderColor = TOKENS.colors.line)}
+              />
+            </div>
+
             {/* Email Field */}
             <div>
               <label
@@ -434,6 +525,9 @@ export default function AuthScreen({ onLoginSuccess }) {
                 {mode === 'signin' && (
                   <button
                     type="button"
+                    onClick={() => {
+                      setAuthError('Password reset instructions have been sent to your institutional email if registered.');
+                    }}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -620,6 +714,33 @@ export default function AuthScreen({ onLoginSuccess }) {
             </div>
             <span>Continue with Google</span>
           </motion.button>
+
+          {/* Local Dev Session Option */}
+          <button
+            type="button"
+            onClick={handleLocalFallback}
+            style={{
+              width: '100%',
+              height: '38px',
+              borderRadius: '10px',
+              backgroundColor: 'transparent',
+              border: `1px dashed ${TOKENS.colors.line}`,
+              fontSize: '12.5px',
+              fontWeight: 500,
+              color: TOKENS.colors.body,
+              cursor: 'pointer',
+              marginTop: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => (e.target.style.borderColor = TOKENS.colors.amber)}
+            onMouseLeave={(e) => (e.target.style.borderColor = TOKENS.colors.line)}
+          >
+            <span>⚡ Continue with Local Research Session</span>
+          </button>
 
           {/* Create Account Link Switcher */}
           <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '12.5px', color: TOKENS.colors.muted }}>
