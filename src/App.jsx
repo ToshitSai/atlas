@@ -11,7 +11,6 @@ import HypothesesView from './components/HypothesesView';
 import ReportsView from './components/ReportsView';
 import HistoryView from './components/HistoryView';
 import SettingsModal from './components/SettingsModal';
-import AuthScreen from './components/AuthScreen';
 import AtlasLanding from './components/AtlasLanding';
 import { getDynamicGreeting, ROTATING_PLACEHOLDERS } from './utils/greeting';
 import { supabase } from './lib/supabase';
@@ -730,12 +729,12 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const isAuthenticated = Boolean(session?.user);
-
-  const handleLoginSuccess = () => {
-    window.history.pushState({}, '', '/atlas');
-    setCurrentPath('/atlas');
-  };
+  useEffect(() => {
+    if (window.location.pathname === '/login' || window.location.pathname === '/auth' || window.location.pathname.startsWith('/sso-callback')) {
+      window.history.replaceState({}, '', '/atlas');
+      setCurrentPath('/atlas');
+    }
+  }, [currentPath]);
 
   const handleSignOut = async () => {
     try {
@@ -744,26 +743,11 @@ export default function App() {
       console.warn('[SIGN OUT NOTICE]', err);
     }
     setSession(null);
-    window.history.pushState({}, '', '/login');
-    setCurrentPath('/login');
+    window.history.pushState({}, '', '/atlas');
+    setCurrentPath('/atlas');
   };
 
   if (!isLoaded) return null;
-
-  if (currentPath === '/sso-callback' || currentPath.startsWith('/sso-callback')) {
-    if (isAuthenticated) {
-      window.history.replaceState({}, '', '/atlas');
-      setCurrentPath('/atlas');
-    }
-  }
-
-  if (!isAuthenticated) {
-    return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
-  }
-
-  if (currentPath === '/login' || currentPath === '/auth') {
-    window.history.replaceState({}, '', '/atlas');
-  }
 
   return (
     <WorkspaceApp
