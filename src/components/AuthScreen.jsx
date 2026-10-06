@@ -184,12 +184,16 @@ export default function AuthScreen({ onLoginSuccess }) {
     return typeof message === 'string' && message.trim() ? message : fallback;
   };
 
-  const handleLocalFallback = () => {
-    setIsCalibrating(false);
-    setGoogleSpinning(false);
-    const finalName = deriveUsernameFromEmail(email, displayName);
-    if (onLoginSuccess) onLoginSuccess({ email: email.trim() || 'user@institution.edu', name: finalName });
-  };
+  // Read URL query params on mount to handle OAuth failure redirects (e.g. user cancelled at consent screen)
+  React.useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const errorParam = params.get('error') || params.get('error_description');
+      if (errorParam) {
+        setAuthError('Google authentication was cancelled or access was denied. Please try again.');
+      }
+    } catch (e) {}
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -207,61 +211,52 @@ export default function AuthScreen({ onLoginSuccess }) {
     try {
       if (mode === 'signin') {
         if (clerkSignIn?.isLoaded && clerkSignIn?.signIn) {
-          try {
-            const result = await clerkSignIn.signIn.create({
-              identifier: email.trim(),
-              password,
-            });
-            if (result.status === 'complete' && result.createdSessionId) {
-              await clerkSignIn.setActive({ session: result.createdSessionId });
-              setIsCalibrating(false);
-              const finalName = deriveUsernameFromEmail(email, displayName);
-              if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
-              return;
-            }
-          } catch (err) {
-            console.warn('[CLERK SIGNIN NOTICE - Fallback to local session]', err?.message || err);
+          const result = await clerkSignIn.signIn.create({
+            identifier: email.trim(),
+            password,
+          });
+          if (result.status === 'complete' && result.createdSessionId) {
+            await clerkSignIn.setActive({ session: result.createdSessionId });
+            setIsCalibrating(false);
+            const finalName = deriveUsernameFromEmail(email, displayName);
+            if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
+            return;
+          } else {
+            setAuthError('Additional authentication factor required. Please check your Clerk verification setup.');
           }
+        } else {
+          setAuthError('Authentication service is initializing. Please try again.');
         }
-        handleLocalFallback();
-        return;
       } else if (mode === 'signup') {
         if (clerkSignUp?.isLoaded && clerkSignUp?.signUp) {
-          try {
-            const result = await clerkSignUp.signUp.create({
-              emailAddress: email.trim(),
-              password,
-            });
-            if (result.status === 'complete' && result.createdSessionId) {
-              await clerkSignUp.setActive({ session: result.createdSessionId });
-              setIsCalibrating(false);
-              const finalName = deriveUsernameFromEmail(email, displayName);
-              if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
-              return;
-            }
-          } catch (err) {
-            console.warn('[CLERK SIGNUP NOTICE - Fallback to local session]', err?.message || err);
+          const result = await clerkSignUp.signUp.create({
+            emailAddress: email.trim(),
+            password,
+          });
+          if (result.status === 'complete' && result.createdSessionId) {
+            await clerkSignUp.setActive({ session: result.createdSessionId });
+            setIsCalibrating(false);
+            const finalName = deriveUsernameFromEmail(email, displayName);
+            if (onLoginSuccess) onLoginSuccess({ email: email.trim(), name: finalName });
+            return;
+          } else {
+            setAuthError('Sign-up incomplete. Please complete email verification.');
           }
+        } else {
+          setAuthError('Authentication service is initializing. Please try again.');
         }
-        handleLocalFallback();
-        return;
       }
     } catch (err) {
-      console.warn('[AUTH SUBMIT EXCEPTION - Fallback to local session]', err);
-      handleLocalFallback();
+      console.error('[AUTH SUBMIT ERROR]', err);
+      setAuthError(clerkErrorMessage(err, 'Invalid email or password. Please try again.'));
+    } finally {
+      setIsCalibrating(false);
     }
   };
 
   const handleGoogleClick = async () => {
     setGoogleSpinning(true);
     setAuthError('');
-    let redirected = false;
-
-    const timeoutTimer = setTimeout(() => {
-      if (!redirected) {
-        handleLocalFallback();
-      }
-    }, 800);
 
     try {
       if (clerkSignIn?.isLoaded && clerkSignIn?.signIn) {
@@ -270,16 +265,15 @@ export default function AuthScreen({ onLoginSuccess }) {
           redirectUrl: '/sso-callback',
           redirectUrlComplete: '/atlas',
         });
-        redirected = true;
-        clearTimeout(timeoutTimer);
-        return;
+      } else {
+        setAuthError('Authentication service is initializing. Please try again.');
+        setGoogleSpinning(false);
       }
     } catch (err) {
-      console.warn('[CLERK OAUTH NOTICE - Fallback to local session]', err?.message || err);
+      console.error('[CLERK GOOGLE OAUTH ERROR]', err);
+      setAuthError(clerkErrorMessage(err, 'Google Sign-In failed or was cancelled. Please try again.'));
+      setGoogleSpinning(false);
     }
-
-    clearTimeout(timeoutTimer);
-    handleLocalFallback();
   };
 
   return (
@@ -729,7 +723,7 @@ export default function AuthScreen({ onLoginSuccess }) {
           {/* Local Dev Session Option */}
           <button
             type="button"
-            onClick={handleLocalFallback}
+            onClick={() => setAuthError('Standard authentication required. Please sign in using email & password or Google OAuth.')}
             style={{
               width: '100%',
               height: '38px',

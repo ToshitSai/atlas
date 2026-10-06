@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '@clerk/react';
+import { useAuth, useUser, AuthenticateWithRedirectCallback } from '@clerk/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -720,37 +720,28 @@ function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const { isLoaded, isSignedIn, signOut } = useAuth();
-  const [localAuth, setLocalAuth] = useState(() => {
-    try {
-      return localStorage.getItem('atlas_auth_session') === 'true';
-    } catch {
-      return false;
-    }
+  const { user } = useUser();
+
+  const [userProfile, setUserProfile] = useState({
+    name: 'Lead Researcher',
+    email: 'researcher@institution.edu',
+    role: 'Lead ML Researcher',
   });
 
-  const [userProfile, setUserProfile] = useState(() => {
-    try {
-      const saved = localStorage.getItem('atlas_user_profile');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.name && parsed.name.trim() && parsed.name !== 'Research User') return parsed;
-      }
-    } catch {}
-    return {
-      name: 'Toshit Sai Galam',
-      email: 'researcher@institution.edu',
-      role: 'Lead ML Researcher',
-    };
-  });
+  useEffect(() => {
+    if (user) {
+      const fullName = user.fullName || user.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Lead Researcher';
+      const emailAddr = user.primaryEmailAddress?.emailAddress || 'researcher@institution.edu';
+      setUserProfile({
+        name: fullName,
+        email: emailAddr,
+        role: 'Lead ML Researcher',
+      });
+    }
+  }, [user]);
 
   const handleUpdateUserProfile = (updatedFields) => {
-    setUserProfile((prev) => {
-      const next = { ...prev, ...updatedFields };
-      try {
-        localStorage.setItem('atlas_user_profile', JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+    setUserProfile((prev) => ({ ...prev, ...updatedFields }));
   };
 
   useEffect(() => {
@@ -759,28 +750,20 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const isAuthenticated = Boolean(isSignedIn || localAuth);
+  const isAuthenticated = Boolean(isSignedIn);
 
   const handleLoginSuccess = (userData) => {
-    try {
-      localStorage.setItem('atlas_auth_session', 'true');
-    } catch {}
     if (userData && userData.name) {
       handleUpdateUserProfile({
         name: userData.name,
         email: userData.email || 'user@institution.edu',
       });
     }
-    setLocalAuth(true);
     window.history.pushState({}, '', '/atlas');
     setCurrentPath('/atlas');
   };
 
   const handleSignOut = async () => {
-    try {
-      localStorage.setItem('atlas_auth_session', 'false');
-    } catch {}
-    setLocalAuth(false);
     try {
       if (signOut) await signOut();
     } catch (err) {
@@ -790,11 +773,17 @@ export default function App() {
     setCurrentPath('/login');
   };
 
-  if (!isLoaded && !localAuth) return null;
+  if (!isLoaded) return null;
 
   if (currentPath === '/sso-callback') {
-    handleLoginSuccess({ name: 'Google Researcher', email: 'google.user@institution.edu' });
-    return null;
+    return (
+      <AuthenticateWithRedirectCallback
+        signInFallbackRedirectUrl="/atlas"
+        signUpFallbackRedirectUrl="/atlas"
+        signInForceRedirectUrl="/atlas"
+        signUpForceRedirectUrl="/atlas"
+      />
+    );
   }
 
   if (currentPath === '/login' || currentPath === '/auth' || !isAuthenticated) {

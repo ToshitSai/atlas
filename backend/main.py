@@ -24,31 +24,21 @@ from backend.auth import verified_clerk_user_id
 app = FastAPI(title="Atlas Research API", version="2.0.0")
 
 
-def _clerk_auth_enabled() -> bool:
-    """Single source of truth for whether per-user ownership is enforced.
-
-    When Clerk auth is disabled every caller shares the "anonymous" identity, so
-    project ownership must NOT be enforced anywhere — otherwise a project that
-    /api/projects happily lists would 404 on /api/chat (visible-but-unusable).
-    """
-    return os.environ.get("CLERK_AUTH_ENABLED", "false").lower() in {"1", "true", "yes"}
-
-
 class ClerkAuthenticationMiddleware(BaseHTTPMiddleware):
-    """Optional Clerk enforcement. Disabled until authentication is re-enabled."""
+    """Enforces verified authentication for all protected /api/ endpoints."""
     public_paths = {"/api/health", "/api/config"}
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         if not path.startswith("/api/") or path in self.public_paths:
             return await call_next(request)
-        if not _clerk_auth_enabled():
-            request.state.clerk_user_id = "anonymous"
-            return await call_next(request)
         try:
             request.state.clerk_user_id = verified_clerk_user_id(request)
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        except Exception as exc:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized: A valid session is required."})
+
         parts = path.split("/")
         if len(parts) >= 4 and parts[2] == "projects" and parts[3]:
             if not store.project_owned_by(parts[3], request.state.clerk_user_id):
@@ -243,13 +233,11 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     Ensures casual chat does NOT mutate research state or create unwanted projects.
     """
     from backend.intent_router import handle_intent_message
-    message = payload.get("message", "").strip()
+    from backend.answer_pipeline import normalize_question, classify_mode, structured_response
+    message = normalize_question(payload.get("message"))
     active_project_id = payload.get("projectId")
     user_id = request.state.clerk_user_id
-    # Ownership is only enforced when Clerk auth is enabled; with auth disabled the
-    # middleware skips per-project enforcement and /api/projects lists every
-    # project, so /api/chat must accept them too (otherwise: visible-but-404).
-    if _clerk_auth_enabled() and active_project_id and not store.project_owned_by(active_project_id, user_id):
+    if active_project_id and not store.project_owned_by(active_project_id, user_id):
         raise HTTPException(status_code=404, detail="Project not found.")
     conversation_id = f"{user_id}:{payload.get('conversationId', 'default-session')}"
     request_id = str(payload.get("requestId") or "")
@@ -354,6 +342,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # the dataset-approval flow for direct ML build requests.
     from backend.intent_router import classify_research_route
     routing_decision = classify_research_route(message)
+    execution_mode = classify_mode(message, routing_decision)
     # Persist the selected mode once per user request. Streamed/project updates
     # read this state; they never reclassify partial assistant output.
     store.update_session(conversation_id, {"research_route": routing_decision})
@@ -388,6 +377,9 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         token_callback=token_callback,
     )
     res["researchRouting"] = routing_decision
+    # Publicly auditable routing metadata.  This is metadata only; the
+    # established handlers remain the source of truth for tool execution.
+    res["mode"] = execution_mode
     # Update provider health + routing log from the REAL per-provider outcomes
     # and attach a secret-free routing summary (internal/debug; not rendered).
     try:
@@ -687,6 +679,25 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # to show and never receives chain-of-thought.
     from backend.confidence import assess_confidence
     res["confidence"] = assess_confidence(message, res)
+
+    # Canonical response contract.  Never fall back to an older answer when a
+    # model/provider fails: return an explicit error response instead.
+    try:
+        res = structured_response(
+            res,
+            question=message,
+            history=conversation_history,
+            mode=execution_mode,
+            citations=res.get("sources"),
+        )
+    except ValueError as contract_error:
+        print(f"[ANSWER CONTRACT ERROR] request_id={request_id or 'unknown'}: {contract_error}")
+        res.update({
+            "response": "I couldn't generate a reliable answer for that request. Please try again.",
+            "answer": "I couldn't generate a reliable answer for that request. Please try again.",
+            "validated": False,
+            "error": "answer_generation_failed",
+        })
 
     store.record_message(
         conversation_id, "assistant", res.get("response", ""),
