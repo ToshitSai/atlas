@@ -198,7 +198,7 @@ export default function AuthScreen({ onLoginSuccess }) {
   const verifyAuthServiceLoaded = () => {
     const pubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
     if (!pubKey) {
-      const msg = 'Authentication error: VITE_CLERK_PUBLISHABLE_KEY environment variable is not configured.';
+      const msg = 'VITE_CLERK_PUBLISHABLE_KEY is not set';
       console.error(`[AUTH CONFIG ERROR] ${msg}`);
       setAuthError(msg);
       return false;
@@ -741,8 +741,7 @@ export default function AuthScreen({ onLoginSuccess }) {
           <button
             type="button"
             onClick={() => {
-              const isDev = import.meta.env.MODE === 'development';
-              if (!isDev) {
+              if (!import.meta.env.DEV) {
                 setAuthError('Local research sessions are disabled in production. Please sign in using email & password or Google OAuth.');
               } else {
                 if (onLoginSuccess) onLoginSuccess({ email: 'local.dev@institution.edu', name: 'Local Researcher' });
