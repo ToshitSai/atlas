@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase, getSupabaseConfigError } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 // ============================================================================
 // DESIGN SYSTEM TOKENS
@@ -184,11 +184,6 @@ export default function AuthScreen({ onLoginSuccess }) {
       setAuthError('Please enter your institutional email to reset your password.');
       return;
     }
-    const configError = getSupabaseConfigError();
-    if (configError) {
-      setAuthError(configError);
-      return;
-    }
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: `${window.location.origin}/login`,
@@ -211,13 +206,6 @@ export default function AuthScreen({ onLoginSuccess }) {
       setShake(true);
       setAuthError('Please enter both your email and password.');
       setTimeout(() => setShake(false), 500);
-      return;
-    }
-
-    const configError = getSupabaseConfigError();
-    if (configError) {
-      console.error(`[SUPABASE CONFIG ERROR] ${configError}`);
-      setAuthError(configError);
       return;
     }
 
@@ -273,14 +261,6 @@ export default function AuthScreen({ onLoginSuccess }) {
   const handleGoogleClick = async () => {
     setGoogleSpinning(true);
     setAuthError('');
-
-    const configError = getSupabaseConfigError();
-    if (configError) {
-      console.error(`[SUPABASE CONFIG ERROR] ${configError}`);
-      setAuthError(configError);
-      setGoogleSpinning(false);
-      return;
-    }
 
     try {
       const { error } = await supabase.auth.signInWithOAuth({

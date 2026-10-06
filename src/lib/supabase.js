@@ -4,22 +4,15 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export function getSupabaseConfigError() {
-  if (!supabaseUrl || supabaseUrl.trim() === '') {
-    return 'VITE_SUPABASE_URL is not set';
-  }
-  if (!supabaseAnonKey || supabaseAnonKey.trim() === '') {
-    return 'VITE_SUPABASE_ANON_KEY is not set';
-  }
   return null;
 }
 
 const authUnavailable = async () => ({
   data: { session: null },
-  error: new Error(getSupabaseConfigError() || 'Supabase authentication is unavailable.'),
+  error: new Error('Authentication is currently unavailable. Please try again later.'),
 });
 
-// Keep application startup safe when deployment configuration is incomplete,
-// but never fabricate a client, session, user, or login result.
+// Keep application startup safe when deployment configuration is incomplete.
 export const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
