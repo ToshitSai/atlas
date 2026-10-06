@@ -88,10 +88,31 @@ class Repository:
                     pass
                 self._local.conn = None
         import psycopg
-        conn = psycopg.connect(self.url, connect_timeout=CONNECT_TIMEOUT)
+        dsn = self.url
+        # Require TLS for managed/cloud PostgreSQL unless the caller already
+        # supplied an explicit sslmode (local development may opt out).
+        if "sslmode=" not in dsn.lower() and not any(host in dsn for host in ("localhost", "127.0.0.1")):
+            dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
+        try:
+            conn = psycopg.connect(dsn, connect_timeout=CONNECT_TIMEOUT)
+        except Exception as exc:
+            # Never include the DSN: it can contain a database password.
+            code = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None) or "n/a"
+            print(f"[POSTGRES CONNECT ERROR] type={type(exc).__name__} code={code} reason={str(exc).splitlines()[0][:240]}")
+            raise
         conn.autocommit = False
         self._local.conn = conn
         return conn
+
+    def health_check(self) -> bool:
+        """Run a real, read-only connectivity probe."""
+        try:
+            row = self._query_one("SELECT 1")
+            return bool(row and int(row[0]) == 1)
+        except Exception as exc:
+            code = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None) or "n/a"
+            print(f"[POSTGRES HEALTH ERROR] type={type(exc).__name__} code={code} reason={str(exc).splitlines()[0][:240]}")
+            return False
 
     def close(self):
         conn = getattr(self._local, "conn", None)
@@ -176,8 +197,14 @@ class Repository:
                     sql = f.read()
                 try:
                     conn.execute(sql)
+                    # A migration file may record itself (e.g. 005_supabase_rls.sql
+                    # ends with its own INSERT ... ON CONFLICT DO NOTHING). The runner
+                    # owns this bookkeeping, so make our insert idempotent too — a bare
+                    # INSERT would collide inside the same transaction, roll back the
+                    # whole migration, and silently degrade the instance to JSON.
                     conn.execute(
-                        "INSERT INTO schema_migrations (migration) VALUES (%s)", (name,))
+                        "INSERT INTO schema_migrations (migration) VALUES (%s) "
+                        "ON CONFLICT (migration) DO NOTHING", (name,))
                     conn.commit()
                     applied.append(name)
                 except Exception:

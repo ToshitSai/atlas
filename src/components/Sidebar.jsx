@@ -3,16 +3,8 @@ import AtlasLogo from './AtlasLogo';
 
 /**
  * Sidebar Navigation:
- * Fixed 210px left column. Dark #121212 canvas with muted #8A8884 icons,
- * active accent orange #F15A3A.
+ * Fixed 262px left column. Dark/muted canvas with active accent orange #F15A3A.
  */
-function getInitials(name) {
-  if (!name || typeof name !== 'string') return 'US';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 export default function Sidebar({
   activeNav = 'research',
   onSelectNav,
@@ -22,7 +14,6 @@ export default function Sidebar({
   onMobileClose,
   backendConnected = true,
   connectionState = 'CONNECTED',
-  userProfile = {},
 }) {
   const navItems = [
     {
@@ -93,10 +84,9 @@ export default function Sidebar({
         {/* Brand Mark & Title */}
         <div className="flex items-center justify-between gap-2 px-1 pt-1">
           <div className="flex items-center gap-2 min-w-0">
-            {/* Small orange scientific mark */}
             <AtlasLogo className="w-6 h-6 shrink-0" />
             <div className="min-w-0">
-                <span className="font-bold text-[15px] tracking-normal text-[#0D0C0A] block leading-none truncate font-sans">
+              <span className="font-bold text-[15px] tracking-normal text-[#0D0C0A] block leading-none truncate font-sans">
                 Atlas
               </span>
             </div>
@@ -164,56 +154,32 @@ export default function Sidebar({
             </button>
           );
         })}
+
+        {onOpenSettings && (
+          <button
+            type="button"
+            onClick={() => {
+              onOpenSettings();
+              onMobileClose?.();
+            }}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded text-xs text-left text-[#44403B] hover:text-[#0D0C0A] hover:bg-black/[0.035] font-normal font-sans"
+          >
+            <span className="text-[#8A8884]">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </span>
+            <span className="truncate min-w-0">Settings</span>
+          </button>
+        )}
       </nav>
-
-      {/* User Profile Section at Bottom (Replaces Research Settings) */}
-      <div className="p-2 border-t border-[#E9E7E1] bg-[#F4F4F2] font-sans">
-        <button
-          type="button"
-          onClick={() => {
-            onOpenSettings();
-            onMobileClose?.();
-          }}
-          className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-[#1B1B1B] transition-all cursor-pointer group text-left"
-          aria-label="User Profile & Settings"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            {/* Avatar with Online Indicator */}
-            <div className="relative shrink-0">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#F15A3A] to-[#FF9100] flex items-center justify-center font-bold text-xs text-white shadow-sm font-sans border border-[#F15A3A]/30">
-                {getInitials(userProfile?.name || 'Toshit Sai Galam')}
-              </div>
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#111111]" title="Online" />
-            </div>
-
-            {/* Profile Info */}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1">
-                <span className="text-xs font-semibold text-[#0D0C0A] truncate group-hover:text-black font-sans leading-tight">
-                  {userProfile?.name || 'Toshit Sai Galam'}
-                </span>
-              </div>
-              <span className="text-[11px] text-[#8A8884] truncate block font-sans leading-tight mt-0.5">
-                {userProfile?.role || 'Lead ML Researcher'}
-              </span>
-            </div>
-          </div>
-
-          {/* Settings gear icon trigger */}
-          <div className="text-[#8A8884] group-hover:text-[#E8E5DF] p-1 rounded transition-colors shrink-0">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </div>
-        </button>
-      </div>
     </div>
   );
 
   return (
     <>
-      {/* Desktop Fixed Left Rail (~210px) */}
+      {/* Desktop Fixed Left Rail (~262px) */}
       <aside className="hidden lg:block w-[262px] shrink-0 h-screen bg-[#F4F4F2] border-r border-[#E9E7E1] z-20">
         {content}
       </aside>

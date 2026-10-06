@@ -13,17 +13,29 @@ export function getSupabaseConfigError() {
   return null;
 }
 
-const dummyUrl = 'https://placeholder-project.supabase.co';
-const dummyAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MjAwMDAwMDAwMH0.placeholder';
+const authUnavailable = async () => ({
+  data: { session: null },
+  error: new Error(getSupabaseConfigError() || 'Supabase authentication is unavailable.'),
+});
 
-export const supabase = createClient(
-  supabaseUrl || dummyUrl,
-  supabaseAnonKey || dummyAnonKey,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  }
-);
+// Keep application startup safe when deployment configuration is incomplete,
+// but never fabricate a client, session, user, or login result.
+export const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
+  : {
+      auth: {
+        getSession: authUnavailable,
+        signInWithPassword: authUnavailable,
+        signUp: authUnavailable,
+        resetPasswordForEmail: authUnavailable,
+        signInWithOAuth: authUnavailable,
+        signOut: async () => ({ error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      },
+    };

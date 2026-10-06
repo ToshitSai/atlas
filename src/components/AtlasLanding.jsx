@@ -372,17 +372,10 @@ const RAW_ANSWER_CONTENT = {
   block3: `**Why it happens.** Linear probing optimizes the logit scale without touching the embedding geometry, so confidence and accuracy drift apart. Temperature scaling fixes most of it post-hoc, but a contrastive objective keeps calibration intact *during* training.\n\n**Caveat.** Under severe covariate shift, all methods overconfidence — the ECE gap narrows to noise. I'd treat the 63% improvement as in-domain only.\n\nWant me to escalate this into a full deep-research run with experiments?`
 };
 
-function getInitials(name) {
-  if (!name || typeof name !== 'string') return 'US';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
-export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, userProfile = {} }) {
+export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat }) {
   // Step state: 0 (idle) -> 1 (thinking) -> 2 (streaming) -> 3 (done)
   const [step, setStep] = useState(0);
   const [inputText, setInputText] = useState('');
@@ -656,49 +649,6 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             </motion.div>
           ))}
         </div>
-
-        {/* Bottom Profile Row */}
-        <div
-          onClick={() => (onOpenSettings ? onOpenSettings() : onOpenAuth && onOpenAuth())}
-          style={{
-            padding: '12px 14px',
-            borderTop: `1px solid ${TOKENS.colors.line}`,
-            backgroundColor: TOKENS.colors.sidebar,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-            cursor: 'pointer'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '26px',
-                height: '26px',
-                borderRadius: '50%',
-                backgroundColor: TOKENS.colors.chip,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: TOKENS.colors.ink
-              }}
-            >
-              {getInitials(userProfile?.name || 'Toshit Sai Galam')}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: TOKENS.colors.ink, lineHeight: 1.2 }}>
-                {userProfile?.name || 'Toshit Sai Galam'}
-              </span>
-              <span style={{ fontSize: '11px', color: TOKENS.colors.muted, lineHeight: 1.2 }}>
-                {userProfile?.role || 'Pro · Research'}
-              </span>
-            </div>
-          </div>
-          <IconUser size={15} style={{ color: TOKENS.colors.muted }} />
-        </div>
       </aside>
 
       {/* =================================================================== */}
@@ -837,7 +787,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                       margin: 0
                     }}
                   >
-                    Hello, {(userProfile?.name || 'Toshit Sai Galam').split(' ')[0]}.
+                    What can Atlas research for you today?
                   </h1>
 
                   <p
@@ -848,7 +798,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                       marginBottom: 0
                     }}
                   >
-                    What can Atlas research for you today?
+                    Autonomous machine learning research platform for hypothesis formulation and experiment execution.
                   </p>
 
                   <SuggestionCardGrid onSelectPrompt={handleSend} />

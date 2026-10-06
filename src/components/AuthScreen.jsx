@@ -747,11 +747,7 @@ export default function AuthScreen({ onLoginSuccess }) {
           <button
             type="button"
             onClick={() => {
-              if (!import.meta.env.DEV) {
-                setAuthError('Local research sessions are disabled in production. Please sign in using email & password or Google OAuth.');
-              } else {
-                if (onLoginSuccess) onLoginSuccess({ email: 'local.dev@institution.edu', name: 'Local Researcher' });
-              }
+              setAuthError('Local research sessions are disabled. Please sign in using email & password or Google OAuth.');
             }}
             style={{
               width: '100%',

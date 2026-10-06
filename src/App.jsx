@@ -85,7 +85,7 @@ const STAGE_NAME_MAP = {
 // circles next to a completion header.
 const DATASET_DEPENDENT_STAGES = [5, 6, 7, 8, 10, 11, 12];
 
-function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
+function WorkspaceApp({ onSignOut }) {
 
   // Dynamic Time-Based Greeting & Placeholder States
   const [greeting, setGreeting] = useState(() => getDynamicGreeting());
@@ -250,7 +250,7 @@ function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
     setStageEvents([]);
 
     // Do not discard a real user request while the startup health probe is
-    // still catching up with Clerk session restoration. The chat request
+    // still catching up with Supabase session restoration. The chat request
     // carries its own token and is the authoritative connectivity check;
     // failures are surfaced by the request error handler below.
 
@@ -546,7 +546,6 @@ function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
         onMobileClose={() => setIsMobileNavOpen(false)}
         backendConnected={backendConnected}
         connectionState={connectionState}
-        userProfile={userProfile}
       />
 
       {/* Main Workspace Stack (Center Column + Right Context Sidebar) */}
@@ -587,7 +586,6 @@ function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
                       connectionState={connectionState}
                       errorFeedback={errorFeedback}
                       onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-                      userProfile={userProfile}
                       onOpenSettings={() => setIsSettingsOpen(true)}
                     />
                   </motion.div>
@@ -700,8 +698,6 @@ function WorkspaceApp({ onSignOut, userProfile, onUpdateUserProfile }) {
         onClose={() => setIsSettingsOpen(false)}
         settings={sysSettings}
         onSignOut={onSignOut}
-        userProfile={userProfile}
-        onUpdateUserProfile={onUpdateUserProfile}
       />
     </div>
   );
@@ -712,49 +708,21 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  const [userProfile, setUserProfile] = useState({
-    name: 'Lead Researcher',
-    email: 'researcher@institution.edu',
-    role: 'Lead ML Researcher',
-  });
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setIsLoaded(true);
-      if (session?.user) {
-        const metadata = session.user.user_metadata || {};
-        const fullName = metadata.full_name || metadata.name || session.user.email?.split('@')[0] || 'Lead Researcher';
-        setUserProfile((prev) => ({
-          ...prev,
-          name: fullName,
-          email: session.user.email || 'researcher@institution.edu',
-        }));
-      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setIsLoaded(true);
-      if (session?.user) {
-        const metadata = session.user.user_metadata || {};
-        const fullName = metadata.full_name || metadata.name || session.user.email?.split('@')[0] || 'Lead Researcher';
-        setUserProfile((prev) => ({
-          ...prev,
-          name: fullName,
-          email: session.user.email || 'researcher@institution.edu',
-        }));
-      }
     });
 
     return () => {
       subscription?.unsubscribe();
     };
   }, []);
-
-  const handleUpdateUserProfile = (updatedFields) => {
-    setUserProfile((prev) => ({ ...prev, ...updatedFields }));
-  };
 
   useEffect(() => {
     const handlePopState = () => setCurrentPath(window.location.pathname);
@@ -764,13 +732,7 @@ export default function App() {
 
   const isAuthenticated = Boolean(session?.user);
 
-  const handleLoginSuccess = (userData) => {
-    if (userData && userData.name) {
-      handleUpdateUserProfile({
-        name: userData.name,
-        email: userData.email || 'user@institution.edu',
-      });
-    }
+  const handleLoginSuccess = () => {
     window.history.pushState({}, '', '/atlas');
     setCurrentPath('/atlas');
   };
@@ -806,8 +768,6 @@ export default function App() {
   return (
     <WorkspaceApp
       onSignOut={handleSignOut}
-      userProfile={userProfile}
-      onUpdateUserProfile={handleUpdateUserProfile}
     />
   );
 }

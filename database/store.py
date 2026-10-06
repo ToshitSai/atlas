@@ -81,7 +81,8 @@ class ResearchStore:
             repo.ensure_system_user()
             return repo
         except Exception as e:
-            print(f"[STORE DB INIT WARNING]: {e}")
+            code = getattr(e, "sqlstate", None) or getattr(e, "pgcode", None) or "n/a"
+            print(f"[STORE DB INIT WARNING] type={type(e).__name__} code={code} reason={str(e).splitlines()[0][:240]}")
             return None
 
     # --------------------------------------------------------------- loading
@@ -750,5 +751,17 @@ class ResearchStore:
     def using_postgres(self) -> bool:
         """True when the Postgres repository is active and healthy."""
         return self.repo is not None and self._db_healthy
+
+    def database_health(self) -> bool:
+        """Run a real SELECT 1 against the configured repository."""
+        if self.repo is None or not self._db_healthy:
+            return False
+        if not hasattr(self.repo, "health_check"):
+            return self._db_healthy
+        try:
+            self._db_healthy = bool(self.repo.health_check())
+        except Exception:
+            self._db_healthy = False
+        return self._db_healthy
 
 store = ResearchStore()
