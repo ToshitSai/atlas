@@ -263,6 +263,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   // Typewriter state
   const [streamIndex, setStreamIndex] = useState(0);
   const [copied, setCopied] = useState(false);
+  const hasConversation = conversationTurns.length > 0;
 
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
@@ -1055,7 +1056,9 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         <div
           style={{
             position: 'absolute',
-            bottom: 0,
+            ...(hasConversation
+              ? { bottom: 0, top: 'auto', transform: 'translateY(0)' }
+              : { top: '58%', bottom: 'auto', transform: 'translateY(-50%)' }),
             left: 0,
             right: 0,
             pointerEvents: 'none',
@@ -1253,9 +1256,12 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             style={{
               fontSize: '11px',
               color: TOKENS.colors.muted,
-              marginTop: '8px',
+              marginTop: hasConversation ? '8px' : 0,
               textAlign: 'center',
-              pointerEvents: 'auto'
+              pointerEvents: 'auto',
+              ...(hasConversation
+                ? {}
+                : { position: 'fixed', left: 0, right: 0, bottom: '12px' })
             }}
           >
             Atlas can run experiments and cite sources. Verify important results.
