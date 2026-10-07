@@ -22,6 +22,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import backend.config
 from database.store import store
 from backend import hf_datasets as hf
+from backend import rag
 
 app = FastAPI(title="Atlas Research API", version="2.0.0")
 
@@ -1064,6 +1065,50 @@ async def analyze_file(file: UploadFile = File(...)):
                 **parsed, "textPreview": text[:4000], "charactersExtracted": len(text)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/files")
+async def upload_rag_file(file: UploadFile = File(...), request: Request = None):
+    """Store, parse, embed and index a private document for this session."""
+    name = rag.safe_filename(file.filename or "document")
+    content = await file.read()
+    try:
+        ext = rag.validate_upload(name, content)
+        pages = rag.extract_text(name, content)
+        chunks = rag.chunk_pages(pages)
+        if not store.database_health() or not getattr(store, "repo", None):
+            raise HTTPException(status_code=503, detail="Document storage is unavailable because the database is not connected.")
+        owner = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
+        storage_key = rag.blob_upload(name, content)
+        repo = store.repo
+        doc_id = str(uuid.uuid4())
+        repo._execute("INSERT INTO documents (id,title,source,doc_type,metadata) VALUES (%s,%s,%s,%s,%s)", (doc_id, name, storage_key, ext[1:], json.dumps({"owner_session": owner})))
+        repo._execute("INSERT INTO document_metadata (document_id,owner_session,storage_key,original_filename,byte_size,status) VALUES (%s,%s,%s,%s,%s,'processing')", (doc_id, owner, storage_key, name, len(content)))
+        model, vectors = rag.embed_texts([item["text"] for item in chunks])
+        for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
+            chunk_id = str(uuid.uuid4())
+            repo._execute("INSERT INTO document_chunks (id,document_id,chunk_index,content,page,metadata,token_count) VALUES (%s,%s,%s,%s,%s,%s,%s)", (chunk_id, doc_id, index, chunk["text"], chunk.get("page"), json.dumps({"start": chunk["start"], "end": chunk["end"]}), max(1, len(chunk["text"]) // 4)))
+            repo._execute("INSERT INTO document_embeddings (chunk_id,embedding_model,dimensions,embedding) VALUES (%s,%s,%s,%s::vector)", (chunk_id, model, len(vector), rag.vector_literal(vector)))
+        repo._execute("UPDATE document_metadata SET status='ready',updated_at=now() WHERE document_id=%s", (doc_id,))
+        return {"id": doc_id, "filename": name, "status": "ready", "chunks": len(chunks), "storage": "private"}
+    except HTTPException:
+        raise
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400 if isinstance(exc, ValueError) else 503, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"[RAG UPLOAD ERROR] type={type(exc).__name__}: {str(exc).splitlines()[0][:240]}")
+        raise HTTPException(status_code=500, detail="Document indexing failed.") from exc
+
+
+@app.get("/api/files/{file_id}")
+async def rag_file_status(file_id: str, request: Request):
+    if not store.database_health() or not getattr(store, "repo", None):
+        raise HTTPException(status_code=503, detail="Document storage is unavailable because the database is not connected.")
+    owner = getattr(request.state, "anon_id", "anonymous")
+    row = store.repo._query_one("SELECT document_id,original_filename,status,failure_reason,byte_size,updated_at FROM document_metadata WHERE document_id=%s AND owner_session=%s", (file_id, owner))
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found.")
+    return {"id": str(row[0]), "filename": row[1], "status": row[2], "error": row[3], "bytes": row[4], "updatedAt": row[5].isoformat() if row[5] else None}
 
 
 @app.get("/api/projects")
