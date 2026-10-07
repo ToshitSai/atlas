@@ -89,9 +89,9 @@ export default function ScientificInquiryCard({
   };
 
   return (
-    <div className="bg-[#181818] border border-[#303030] border-l-4 border-l-[#DF223A] rounded p-3.5 sm:p-4 shadow-sm animate-panel-entrance select-none font-sans">
+    <div className="bg-[var(--surface)] border border-[var(--border-subtle)] border-l-4 border-l-[#DF223A] rounded p-3.5 sm:p-4 shadow-sm animate-panel-entrance select-none font-sans text-[var(--text-body)]">
       {/* Card Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-[#303030] pb-2.5 mb-3">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-2.5 mb-3">
         <div className="flex items-center gap-2 min-w-0">
           {/* Small orange icon */}
           <div className="w-5 h-5 rounded bg-[#F15A3A]/10 border border-[#F15A3A]/30 flex items-center justify-center shrink-0">
@@ -100,7 +100,7 @@ export default function ScientificInquiryCard({
               <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
             </svg>
           </div>
-          <h2 className="text-xs sm:text-sm font-semibold tracking-normal text-[#E8E5DF] truncate font-sans">
+          <h2 className="text-xs sm:text-sm font-semibold tracking-normal text-[var(--text-main)] truncate font-sans">
             {headingText}
           </h2>
         </div>
@@ -131,10 +131,10 @@ export default function ScientificInquiryCard({
                   {String(stage.id).padStart(2, '0')}.
                 </span>
                 <span className={`truncate text-xs font-sans ${
-                  status === 'completed' ? 'text-[#E8E5DF] font-medium' :
+                  status === 'completed' ? 'text-[var(--text-main)] font-medium' :
                   status === 'running' ? 'text-[#F15A3A] font-medium' :
                   status === 'failed' ? 'text-[#F87171] font-medium' :
-                  status === 'skipped' ? 'text-[#6B6966] font-normal' : 'text-[#8A8884] font-normal'
+                  status === 'skipped' ? 'text-[var(--text-muted)] font-normal' : 'text-[var(--text-secondary)] font-normal'
                 }`}>
                   {stage.name}
                 </span>

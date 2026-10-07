@@ -87,8 +87,10 @@ def assess_confidence(question: str, result: Dict[str, Any]) -> Dict[str, Any] |
         claim.pop("level", None)
         claim["basis"] = ["This is a testable proposal, not an established result."]
 
+    # Numeric values are deterministic evidence scores, not model self-reports.
+    score = {"high": 0.86, "medium": 0.64, "low": 0.32}[level]
     confidence: Dict[str, Any] = {
-        "overall": {"level": level, "band": {"high": "~90%+", "medium": "~60-90%", "low": "<60%"}[level]},
+        "overall": {"level": level, "score": score, "percentage": round(score * 100), "band": {"high": "high", "medium": "medium", "low": "low"}[level]},
         "claims": [claim],
         "basis": basis,
         "verification": [verification] if verification else [],

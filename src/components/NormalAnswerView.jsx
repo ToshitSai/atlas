@@ -46,7 +46,7 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
 function AnswerSkeleton() {
   return (
     <div className="space-y-3 py-1" role="status" aria-label="Atlas is thinking">
-      <div className="flex items-center gap-2 text-xs text-[#7A8794]"><span className="w-1.5 h-1.5 rounded-full bg-[#EAB308] animate-pulse" />Analyzing the question…</div>
+      <div className="flex items-center gap-2 text-xs text-[#4B5563]"><span className="w-3.5 h-3.5 rounded-full border-2 border-[#B8890A] border-t-transparent animate-spin" />Preparing a verified answer…</div>
       <div className="h-3 rounded bg-[#E8E5DE] animate-pulse w-[92%]" />
       <div className="h-3 rounded bg-[#EEECE6] animate-pulse w-[78%]" />
       <div className="h-3 rounded bg-[#F3F1EC] animate-pulse w-[64%]" />
