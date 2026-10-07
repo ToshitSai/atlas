@@ -218,7 +218,6 @@ export default function QuestionComposer({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => {
-          // Focus input if click originates on container padding or non-button areas
           if (e.target !== textareaRef.current && !e.target.closest('button')) {
             textareaRef.current?.focus();
           }
@@ -227,13 +226,13 @@ export default function QuestionComposer({
           isListening
             ? 'border-[var(--accent-yellow)]'
             : 'border-[var(--border-subtle)] focus-within:border-[var(--focus-ring)]'
-        } rounded-[18px] px-3 py-1.5 flex items-center gap-2 sm:gap-2.5 shadow-[0_4px_20px_rgba(20,18,10,.05)] transition-all duration-300 ease-in-out`}
+        } rounded-full px-3.5 py-1 flex items-center gap-2.5 shadow-[0_4px_20px_rgba(20,18,10,.06)] transition-all duration-300 ease-in-out h-[50px]`}
       >
         {/* Left "+" Icon / Quick Access Trigger */}
         <button
           type="button"
           onClick={() => textareaRef.current?.focus()}
-          className="text-[var(--text-secondary)] hover:text-[var(--text-body)] text-lg font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
+          className="text-[var(--text-main)] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer px-1"
           title="Quick access commands"
           aria-label="Quick access"
         >
@@ -246,65 +245,63 @@ export default function QuestionComposer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={
-            placeholder ||
-            (isListening
-              ? "Listening… Speak your research question"
-              : "Ask a direct question or describe a research task…")
-          }
+          placeholder={placeholder || (isListening ? "Listening… Speak your question" : "Ask Atlas")}
           rows={1}
           disabled={isPending}
           aria-label="Research question input"
-          className="flex-1 bg-transparent text-[14px] text-[var(--text-main)] placeholder-[var(--text-secondary)] focus:outline-none resize-none font-sans leading-relaxed min-h-[22px] py-0.5"
+          className="flex-1 bg-transparent text-[15px] text-[var(--text-main)] placeholder-[var(--text-secondary)] focus:outline-none resize-none font-sans leading-relaxed min-h-[22px] py-1"
         />
 
-        {/* Right Action Stack: Microphone or Send Button */}
+        {/* Right Action Stack */}
         <div className="flex items-center gap-2 shrink-0">
-          {text.trim() ? (
-            /* Send Button (when text is entered) */
-            <button
-              type="submit"
-              disabled={isPending}
-              aria-label="Send question"
-              title="Send question (Enter)"
-              className="w-7 h-7 rounded-full bg-[var(--text-main)] hover:scale-105 text-[var(--accent-yellow)] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer"
-            >
-              {isPending ? (
-                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-              )}
-            </button>
-          ) : (
-            /* Microphone Toggle Button (when empty) */
-            <button
-              type="button"
-              onClick={toggleListening}
-              disabled={isPending}
-              aria-label={isListening ? "Stop listening" : "Start voice recognition"}
-              title={isListening ? "Stop listening" : "Click to speak"}
-              className={`w-7.5 h-7.5 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0 ${
-                isListening
-                  ? 'bg-[#F15A3A] text-white shadow-md ring-2 ring-[#F15A3A]/40 animate-pulse cursor-pointer'
-                  : 'bg-white hover:bg-slate-200 text-[#F15A3A] cursor-pointer shadow'
-              }`}
-            >
-              {isListening ? (
-                /* Stop icon during active recording */
-                <span className="w-3.5 h-3.5 bg-white rounded-sm" />
-              ) : (
-                /* Orange microphone icon (#F15A3A) */
-                <svg className="w-4.5 h-4.5 text-[#F15A3A]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                </svg>
-              )}
-            </button>
-          )}
+          <button
+            type="button"
+            className="text-[13.5px] font-medium text-[var(--text-body)] hover:text-[var(--text-main)] flex items-center gap-1 cursor-pointer bg-transparent border-none px-1"
+          >
+            <span>Thinking</span>
+            <svg className="w-3.5 h-3.5 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+
+          {/* Microphone Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            disabled={isPending}
+            aria-label={isListening ? "Stop listening" : "Start voice recognition"}
+            title={isListening ? "Stop listening" : "Click to speak"}
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 shrink-0 ${
+              isListening
+                ? 'bg-[#F15A3A] text-white shadow-md ring-2 ring-[#F15A3A]/40 animate-pulse cursor-pointer'
+                : 'bg-[var(--surface-alt)] hover:bg-slate-200 text-[var(--text-main)] cursor-pointer'
+            }`}
+          >
+            {isListening ? (
+              <span className="w-3 h-3 bg-white rounded-sm" />
+            ) : (
+              <svg className="w-4 h-4 text-[var(--text-main)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
+            )}
+          </button>
+
+          {/* Solid Black Send Button */}
+          <button
+            type="submit"
+            disabled={isPending || !text.trim()}
+            aria-label="Send question"
+            title="Send question (Enter)"
+            className="w-9.5 h-9.5 rounded-full bg-[var(--text-main)] hover:scale-105 text-[var(--bg-main)] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer disabled:opacity-60"
+          >
+            {isPending ? (
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4 fill-current text-[var(--bg-main)]" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.996.996 0 00-1.37 1.14L4.2 11.5h9.3a.5.5 0 010 1H4.2l-2.17 6.76a1 1 0 001.37 1.14z" />
+              </svg>
+            )}
+          </button>
         </div>
       </form>
     </div>

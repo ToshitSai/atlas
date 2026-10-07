@@ -171,6 +171,16 @@ function IconClock({ size = 14, style = {} }) {
   );
 }
 
+function IconMic({ size = 16, style = {} }) {
+  return (
+    <svg width={size} height={size} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z" />
+      <path d="M19 10v2a7 7 0 01-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
+  );
+}
+
 // ============================================================================
 // 2x3 PIXEL GRID LOGO
 // ============================================================================
@@ -1065,22 +1075,44 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           <div
             style={{
               width: '100%',
-              maxWidth: '560px',
-              minHeight: isExpanded ? '76px' : '52px',
+              maxWidth: '680px',
+              height: '50px',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
-              borderRadius: isExpanded ? '20px' : '999px',
-              boxShadow: '0 4px 20px rgba(20,18,10,0.05)',
-              padding: isExpanded ? '8px 14px 6px 14px' : '6px 14px',
+              borderRadius: '9999px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+              padding: '4px 6px 4px 14px',
               pointerEvents: 'auto',
               display: 'flex',
-              flexDirection: isExpanded ? 'column' : 'row',
-              gap: '6px'
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: '10px'
             }}
           >
+            {/* Left "+" Button */}
+            <button
+              type="button"
+              onClick={() => inputRef.current?.focus()}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: TOKENS.colors.ink,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 2px',
+                flexShrink: 0
+              }}
+              title="Quick access"
+            >
+              <IconPlus size={18} style={{ color: TOKENS.colors.ink }} />
+            </button>
+
+            {/* Input Textarea */}
             <textarea
               ref={inputRef}
-              rows={isExpanded ? 2 : 1}
+              rows={1}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
@@ -1092,157 +1124,137 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               }}
               placeholder="Ask Atlas"
               style={{
-                width: isExpanded ? '100%' : 'auto',
-                flex: isExpanded ? 'none' : 1,
+                flex: 1,
                 backgroundColor: 'transparent',
                 border: 'none',
                 outline: 'none',
                 resize: 'none',
                 fontFamily: TOKENS.fonts.sans,
-                fontSize: '14px',
+                fontSize: '15px',
                 color: TOKENS.colors.ink,
-                lineHeight: '1.4'
+                lineHeight: '1.4',
+                paddingTop: '2px',
+                minHeight: '22px'
               }}
             />
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative' }}>
-                <div style={{ position: 'relative' }}>
-                  <button
-                    type="button"
-                    onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-                    style={{
-                      height: '25px',
-                      padding: '0 8px',
-                      borderRadius: '999px',
-                      border: `1px solid ${TOKENS.colors.line}`,
-                      backgroundColor: TOKENS.colors.card,
-                      fontSize: '11.5px',
-                      fontWeight: 500,
-                      color: TOKENS.colors.ink,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <IconSparkle size={12} style={{ color: TOKENS.colors.amber }} />
-                    <span>{selectedModel}</span>
-                    <IconChevronDown size={12} style={{ color: TOKENS.colors.muted }} />
-                  </button>
-
-                  {modelDropdownOpen && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: 0,
-                        bottom: '30px',
-                        width: '150px',
-                        backgroundColor: TOKENS.colors.card,
-                        border: `1px solid ${TOKENS.colors.line}`,
-                        borderRadius: '12px',
-                        boxShadow: '0 8px 20px rgba(0,0,0,0.08)',
-                        padding: '4px 0',
-                        zIndex: 50
-                      }}
-                    >
-                      {['Atlas Large', 'Atlas Fast', 'Atlas Reasoning'].map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => {
-                            setSelectedModel(m);
-                            setModelDropdownOpen(false);
-                          }}
-                          style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            padding: '5px 10px',
-                            border: 'none',
-                            backgroundColor: 'transparent',
-                            fontSize: '11.5px',
-                            fontWeight: selectedModel === m ? 600 : 400,
-                            color: TOKENS.colors.ink,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <span>{m}</span>
-                          {selectedModel === m && <IconCheck size={12} style={{ color: TOKENS.colors.amber }} />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
+            {/* Right Action Stack: Dropdown + Mic + Send */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'relative' }}>
+              {/* Model Dropdown */}
+              <div style={{ position: 'relative' }}>
                 <button
                   type="button"
-                  onClick={() => setIsDeepResearch(!isDeepResearch)}
+                  onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
                   style={{
-                    height: '25px',
+                    height: '32px',
                     padding: '0 8px',
-                    borderRadius: '999px',
-                    border: isDeepResearch ? `1px solid ${TOKENS.colors.amberBorder}` : `1px solid ${TOKENS.colors.line}`,
-                    backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'transparent',
-                    fontSize: '11.5px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    fontSize: '13.5px',
                     fontWeight: 500,
-                    color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.muted,
+                    color: TOKENS.colors.body,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '5px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
+                    gap: '4px',
+                    cursor: 'pointer'
                   }}
                 >
-                  {isDeepResearch && (
-                    <motion.span
-                      initial={{ scale: 0 }}
-                      animate={{ scale: [1, 1.3, 1] }}
-                      transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-                      style={{
-                        width: '4px',
-                        height: '4px',
-                        borderRadius: '50%',
-                        backgroundColor: TOKENS.colors.amber,
-                        display: 'inline-block'
-                      }}
-                    />
-                  )}
-                  <IconMicroscope size={12} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.muted }} />
-                  <span>Deep research</span>
+                  <span>{selectedModel}</span>
+                  <IconChevronDown size={14} style={{ color: TOKENS.colors.muted }} />
                 </button>
+
+                {modelDropdownOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      bottom: '38px',
+                      width: '160px',
+                      backgroundColor: TOKENS.colors.card,
+                      border: `1px solid ${TOKENS.colors.line}`,
+                      borderRadius: '12px',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                      padding: '4px 0',
+                      zIndex: 50
+                    }}
+                  >
+                    {['Atlas Large', 'Atlas Fast', 'Atlas Reasoning'].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          setSelectedModel(m);
+                          setModelDropdownOpen(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '6px 12px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          fontSize: '12px',
+                          fontWeight: selectedModel === m ? 600 : 400,
+                          color: TOKENS.colors.ink,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <span>{m}</span>
+                        {selectedModel === m && <IconCheck size={12} style={{ color: TOKENS.colors.amber }} />}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Light Circular Mic Button */}
+              <button
+                type="button"
+                onClick={() => setIsDeepResearch(!isDeepResearch)}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'var(--surface-alt)',
+                  border: isDeepResearch ? `1px solid ${TOKENS.colors.amberBorder}` : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.ink,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                title={isDeepResearch ? "Deep Research Enabled" : "Enable Deep Research"}
+              >
+                <IconMic size={16} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.ink }} />
+              </button>
+
+              {/* Solid Black Circular Send Button */}
               <motion.button
                 type="button"
                 onClick={() => handleSend()}
                 disabled={!inputText.trim()}
-                animate={inputText.trim().length > 0 ? { scale: [1, 1.06, 1] } : { scale: 1 }}
-                transition={
-                  inputText.trim().length > 0
-                    ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }
-                    : { type: 'spring', stiffness: 400, damping: 17 }
-                }
-                whileHover={{ scale: 1.1, rotate: -8 }}
-                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '38px',
+                  height: '38px',
                   borderRadius: '50%',
-                  backgroundColor: inputText.trim() ? TOKENS.colors.ink : TOKENS.colors.muted,
+                  backgroundColor: TOKENS.colors.ink,
                   border: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: 'var(--surface)',
                   cursor: inputText.trim() ? 'pointer' : 'default',
-                  opacity: inputText.trim() ? 1 : 0.55,
+                  opacity: inputText.trim() ? 1 : 0.6,
                   flexShrink: 0
                 }}
               >
-                <IconPaperPlane2 size={14} style={{ color: 'var(--surface)' }} />
+                <IconPaperPlane2 size={16} style={{ color: 'var(--surface)' }} />
               </motion.button>
             </div>
           </div>
