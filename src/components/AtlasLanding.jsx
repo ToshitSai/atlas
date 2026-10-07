@@ -472,7 +472,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         {/* History Grouped by Date */}
         <div
           style={{
-            flex: 1,
+            flex: hasConversation ? 1 : '0 0 auto',
             overflowY: 'auto',
             padding: '0 10px 12px 10px',
             display: 'flex',
@@ -526,7 +526,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           flexDirection: 'column',
           height: '100%',
           overflow: 'hidden',
-          backgroundColor: TOKENS.colors.bg
+          backgroundColor: TOKENS.colors.bg,
+          justifyContent: hasConversation ? 'flex-start' : 'center'
         }}
       >
         {/* =================================================================== */}
@@ -601,7 +602,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         <div
           ref={scrollRef}
           style={{
-            flex: 1,
+            flex: hasConversation ? 1 : '0 0 auto',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
@@ -621,7 +622,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingBottom: 0
+                paddingBottom: 0,
+                minHeight: hasConversation ? 'auto' : '0'
               }}
             >
               <AnimatePresence mode="wait">
