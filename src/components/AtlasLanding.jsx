@@ -1125,14 +1125,14 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             />
 
             {/* Right Action Stack: Dropdown + Mic + Send */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '8px', flexShrink: 0, position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', flexShrink: 0, position: 'relative' }}>
               {/* Model Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
                   type="button"
                   onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
                   style={{
-                    height: '40px',
+                    height: '36px',
                     padding: '0 14px',
                     borderRadius: '999px',
                     border: `1px solid ${TOKENS.colors.line}`,
@@ -1146,6 +1146,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     cursor: 'pointer'
                   }}
                 >
+                  <IconSparkle size={14} style={{ color: TOKENS.colors.amber }} />
                   <span>{selectedModel}</span>
                   <IconChevronDown size={14} style={{ color: TOKENS.colors.muted }} />
                 </button>
@@ -1196,6 +1197,30 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 )}
               </div>
 
+              {/* Deep Research chip */}
+              <button
+                type="button"
+                onClick={() => setIsDeepResearch(!isDeepResearch)}
+                aria-label="Deep research"
+                aria-pressed={isDeepResearch}
+                title="Deep research"
+                style={{
+                  height: '36px',
+                  borderRadius: '999px',
+                  padding: '0 12px',
+                  border: `1px solid ${isDeepResearch ? TOKENS.colors.amberBorder : TOKENS.colors.line}`,
+                  backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : TOKENS.colors.card,
+                  color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.body,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                <IconMicroscope size={14} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.body }} />
+                <span style={{ fontSize: '13px' }}>Deep research</span>
+              </button>
+
               {/* Solid Black Circular Send Button */}
               <motion.button
                 type="button"
@@ -1215,7 +1240,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   color: 'var(--surface)',
                   cursor: inputText.trim() ? 'pointer' : 'default',
                   opacity: inputText.trim() ? 1 : 0.35,
-                  flexShrink: 0
+                  flexShrink: 0,
+                  marginLeft: 'auto'
                 }}
               >
                 <IconPaperPlane2 size={16} style={{ color: 'var(--surface)' }} />
