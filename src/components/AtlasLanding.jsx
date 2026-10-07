@@ -263,6 +263,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   // Typewriter state
   const [streamIndex, setStreamIndex] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const hasConversation = conversationTurns.length > 0;
 
   const scrollRef = useRef(null);
@@ -277,6 +278,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
     input.style.overflowY = input.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    setIsExpanded(input.scrollHeight > 40 || input.value.includes('\n'));
   }, [inputText]);
 
   // Auto-scroll on step / streaming change
@@ -632,32 +634,17 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     textAlign: 'center'
                   }}
                 >
-                  <div style={{ marginBottom: '16px' }}>
-                    <AtlasPixelGrid cellSize={10} gap={3} heroMode={true} />
-                  </div>
-
                   <h1
                     style={{
-                      fontSize: '30px',
-                      fontWeight: 700,
+                      fontSize: '34px',
+                      fontWeight: 400,
                       letterSpacing: '-0.02em',
                       color: TOKENS.colors.ink,
                       margin: 0
                     }}
                   >
-                    What can Atlas research for you today?
+                    How can Atlas help you today?
                   </h1>
-
-                  <p
-                    style={{
-                      fontSize: '15px',
-                      color: TOKENS.colors.muted,
-                      marginTop: '6px',
-                      marginBottom: 0
-                    }}
-                  >
-                    Autonomous machine learning research platform for hypothesis formulation and experiment execution.
-                  </p>
 
                 </motion.div>
               </AnimatePresence>
@@ -1074,15 +1061,15 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           <div
             style={{
               width: '100%',
-              maxWidth: '720px',
+              maxWidth: '820px',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
-              borderRadius: '22px',
-              boxShadow: '0 8px 30px rgba(20,18,10,0.07)',
-              padding: '10px 12px 8px 12px',
+              borderRadius: isExpanded ? '28px' : '999px',
+              boxShadow: '0 4px 24px rgba(20,18,10,0.06)',
+              padding: isExpanded ? '12px 14px 10px 14px' : '10px 16px',
               pointerEvents: 'auto',
               display: 'flex',
-              flexDirection: 'column',
+              flexDirection: isExpanded ? 'column' : 'row',
               gap: '8px'
             }}
           >
@@ -1098,9 +1085,10 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   handleSend();
                 }
               }}
-              placeholder="Ask Atlas anything — research, code, experiments..."
+              placeholder="Ask Atlas"
               style={{
-                width: '100%',
+                width: isExpanded ? '100%' : 'auto',
+                flex: isExpanded ? 'none' : 1,
                 backgroundColor: 'transparent',
                 border: 'none',
                 outline: 'none',
