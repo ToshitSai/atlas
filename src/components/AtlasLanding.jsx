@@ -1093,15 +1093,17 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             <button
               type="button"
               onClick={() => inputRef.current?.focus()}
+              aria-label="Add attachment"
               style={{
-                background: 'none',
-                border: 'none',
+                width: '40px', height: '40px', borderRadius: '50%',
+                background: 'transparent',
+                border: `1px solid transparent`,
                 color: TOKENS.colors.ink,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '0 2px',
+                padding: 0,
                 flexShrink: 0
               }}
               title="Quick access"
@@ -1146,17 +1148,17 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   type="button"
                   onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
                   style={{
-                    height: '32px',
-                    padding: '0 8px',
-                    borderRadius: '8px',
-                    border: 'none',
+                    height: '40px',
+                    padding: '0 14px',
+                    borderRadius: '999px',
+                    border: '1px solid transparent',
                     backgroundColor: 'transparent',
                     fontSize: '13.5px',
                     fontWeight: 500,
                     color: TOKENS.colors.body,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px',
+                    gap: '6px',
                     cursor: 'pointer'
                   }}
                 >
@@ -1214,12 +1216,14 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               <button
                 type="button"
                 onClick={() => setIsDeepResearch(!isDeepResearch)}
+                aria-label="Deep research"
+                aria-pressed={isDeepResearch}
                 style={{
-                  width: '36px',
-                  height: '36px',
+                  width: '40px',
+                  height: '40px',
                   borderRadius: '50%',
-                  backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'var(--surface-alt)',
-                  border: isDeepResearch ? `1px solid ${TOKENS.colors.amberBorder}` : 'none',
+                  backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'transparent',
+                  border: isDeepResearch ? `1px solid ${TOKENS.colors.amberBorder}` : '1px solid transparent',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1227,7 +1231,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   cursor: 'pointer',
                   transition: 'all 0.2s ease'
                 }}
-                title={isDeepResearch ? "Deep Research Enabled" : "Enable Deep Research"}
+                title="Deep research"
               >
                 <IconMicroscope size={16} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.ink }} />
               </button>
@@ -1240,8 +1244,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 style={{
-                  width: '38px',
-                  height: '38px',
+                  width: '40px',
+                  height: '40px',
                   borderRadius: '50%',
                   backgroundColor: TOKENS.colors.ink,
                   border: 'none',
@@ -1250,7 +1254,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   justifyContent: 'center',
                   color: 'var(--surface)',
                   cursor: inputText.trim() ? 'pointer' : 'default',
-                  opacity: inputText.trim() ? 1 : 0.6,
+                  opacity: inputText.trim() ? 1 : 0.35,
                   flexShrink: 0
                 }}
               >
