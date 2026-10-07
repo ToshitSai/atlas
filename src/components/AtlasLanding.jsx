@@ -1065,13 +1065,13 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           <div
             style={{
               width: '100%',
-              maxWidth: '820px',
-              minHeight: isExpanded ? '96px' : '72px',
+              maxWidth: '760px',
+              minHeight: isExpanded ? '88px' : '64px',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
               borderRadius: isExpanded ? '28px' : '999px',
               boxShadow: '0 4px 24px rgba(20,18,10,0.06)',
-              padding: isExpanded ? '12px 20px 10px 20px' : '10px 20px',
+              padding: isExpanded ? '10px 18px 8px 18px' : '8px 16px',
               pointerEvents: 'auto',
               display: 'flex',
               flexDirection: isExpanded ? 'column' : 'row',
