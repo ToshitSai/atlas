@@ -1196,32 +1196,6 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 )}
               </div>
 
-              {/* Deep Research mode toggle */}
-              <button
-                type="button"
-                onClick={() => setIsDeepResearch(!isDeepResearch)}
-                aria-label="Deep research"
-                aria-pressed={isDeepResearch}
-                style={{
-                  width: 'auto',
-                  height: '40px',
-                  borderRadius: '999px',
-                  backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'transparent',
-                  border: `1px solid ${TOKENS.colors.amberBorder}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0 12px',
-                  color: TOKENS.colors.amber,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-                title="Deep research"
-              >
-                <IconMicroscope size={16} style={{ color: TOKENS.colors.amber }} />
-                <span style={{ marginLeft: '6px', fontSize: '13px' }}>Deep research</span>
-              </button>
-
               {/* Solid Black Circular Send Button */}
               <motion.button
                 type="button"
