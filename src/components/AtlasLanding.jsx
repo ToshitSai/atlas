@@ -415,8 +415,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           flexDirection: 'column',
           flexShrink: 0,
           height: '100%',
-          position: 'absolute',
-          inset: '0 auto 0 0',
+          position: 'relative',
           zIndex: 20
         }}
       >
@@ -520,8 +519,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
       {/* =================================================================== */}
       <main
         style={{
-          width: '100vw',
-          flex: '0 0 100vw',
+          flex: '1 1 auto',
+          minWidth: 0,
           position: 'relative',
           display: 'flex',
           flexDirection: 'column',
@@ -1048,7 +1047,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         {/* =================================================================== */}
         <div
           style={{
-            position: 'relative',
+            position: hasConversation ? 'absolute' : 'static',
+            ...(hasConversation ? { bottom: 0, left: 0, right: 0 } : {}),
             pointerEvents: 'none',
             display: 'flex',
             flexDirection: 'column',
