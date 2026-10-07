@@ -273,7 +273,6 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   // Typewriter state
   const [streamIndex, setStreamIndex] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const hasConversation = conversationTurns.length > 0;
 
   const scrollRef = useRef(null);
@@ -288,7 +287,6 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
     input.style.overflowY = input.scrollHeight > maxHeight ? 'auto' : 'hidden';
-    setIsExpanded(input.scrollHeight > 40 || input.value.includes('\n'));
   }, [inputText]);
 
   // Auto-scroll on step / streaming change
@@ -652,7 +650,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     alignItems: 'center',
                     textAlign: 'center',
                     width: 'min(100%, 1024px)',
-                    gap: '16px'
+                    gap: '40px'
                   }}
                 >
                   <h1
@@ -1078,49 +1076,26 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         >
           <div
             style={{
-              width: 'min(100%, 1024px)',
-              maxWidth: '1024px',
-              minHeight: hasConversation ? '50px' : '142px',
-              height: hasConversation ? '50px' : 'auto',
+              width: 'min(100%, 760px)',
+              maxWidth: '760px',
+              minHeight: '0',
+              height: 'auto',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
-              borderRadius: '9999px',
+              borderRadius: '28px',
               boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-              padding: '16px 18px 14px',
+              padding: '16px 20px',
               pointerEvents: 'auto',
               display: 'flex',
-              flexDirection: hasConversation ? 'row' : 'column',
+              flexDirection: 'column',
               alignItems: 'center',
               gap: '10px'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', width: hasConversation ? 'auto' : '100%', flex: hasConversation ? 1 : 'none', gap: '10px', minHeight: '42px' }}>
-            {/* Left "+" Button */}
-            <button
-              type="button"
-              onClick={() => inputRef.current?.focus()}
-              aria-label="Add attachment"
-              style={{
-                width: '40px', height: '40px', borderRadius: '50%',
-                background: 'transparent',
-                border: `1px solid transparent`,
-                color: TOKENS.colors.ink,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                flexShrink: 0
-              }}
-              title="Quick access"
-            >
-              <IconPlus size={18} style={{ color: TOKENS.colors.ink }} />
-            </button>
-
             {/* Input Textarea */}
             <textarea
               ref={inputRef}
-              rows={1}
+              rows={2}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
@@ -1132,7 +1107,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               }}
               placeholder="Ask Atlas"
               style={{
-                flex: '1 1 auto',
+                flex: 'none',
                 width: '100%',
                 backgroundColor: 'transparent',
                 border: 'none',
@@ -1143,13 +1118,14 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 color: TOKENS.colors.ink,
                 lineHeight: '1.4',
                 paddingTop: '2px',
-                minHeight: '22px'
+                minHeight: '56px',
+                maxHeight: '40vh',
+                overflowY: 'auto'
               }}
             />
-            </div>
 
             {/* Right Action Stack: Dropdown + Mic + Send */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: hasConversation ? 'auto' : '100%', gap: '8px', flexShrink: 0, position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '8px', flexShrink: 0, position: 'relative' }}>
               {/* Model Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
@@ -1159,7 +1135,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     height: '40px',
                     padding: '0 14px',
                     borderRadius: '999px',
-                    border: '1px solid transparent',
+                    border: `1px solid ${TOKENS.colors.line}`,
                     backgroundColor: 'transparent',
                     fontSize: '13.5px',
                     fontWeight: 500,
@@ -1227,21 +1203,23 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 aria-label="Deep research"
                 aria-pressed={isDeepResearch}
                 style={{
-                  width: '40px',
+                  width: 'auto',
                   height: '40px',
-                  borderRadius: '50%',
+                  borderRadius: '999px',
                   backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'transparent',
-                  border: isDeepResearch ? `1px solid ${TOKENS.colors.amberBorder}` : '1px solid transparent',
+                  border: `1px solid ${TOKENS.colors.amberBorder}`,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.ink,
+                  padding: '0 12px',
+                  color: TOKENS.colors.amber,
                   cursor: 'pointer',
                   transition: 'all 0.2s ease'
                 }}
                 title="Deep research"
               >
-                <IconMicroscope size={16} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.ink }} />
+                <IconMicroscope size={16} style={{ color: TOKENS.colors.amber }} />
+                <span style={{ marginLeft: '6px', fontSize: '13px' }}>Deep research</span>
               </button>
 
               {/* Solid Black Circular Send Button */}
