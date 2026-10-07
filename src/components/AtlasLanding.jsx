@@ -651,13 +651,13 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     flexDirection: 'column',
                     alignItems: 'center',
                     textAlign: 'center',
-                    width: 'min(100%, 1000px)',
-                    gap: '44px'
+                    width: 'min(100%, 1024px)',
+                    gap: '16px'
                   }}
                 >
                   <h1
                     style={{
-                      fontSize: 'clamp(32px, 3vw, 46px)',
+                      fontSize: 'clamp(32px, 3vw, 42px)',
                       fontWeight: 400,
                       letterSpacing: '-0.02em',
                       color: TOKENS.colors.ink,
@@ -1078,9 +1078,9 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         >
           <div
             style={{
-              width: 'min(100%, 1000px)',
-              maxWidth: '1000px',
-              minHeight: hasConversation ? '50px' : '132px',
+              width: 'min(100%, 1024px)',
+              maxWidth: '1024px',
+              minHeight: hasConversation ? '50px' : '142px',
               height: hasConversation ? '50px' : 'auto',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
