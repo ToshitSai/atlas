@@ -12,22 +12,11 @@ const TOKENS = {
     mono: '"SF Mono", ui-monospace, Menlo, monospace',
   },
   colors: {
-    bg: '#FAFAF9',
-    sidebar: '#F4F4F2',
-    ink: '#0D0C0A',
-    body: '#44403B',
-    muted: '#A8A29E',
-    line: '#E9E7E1',
-    yellow: '#FFD800',
-    yellowDeep: '#F5C900',
-    amber: '#B8890A',
-    orange: '#FA500F',
-    card: '#FFFFFF',
-    hover: 'rgba(0,0,0,0.035)',
-    bubble: '#F0EFEB',
-    chip: '#E8E3D8',
-    amberChip: '#FCF7DF',
-    amberBorder: '#F0E2A8',
+    bg: 'var(--bg-main)', sidebar: 'var(--bg-left-nav)', ink: 'var(--text-main)', body: 'var(--text-body)',
+    muted: 'var(--text-secondary)', line: 'var(--border-subtle)', yellow: 'var(--accent-yellow)',
+    yellowDeep: 'var(--accent-yellow)', amber: 'var(--accent-amber)', orange: 'var(--accent-orange)',
+    card: 'var(--surface)', hover: 'var(--surface-hover)', bubble: 'var(--surface-alt)', chip: 'var(--surface-alt)',
+    amberChip: 'color-mix(in srgb, var(--accent-yellow) 18%, var(--surface))', amberBorder: 'var(--border-emphasis)',
   }
 };
 
@@ -239,122 +228,6 @@ function AtlasPixelGrid({ cellSize = 7, gap = 2, heroMode = false }) {
   );
 }
 
-// ============================================================================
-// SECTION 6 & 10: SUGGESTION CARDS DATA & COMPONENT
-// ============================================================================
-const SUGGESTION_CARDS = [
-  {
-    id: 'deep-research',
-    title: 'Run deep research',
-    sub: 'on distribution shifts',
-    prompt: 'Do vision-language models stay calibrated under distribution shift?',
-    icon: IconMicroscope
-  },
-  {
-    id: 'literature-search',
-    title: 'Search literature',
-    sub: 'arXiv & Semantic Scholar',
-    prompt: 'Search arXiv literature for recent vision transformer calibration papers',
-    icon: IconSearch
-  },
-  {
-    id: 'benchmark-leakage',
-    title: 'Audit benchmark leakage',
-    sub: 'tabular & vision tasks',
-    prompt: 'Check for data leakage risks in open ML benchmark evaluations',
-    icon: IconLayers
-  },
-  {
-    id: 'synthesize-findings',
-    title: 'Synthesize findings',
-    sub: 'generate structured report',
-    prompt: 'Synthesize a formal research report comparing contrastive vs linear probing calibration',
-    icon: IconBook
-  }
-];
-
-function SuggestionCardGrid({ onSelectPrompt }) {
-  const [hoveredId, setHoveredId] = useState(null);
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl mx-auto mt-6 px-3 sm:px-0">
-      {SUGGESTION_CARDS.map((card, idx) => {
-        const IconComponent = card.icon;
-        const isHovered = hoveredId === card.id;
-
-        return (
-          <motion.button
-            key={card.id}
-            type="button"
-            onClick={() => onSelectPrompt(card.prompt)}
-            onHoverStart={() => setHoveredId(card.id)}
-            onHoverEnd={() => setHoveredId(null)}
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -4, boxShadow: '0 8px 20px rgba(20,18,10,0.08)' }}
-            transition={{
-              delay: 0.1 + idx * 0.06,
-              type: 'spring',
-              stiffness: 300,
-              damping: 22
-            }}
-            className="w-full bg-white border border-[#E9E7E1] rounded-2xl p-3 flex flex-col items-start text-left gap-2 sm:gap-2.5 cursor-pointer shadow-sm hover:border-[#FFD800] transition-colors"
-          >
-            <motion.div
-              animate={isHovered ? { scale: 1.1, rotate: [-3, 3, 0] } : { scale: 1, rotate: 0 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 18 }}
-              className="w-7 h-7 rounded-lg bg-[#FCF7DF] border border-[#F0E2A8] flex items-center justify-center text-[#B8890A] shrink-0"
-            >
-              <IconComponent size={14} style={{ color: TOKENS.colors.amber }} />
-            </motion.div>
-
-            <div className="flex flex-col gap-0.5 min-w-0 w-full">
-              <span className="text-xs font-semibold text-[#0D0C0A] leading-tight truncate w-full">
-                {card.title}
-              </span>
-              <span className="text-[10.5px] text-[#A8A29E] leading-tight truncate w-full">
-                {card.sub}
-              </span>
-            </div>
-          </motion.button>
-        );
-      })}
-    </div>
-  );
-}
-
-// ============================================================================
-// MOCK DATA & CONSTANTS
-// ============================================================================
-const MOCK_HISTORY = [
-  {
-    group: 'Today',
-    items: [
-      { id: '1', title: 'Calibration under distribution shift', type: 'Deep research' },
-      { id: '2', title: 'Explain diffusion schedulers simply', type: 'Chat' }
-    ]
-  },
-  {
-    group: 'Yesterday',
-    items: [
-      { id: '3', title: 'Leakage in tabular benchmarks', type: 'Deep research' },
-      { id: '4', title: 'Summarize attention paper', type: 'Chat' }
-    ]
-  },
-  {
-    group: '3 days ago',
-    items: [
-      { id: '5', title: 'LoRA rank ablation plan', type: 'Experiments' }
-    ]
-  },
-  {
-    group: 'Last week',
-    items: [
-      { id: '6', title: 'Dataset recommendations for OOD eval', type: 'Chat' }
-    ]
-  }
-];
-
 const THINKING_STEPS = [
   'Reading 42 sources',
   'Comparing 3 setups',
@@ -375,7 +248,7 @@ const RAW_ANSWER_CONTENT = {
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
-export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat }) {
+export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, historyItems = [], onSelectHistoryItem, theme = 'system', onThemeChange }) {
   // Step state: 0 (idle) -> 1 (thinking) -> 2 (streaming) -> 3 (done)
   const [step, setStep] = useState(0);
   const [inputText, setInputText] = useState('');
@@ -392,7 +265,18 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   const [copied, setCopied] = useState(false);
 
   const scrollRef = useRef(null);
+  const inputRef = useRef(null);
   const fullTextLength = RAW_ANSWER_CONTENT.block1.length + RAW_ANSWER_CONTENT.block3.length + 80;
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const mobile = window.matchMedia('(max-width: 640px)').matches;
+    const maxHeight = Math.min(window.innerHeight * 0.4, mobile ? 240 : 360);
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [inputText]);
 
   // Auto-scroll on step / streaming change
   const scrollToBottom = () => {
@@ -590,65 +474,38 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             gap: '16px'
           }}
         >
-          {MOCK_HISTORY.map((group, groupIdx) => (
+          {historyItems.map((chat, index) => (
             <motion.div
-              key={group.group}
+              key={chat.id || chat.conversationId || index}
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 + groupIdx * 0.08, type: 'spring', stiffness: 300, damping: 22 }}
+              transition={{ delay: 0.1 + index * 0.04, type: 'spring', stiffness: 300, damping: 22 }}
             >
-              <div
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: TOKENS.colors.muted,
-                  padding: '0 8px 6px 8px'
-                }}
-              >
-                {group.group}
-              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {group.items.map((chat) => (
-                  <motion.button
-                    key={chat.id}
-                    type="button"
-                    onClick={() => handleSend(chat.title)}
-                    whileHover={{ x: 4, backgroundColor: TOKENS.colors.hover }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '7px 8px',
-                      borderRadius: '9px',
-                      border: 'none',
-                      backgroundColor: 'transparent',
-                      fontSize: '12.5px',
-                      color: TOKENS.colors.body,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <span
-                      style={{
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        paddingRight: '6px'
-                      }}
-                    >
-                      {chat.title}
-                    </span>
-                    {chat.type === 'Deep research' && (
-                      <IconMicroscope size={13} style={{ color: TOKENS.colors.amber, flexShrink: 0 }} />
-                    )}
-                  </motion.button>
-                ))}
+                <motion.button
+                  type="button"
+                  onClick={() => onSelectHistoryItem ? onSelectHistoryItem(chat) : handleSend(chat.title || chat.question)}
+                  whileHover={{ x: 4, backgroundColor: TOKENS.colors.hover }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                  style={{ width: '100%', textAlign: 'left', padding: '7px 8px', borderRadius: '9px', border: 'none', backgroundColor: 'transparent', fontSize: '12.5px', color: TOKENS.colors.body, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                >
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: '6px' }}>
+                    {chat.title || chat.question || 'Untitled chat'}
+                  </span>
+                  {chat.type === 'Deep research' && <IconMicroscope size={13} style={{ color: TOKENS.colors.amber, flexShrink: 0 }} />}
+                </motion.button>
               </div>
             </motion.div>
           ))}
         </div>
+        {onThemeChange && (
+          <div style={{ borderTop: `1px solid ${TOKENS.colors.line}`, padding: '10px 14px' }}>
+            <button type="button" onClick={onThemeChange} aria-label={`Theme: ${theme}. Switch theme`} title="Switch theme" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', background: 'transparent', color: TOKENS.colors.muted, fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}>
+              <span className="theme-toggle-icon" aria-hidden="true">{theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}</span>
+              {theme[0].toUpperCase() + theme.slice(1)} theme
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* =================================================================== */}
@@ -801,7 +658,6 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     Autonomous machine learning research platform for hypothesis formulation and experiment execution.
                   </p>
 
-                  <SuggestionCardGrid onSelectPrompt={handleSend} />
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -1005,7 +861,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                         <div
                           style={{
                             display: 'flex',
-                            backgroundColor: '#FBFAF7',
+                            backgroundColor: 'var(--surface)',
                             borderBottom: `1px solid ${TOKENS.colors.line}`,
                             padding: '9px 14px',
                             fontSize: '13px',
@@ -1206,10 +1062,11 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            background: 'linear-gradient(to top, #FAFAF9 65%, transparent)',
+            background: 'linear-gradient(to top, var(--bg-main) 65%, transparent)',
             padding: '0 24px 20px 24px',
             zIndex: 10
           }}
+          className="atlas-prompt-dock"
         >
           <div
             style={{
@@ -1227,10 +1084,12 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             }}
           >
             <textarea
+              ref={inputRef}
               rows={step === 0 ? 2 : 1}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
+                if (e.nativeEvent?.isComposing || e.isComposing || e.keyCode === 229) return;
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend();
@@ -1423,7 +1282,14 @@ function ConversationThread({ turns, isPending }) {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '42px 24px 150px', width: '100%', maxWidth: '900px', margin: '0 auto' }}>
       {turns.map((turn) => (
-        <div key={turn.id} style={{ marginBottom: '34px' }}>
+          <motion.div
+            key={turn.id}
+            className="atlas-message-enter"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            style={{ marginBottom: '34px' }}
+          >
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
             <div style={{ background: TOKENS.colors.bubble, borderRadius: '16px 16px 4px 16px', padding: '14px 18px', color: TOKENS.colors.ink, maxWidth: '78%', fontSize: '15px', lineHeight: 1.5 }}>
               {turn.question}
@@ -1437,7 +1303,7 @@ function ConversationThread({ turns, isPending }) {
               {turn.error ? <div role="alert" style={{ color: '#B42318', marginTop: '8px' }}>{turn.error}</div> : null}
             </div>
           </div>
-        </div>
+        </motion.div>
       ))}
       {isPending && turns.at(-1)?.answer ? <div style={{ color: TOKENS.colors.muted, fontSize: '13px', paddingLeft: '48px' }}>Updating…</div> : null}
     </div>

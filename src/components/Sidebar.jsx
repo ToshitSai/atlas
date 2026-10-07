@@ -14,6 +14,8 @@ export default function Sidebar({
   onMobileClose,
   backendConnected = true,
   connectionState = 'CONNECTED',
+  theme = 'system',
+  onThemeChange,
 }) {
   const navItems = [
     {
@@ -174,13 +176,30 @@ export default function Sidebar({
           </button>
         )}
       </nav>
+
+      {onThemeChange && (
+        <div className="border-t border-[var(--border-subtle)] px-3 py-3">
+          <button
+            type="button"
+            onClick={onThemeChange}
+            className="w-full flex items-center justify-between gap-2 rounded px-2.5 py-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors"
+            aria-label={`Theme: ${theme}. Switch theme`}
+            title="Switch theme"
+          >
+            <span className="flex items-center gap-2">
+              <span className="theme-toggle-icon" aria-hidden="true">{theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}</span>
+              <span>{theme[0].toUpperCase() + theme.slice(1)} theme</span>
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 
   return (
     <>
       {/* Desktop Fixed Left Rail (~262px) */}
-      <aside className="hidden lg:block w-[262px] shrink-0 h-screen bg-[#F4F4F2] border-r border-[#E9E7E1] z-20">
+      <aside className="hidden lg:block w-[262px] shrink-0 h-screen bg-[var(--bg-left-nav)] border-r border-[var(--border-subtle)] z-20">
         {content}
       </aside>
 
@@ -188,7 +207,7 @@ export default function Sidebar({
       {isMobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Navigation drawer">
           <div className="fixed inset-0 bg-black/75" onClick={onMobileClose} aria-hidden="true" />
-          <aside className="relative w-[262px] max-w-[80vw] h-full bg-[#F4F4F2] border-r border-[#E9E7E1] shadow-2xl z-10">
+          <aside className="relative w-[262px] max-w-[80vw] h-full bg-[var(--bg-left-nav)] border-r border-[var(--border-subtle)] shadow-2xl z-10">
             {content}
           </aside>
         </div>

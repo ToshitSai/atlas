@@ -11,18 +11,10 @@ const TOKENS = {
     mono: '"SF Mono", ui-monospace, Menlo, monospace',
   },
   colors: {
-    bg: '#FAFAF9',
-    sidebar: '#F4F4F2',
-    ink: '#0D0C0A',
-    body: '#44403B',
-    muted: '#A8A29E',
-    line: '#E9E7E1',
-    yellow: '#FFD800',
-    yellowDeep: '#F5C900',
-    amber: '#B8890A',
-    bubble: '#F0EFEB',
-    chip: '#E8E3D8',
-    card: '#FFFFFF'
+    bg: 'var(--bg-main)', sidebar: 'var(--bg-left-nav)', ink: 'var(--text-main)', body: 'var(--text-body)',
+    muted: 'var(--text-secondary)', line: 'var(--border-subtle)', yellow: 'var(--accent-yellow)',
+    yellowDeep: 'var(--accent-yellow)', amber: 'var(--accent-amber)', bubble: 'var(--surface-alt)',
+    chip: 'var(--surface-alt)', card: 'var(--surface)'
   }
 };
 

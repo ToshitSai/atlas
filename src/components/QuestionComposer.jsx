@@ -60,8 +60,12 @@ export default function QuestionComposer({
   // Auto-adjust textarea height dynamically
   useEffect(() => {
     if (textareaRef.current) {
+      const mobile = window.matchMedia('(max-width: 640px)').matches;
+      const maxHeight = Math.min(window.innerHeight * 0.4, mobile ? 240 : 360);
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 140)}px`;
+      const nextHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
+      textareaRef.current.style.height = `${nextHeight}px`;
+      textareaRef.current.style.overflowY = textareaRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
     }
   }, [text]);
 
@@ -177,6 +181,7 @@ export default function QuestionComposer({
   };
 
   const handleKeyDown = (e) => {
+    if (e.nativeEvent?.isComposing || e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -187,22 +192,22 @@ export default function QuestionComposer({
     <div className="w-full font-sans select-none space-y-1.5">
       {/* Feedback alerts if disconnected, failed, or speech error */}
       {errorFeedback ? (
-        <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5">
+        <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5">
           {errorFeedback}
         </div>
       ) : (connectionState === 'OFFLINE' && !backendConnected) ? (
-        <div className="text-xs font-sans text-[#F87171] px-3 pb-0.5 flex items-center justify-between">
+        <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5 flex items-center justify-between">
           <span>Research service not configured. No investigation or experiment has started.</span>
         </div>
       ) : null}
 
       {speechError && (
-        <div className="text-xs font-sans text-[#F15A3A] px-3 pb-0.5 flex items-center justify-between transition-opacity duration-200">
+        <div className="text-xs font-sans text-[var(--accent-orange)] px-3 pb-0.5 flex items-center justify-between transition-opacity duration-200">
           <span>{speechError}</span>
           <button
             type="button"
             onClick={() => setSpeechError(null)}
-            className="text-xs text-[#8A8884] hover:text-[#E8E5DF] underline ml-2 font-sans cursor-pointer"
+            className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-main)] underline ml-2 font-sans cursor-pointer"
           >
             Dismiss
           </button>
@@ -218,17 +223,17 @@ export default function QuestionComposer({
             textareaRef.current?.focus();
           }
         }}
-        className={`w-full bg-white hover:bg-[#fffefb] border ${
+        className={`w-full bg-[var(--surface)] hover:bg-[var(--surface-hover)] border ${
           isListening
-            ? 'border-[#F5C900]'
-            : 'border-[#E9E7E1] focus-within:border-[#B8890A]'
+            ? 'border-[var(--accent-yellow)]'
+            : 'border-[var(--border-subtle)] focus-within:border-[var(--focus-ring)]'
         } rounded-[22px] px-3 py-2.5 flex items-center gap-2 sm:gap-3 shadow-[0_8px_30px_rgba(20,18,10,.07)] transition-all duration-300 ease-in-out`}
       >
         {/* Left "+" Icon / Quick Access Trigger */}
         <button
           type="button"
           onClick={() => textareaRef.current?.focus()}
-          className="text-[#A8A29E] hover:text-[#44403B] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
+          className="text-[var(--text-secondary)] hover:text-[var(--text-body)] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
           title="Quick access commands"
           aria-label="Quick access"
         >
@@ -250,7 +255,7 @@ export default function QuestionComposer({
           rows={1}
           disabled={isPending}
           aria-label="Research question input"
-          className="flex-1 bg-transparent text-[15px] text-[#0D0C0A] placeholder-[#A8A29E] focus:outline-none resize-none overflow-y-auto font-sans leading-relaxed min-h-[24px] max-h-[140px] py-0.5"
+          className="flex-1 bg-transparent text-[15px] text-[var(--text-main)] placeholder-[var(--text-secondary)] focus:outline-none resize-none font-sans leading-relaxed min-h-[24px] py-0.5"
         />
 
         {/* Right Action Stack: Microphone or Send Button */}
@@ -262,7 +267,7 @@ export default function QuestionComposer({
               disabled={isPending}
               aria-label="Send question"
               title="Send question (Enter)"
-              className="w-8 h-8 rounded-full bg-[#0D0C0A] hover:scale-110 text-[#FFD800] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer"
+              className="w-8 h-8 rounded-full bg-[var(--text-main)] hover:scale-110 text-[var(--accent-yellow)] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer"
             >
               {isPending ? (
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

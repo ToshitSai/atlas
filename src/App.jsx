@@ -85,6 +85,14 @@ const STAGE_NAME_MAP = {
 const DATASET_DEPENDENT_STAGES = [5, 6, 7, 8, 10, 11, 12];
 
 function WorkspaceApp({ onSignOut }) {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('atlas-theme') || 'system'; } catch { return 'system'; }
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('atlas-theme', theme); } catch { /* storage may be unavailable */ }
+  }, [theme]);
 
   // Dynamic Time-Based Greeting & Placeholder States
   const [greeting, setGreeting] = useState(() => getDynamicGreeting());
@@ -525,6 +533,10 @@ function WorkspaceApp({ onSignOut }) {
         conversationTurns={conversationTurns}
         isPending={isPending}
         onNewChat={handleNewQuestion}
+        historyItems={historyItems}
+        onSelectHistoryItem={handleSelectConversation}
+        theme={theme}
+        onThemeChange={() => setTheme((current) => current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system')}
         backendConnected={backendConnected}
         connectionState={connectionState}
         errorFeedback={errorFeedback}
@@ -533,7 +545,7 @@ function WorkspaceApp({ onSignOut }) {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-[#FAFAF9] text-[#0D0C0A] font-sans overflow-hidden select-none">
+    <div className="flex h-screen w-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans overflow-hidden select-none">
       
       {/* 1. Left Navigation Column (~210px wide) */}
       <Sidebar
@@ -545,6 +557,8 @@ function WorkspaceApp({ onSignOut }) {
         onMobileClose={() => setIsMobileNavOpen(false)}
         backendConnected={backendConnected}
         connectionState={connectionState}
+        theme={theme}
+        onThemeChange={() => setTheme((current) => current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system')}
       />
 
       {/* Main Workspace Stack (Center Column + Right Context Sidebar) */}
@@ -564,7 +578,7 @@ function WorkspaceApp({ onSignOut }) {
         <div className="flex-1 min-w-0 flex overflow-hidden relative">
           
           {/* 2. Center Workspace Area (Flexible width) */}
-          <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative bg-[#FAFAF9]">
+          <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative bg-[var(--bg-main)]">
             
             {/* View Switching based on activeNav destination */}
             {activeNav === 'research' && (
@@ -586,6 +600,8 @@ function WorkspaceApp({ onSignOut }) {
                       errorFeedback={errorFeedback}
                       onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                       onOpenSettings={() => setIsSettingsOpen(true)}
+                      historyItems={historyItems}
+                      onSelectHistoryItem={handleSelectConversation}
                     />
                   </motion.div>
                 ) : (
@@ -673,7 +689,7 @@ function WorkspaceApp({ onSignOut }) {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20"
+                className="atlas-prompt-dock absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20"
               >
                 <div className={isDeepResearch ? "max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto w-full" : "max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full"}>
                   <QuestionComposer
