@@ -77,7 +77,7 @@ export default function ScientificInquiryCard({
       case 'completed':
         return <span className="text-emerald-400 font-bold">✓</span>;
       case 'running':
-        return <span className="text-[#F15A3A] font-bold animate-running-pulse">●</span>;
+        return <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" aria-label="In progress" />;
       case 'failed':
         return <span className="text-[#F87171] font-bold">✕</span>;
       case 'skipped':
@@ -127,13 +127,13 @@ export default function ScientificInquiryCard({
                 <span className="w-4 text-center shrink-0 text-xs font-sans">
                   {renderStatusSymbol(status)}
                 </span>
-                <span className="text-[#8A8884] text-[11px] shrink-0 font-mono w-5">
+                <span className="text-[var(--text-muted)] text-[11px] shrink-0 font-mono w-5">
                   {String(stage.id).padStart(2, '0')}.
                 </span>
                 <span className={`truncate text-xs font-sans ${
                   status === 'completed' ? 'text-[var(--text-main)] font-medium' :
-                  status === 'running' ? 'text-[#F15A3A] font-medium' :
-                  status === 'failed' ? 'text-[#F87171] font-medium' :
+                  status === 'running' ? 'text-[var(--accent)] font-medium' :
+                  status === 'failed' ? 'text-[var(--danger)] font-medium' :
                   status === 'skipped' ? 'text-[var(--text-muted)] font-normal' : 'text-[var(--text-secondary)] font-normal'
                 }`}>
                   {stage.name}
@@ -142,7 +142,7 @@ export default function ScientificInquiryCard({
 
               {/* Event detail and timestamp if supplied */}
               {(detail || timestamp) && (status === 'completed' || status === 'running' || status === 'failed' || status === 'skipped') && (
-                <div className="ml-11 mt-0.5 text-[11px] text-[#8A8884] font-sans leading-tight break-words overflow-wrap-anywhere">
+                <div className="ml-11 mt-0.5 text-[11px] text-[var(--text-muted)] font-sans leading-tight break-words overflow-wrap-anywhere">
                   {detail}
                   {timestamp && <span className="ml-1.5 text-[10px] font-mono opacity-70">[{timestamp}]</span>}
                 </div>

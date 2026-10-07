@@ -40,24 +40,24 @@ export default function ResearchWorkspaceView({
       {priorTurns.map((turn) => (
         <React.Fragment key={turn.id}>
           <div className="ml-auto max-w-[92%] sm:max-w-[80%] flex justify-end gap-2.5">
-            <div className="bg-[#1B1B1B] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[#E8E5DF] leading-relaxed break-words">{turn.question}</div>
-            <div className="mt-0.5 w-7 h-7 rounded-full border border-[#353535] bg-[#181818] text-[10px] font-mono text-[#8A8884] flex items-center justify-center shrink-0">Y</div>
+            <div className="bg-[var(--surface-alt)] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[var(--text-body)] leading-relaxed break-words">{turn.question}</div>
+            <div className="mt-0.5 w-7 h-7 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] text-[10px] font-mono text-[var(--text-muted)] flex items-center justify-center shrink-0">Y</div>
           </div>
           {turn.answer && <div className="flex items-start gap-3 pl-1 pb-2 border-b border-[#303030]/70">
             <span className="mt-1 text-[#F15A3A] text-sm">✦</span>
-            <div className="min-w-0 flex-1 text-sm text-[#E8E5DF] leading-relaxed"><ChatMarkdown content={turn.answer} /></div>
+            <div className="min-w-0 flex-1 text-sm text-[var(--text-body)] leading-relaxed"><ChatMarkdown content={turn.answer} /></div>
           </div>}
         </React.Fragment>
       ))}
       
       {/* Current user turn: visually conversational rather than a report field. */}
       <div className="ml-auto max-w-[92%] sm:max-w-[80%] flex justify-end gap-2.5 font-sans">
-        <div className="bg-[#1B1B1B] rounded-2xl rounded-tr-md px-4 py-3 sm:px-4 sm:py-3">
-          <p className="text-base sm:text-lg font-semibold text-[#E8E5DF] font-sans leading-relaxed break-words overflow-wrap-anywhere">
+        <div className="bg-[var(--surface-alt)] rounded-2xl rounded-tr-md px-4 py-3 sm:px-4 sm:py-3">
+          <p className="text-base sm:text-lg font-semibold text-[var(--text-body)] font-sans leading-relaxed break-words overflow-wrap-anywhere">
           {userQuestion}
           </p>
         </div>
-        <div className="mt-0.5 w-7 h-7 rounded-full border border-[#353535] bg-[#181818] text-[10px] font-mono text-[#8A8884] flex items-center justify-center shrink-0" aria-label="You">Y</div>
+        <div className="mt-0.5 w-7 h-7 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] text-[10px] font-mono text-[var(--text-muted)] flex items-center justify-center shrink-0" aria-label="You">Y</div>
       </div>
 
       {/* 2. Signature Scientific Inquiry Activity Card */}
@@ -81,15 +81,15 @@ export default function ResearchWorkspaceView({
       )}
 
       {/* Tab Controls: Research Results vs Report */}
-      <div className="flex items-center justify-between border-b border-[#303030] pb-2 pt-1 font-sans">
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2 pt-1 font-sans">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('workspace')}
             className={`px-3 py-1.5 rounded text-xs font-medium font-sans transition-colors cursor-pointer ${
               activeTab === 'workspace'
-                ? 'bg-[#1B1B1B] text-[#F15A3A] font-semibold border-b-2 border-[#F15A3A]'
-                : 'text-[#8A8884] hover:text-[#E8E5DF]'
+                ? 'bg-[var(--surface-alt)] text-[var(--accent)] font-semibold border-b-2 border-[var(--accent)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
             }`}
           >
             Research Results
@@ -100,8 +100,8 @@ export default function ResearchWorkspaceView({
               onClick={() => setActiveTab('report')}
               className={`px-3 py-1.5 rounded text-xs font-medium font-sans transition-colors flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'report'
-                  ? 'bg-[#1B1B1B] text-[#F15A3A] font-semibold border-b-2 border-[#F15A3A]'
-                  : 'text-[#8A8884] hover:text-[#E8E5DF]'
+                  ? 'bg-[var(--surface-alt)] text-[var(--accent)] font-semibold border-b-2 border-[var(--accent)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
               }`}
             >
               <span>📄 Report</span>
@@ -113,7 +113,7 @@ export default function ResearchWorkspaceView({
           <button
             type="button"
             onClick={onDownloadReport}
-            className="px-3 py-1 rounded bg-[#F15A3A]/10 border border-[#F15A3A]/30 text-[#F15A3A] hover:bg-[#F15A3A]/20 text-xs font-medium btn-transition flex items-center gap-1 cursor-pointer font-sans"
+            className="px-3 py-1 rounded bg-[var(--accent)]/10 border border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/20 text-xs font-medium btn-transition flex items-center gap-1 cursor-pointer font-sans"
           >
             <span>↓ Markdown (.md)</span>
           </button>
@@ -204,17 +204,19 @@ export default function ResearchWorkspaceView({
           )}
 
           {/* Collapsible Experiment History Section */}
-          <div className="bg-[#181818] border border-[#303030] rounded-xl p-4 space-y-2.5 font-sans">
+          <div className="bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl p-4 space-y-2.5 font-sans">
             <button
               type="button"
               onClick={() => setHistoryOpen(!historyOpen)}
-              className="w-full flex items-center justify-between text-xs font-semibold text-[#E8E5DF] font-sans cursor-pointer"
+              aria-expanded={historyOpen}
+              aria-label={`${historyOpen ? 'Collapse' : 'Expand'} experiment history`}
+              className="w-full flex items-center justify-between text-xs font-semibold text-[var(--text-main)] font-sans cursor-pointer"
             >
               <span className="flex items-center gap-2">
                 <span>Experiment History</span>
-                <span className="text-xs font-normal text-[#8A8884]">({experiments.length} runs)</span>
+                <span className="text-xs font-normal text-[var(--text-muted)]">({experiments.length} runs)</span>
               </span>
-              <span className="text-[#8A8884] text-xs">{historyOpen ? '▲' : '▼'}</span>
+              <svg className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${historyOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m5 7 5 5 5-5" /></svg>
             </button>
 
             {historyOpen && (

@@ -283,9 +283,11 @@ function WorkspaceApp({ onSignOut }) {
     };
     setHistoryItems((prev) => [newHistoryEntry, ...prev]);
 
-    // Initial Stage 1 Event: Understanding research problem
+    // The timeline starts in a queued state.  A synthetic "running" stage
+    // here used to remain stuck while later backend stages completed.  Only
+    // backend activity is allowed to mark a stage in progress now.
     const initialEvents = [
-      { stageIndex: 1, status: 'running', detail: 'Analyzing research inquiry and routing requirement', timestamp: new Date().toLocaleTimeString() },
+      { stageIndex: 1, status: 'pending', detail: 'Waiting for the research pipeline', timestamp: new Date().toLocaleTimeString() },
     ];
     setStageEvents(initialEvents);
 
@@ -308,9 +310,9 @@ function WorkspaceApp({ onSignOut }) {
             if (existing >= 0) updated[existing] = evtObj;
             else updated.push(evtObj);
             // The backend trace is ordered, but browser/event delivery can
-            // batch frames. When a later stage arrives, close any earlier
-            // stage that is still shown as running so the timeline can never
-            // claim stage 09 is active while stage 01 is unfinished.
+            // batch frames. A later stage is not allowed to coexist with an
+            // earlier pending/running stage: close those earlier stages at
+            // the moment the backend proves that the pipeline advanced.
             for (let prior = 1; prior < idx; prior += 1) {
               const priorIndex = updated.findIndex((e) => e.stageIndex === prior);
               if (priorIndex >= 0 && ['running', 'pending'].includes(updated[priorIndex].status)) {
