@@ -6,27 +6,12 @@
 const API_BASE = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api`;
 export const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
-import { supabase } from './lib/supabase';
-
-async function withAuthHeaders(headers = {}) {
-  const next = new Headers(headers);
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (token) {
-      next.set('Authorization', `Bearer ${token}`);
-    } else {
-      console.warn('[AUTH] Supabase session token unavailable for API request');
-    }
-  } catch (err) {
-    console.error('[AUTH HEADER ERROR]', err);
-  }
-  return next;
-}
-
+// Accounts/auth were removed. The server issues an anonymous HttpOnly session
+// cookie and namespaces data by it; requests only need to send cookies along
+// (credentials: 'include'), never an Authorization header.
 async function safeFetchJson(url, options = {}) {
   try {
-    const res = await fetch(url, { ...options, headers: await withAuthHeaders(options.headers) });
+    const res = await fetch(url, { credentials: 'include', ...options, headers: options.headers });
     const rawText = await res.text();
     let data;
 
@@ -126,17 +111,12 @@ export async function sendChatMessage(message, projectId = null, conversationId 
 //   final    -> resolves with the authoritative result dict
 //   error    -> rejects
 async function streamChat(body, { onActivity = () => {}, onToken = () => {} } = {}) {
-  let response = await fetch(`${API_BASE}/chat/stream`, {
-    method: 'POST', headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
+  const response = await fetch(`${API_BASE}/chat/stream`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  // A session token can refresh. Retry once on 401 before surfacing an auth failure.
-  if (response.status === 401) {
-    response = await fetch(`${API_BASE}/chat/stream`, {
-      method: 'POST', headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(body)
-    });
-  }
   if (!response.ok || !response.body) {
     let detail = '';
     try { detail = (await response.clone().text()).slice(0, 500); } catch { detail = ''; }

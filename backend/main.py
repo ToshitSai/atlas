@@ -10,6 +10,9 @@ import sys
 import uuid
 import queue
 import threading
+import time
+import secrets
+import collections
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -19,49 +22,127 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import backend.config
 from database.store import store
 from backend import hf_datasets as hf
-from backend.auth import verified_supabase_user_id
 
 app = FastAPI(title="Atlas Research API", version="2.0.0")
 
 
-class SupabaseAuthenticationMiddleware(BaseHTTPMiddleware):
-    """Enforces verified authentication for all protected /api/ endpoints."""
-    public_paths = {"/api/health", "/api/config"}
+# ---------------------------------------------------------------------------
+# Anonymous sessions (accounts removed). The server mints an unguessable random
+# id in an HttpOnly cookie and namespaces all persisted data by it. The id is
+# server-generated, so a client cannot forge or enumerate another session's id;
+# possession of the random 128-bit value is the only "credential", which is the
+# accepted model once authentication is gone. Nothing here rejects a request for
+# lacking identity — a brand-new anonymous visitor must be able to chat.
+# ---------------------------------------------------------------------------
+SESSION_COOKIE = "atlas_sid"
+SESSION_MAX_AGE = 60 * 60 * 24 * 365      # 1 year
+MAX_REQUEST_BYTES = 1_000_000             # 1 MB body cap
+MAX_MESSAGE_CHARS = 8000                  # per-message cap (enforced in chat)
+
+# Basic per-IP rate limiting for the public chat endpoints. In-memory, so on a
+# multi-instance serverless deploy it is best-effort per instance (enough to blunt
+# a single-client flood); a shared store would be needed for a hard global cap.
+_CHAT_RATE_LIMIT = 30                     # requests...
+_CHAT_RATE_WINDOW = 60                    # ...per this many seconds, per IP
+_rate_buckets: Dict[str, Any] = {}
+_rate_lock = threading.Lock()
+
+
+def _is_rate_limited(ip: str) -> bool:
+    now = time.monotonic()
+    with _rate_lock:
+        bucket = _rate_buckets.setdefault(ip, collections.deque())
+        while bucket and now - bucket[0] > _CHAT_RATE_WINDOW:
+            bucket.popleft()
+        if len(bucket) >= _CHAT_RATE_LIMIT:
+            return True
+        bucket.append(now)
+        return False
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _valid_sid(sid: str) -> bool:
+    return bool(sid) and len(sid) <= 64 and all(c in "0123456789abcdef" for c in sid.lower())
+
+
+class AnonymousSessionMiddleware(BaseHTTPMiddleware):
+    """Issue/refresh the anonymous session cookie; cap body size; rate-limit chat.
+
+    Replaces the removed Supabase auth middleware. It never rejects a request for
+    lack of identity — it only attaches ``request.state.anon_id`` and applies
+    size/rate guards to the public chat endpoints.
+    """
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if not path.startswith("/api/") or path in self.public_paths:
-            return await call_next(request)
-        # Hermetic TestClient suites intentionally exercise route behavior
-        # without a live Supabase session. This flag is never set in deployed
-        # Vercel processes, where every protected request remains verified.
-        if os.environ.get("PYTEST_CURRENT_TEST"):
-            request.state.user_id = "test-user"
-            return await call_next(request)
-        try:
-            request.state.user_id = verified_supabase_user_id(request)
-        except HTTPException as exc:
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
-        except Exception as exc:
-            return JSONResponse(status_code=401, content={"detail": "Unauthorized: A valid session is required."})
 
-        # A configured production database must not silently degrade to the
-        # ephemeral JSON store. Reject protected operations until PostgreSQL is
-        # actually reachable and ownership can remain durable.
-        if (os.environ.get("VERCEL") == "1"
-                and not request.headers.get("host", "").startswith("testserver")
-                and os.environ.get("DATABASE_URL", "").strip()
-                and not store.database_health()):
-            return JSONResponse(status_code=503, content={"detail": "The research database is temporarily unavailable."})
+        # Request-size guard (cheap Content-Length check before reading the body).
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > MAX_REQUEST_BYTES:
+            return JSONResponse(status_code=413, content={"detail": "Request body is too large."})
 
+        # Anonymous session id: reuse the cookie when valid, else mint a new one.
+        sid = request.cookies.get(SESSION_COOKIE, "")
+        new_cookie = not _valid_sid(sid)
+        if new_cookie:
+            sid = secrets.token_hex(16)  # 128-bit unguessable id
+        request.state.anon_id = sid
+
+        # Per-IP rate limit on the public chat endpoints only.
+        if path in ("/api/chat", "/api/chat/stream") and _is_rate_limited(_client_ip(request)):
+            return JSONResponse(status_code=429, content={"detail": "Too many requests. Please slow down."})
+
+        # Ownership gate for a specific project: one anonymous session cannot read
+        # another's project. Only blocks when the project exists AND is owned by a
+        # different, non-empty session id — unowned/legacy projects and unknown ids
+        # pass through to the endpoint's own handling. Best-effort: never block on a
+        # store failure (there are no accounts, so this is namespacing, not security).
         parts = path.split("/")
-        if len(parts) >= 4 and parts[2] == "projects" and parts[3]:
-            if not store.project_owned_by(parts[3], request.state.user_id):
-                return JSONResponse(status_code=404, content={"detail": "Project not found."})
-        return await call_next(request)
+        if path.startswith("/api/") and len(parts) >= 4 and parts[2] == "projects" and parts[3]:
+            try:
+                project = store.get_project(parts[3])
+                owner = (project or {}).get("ownerId")
+                if project is not None and owner and owner != sid:
+                    return JSONResponse(status_code=404, content={"detail": "Project not found."})
+            except Exception as exc:
+                print(f"[PROJECT OWNER CHECK WARNING] {exc!r}")
+
+        response = await call_next(request)
+        if new_cookie:
+            response.set_cookie(
+                SESSION_COOKIE, sid,
+                max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", path="/",
+            )
+        return response
 
 
-app.add_middleware(SupabaseAuthenticationMiddleware)
+app.add_middleware(AnonymousSessionMiddleware)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    """Never leak a stack trace or internal detail to the browser. The real error
+    is logged server-side only; the client gets a clean, secret-free message."""
+    print(f"[UNHANDLED ERROR] {request.method} {request.url.path}: {exc!r}")
+    traceback.print_exc()
+    return JSONResponse(status_code=500, content={"detail": "An internal error occurred. Please try again."})
+
+
+def _safe_store(label: str, fn, *args, **kwargs):
+    """Best-effort persistence. A store/DB failure is logged server-side and never
+    propagated, so the chat still answers when storage is unavailable (history is
+    optional). Returns the call result, or None on failure."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        print(f"[STORE PERSIST WARNING] {label}: {exc!r}")
+        return None
 
 app.add_middleware(
     CORSMiddleware,
@@ -198,7 +279,7 @@ def config_status():
             "configured": store.database_health(),
             "type": "PostgreSQL" if store.database_health() else "Unavailable"
         },
-        "authentication": {"provider": "Supabase", "configured": bool(os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_ANON_KEY"))},
+        "authentication": {"provider": "anonymous", "configured": True},
         "docker": {
             "available": safe_docker_check()
         },
@@ -251,10 +332,19 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     from backend.answer_pipeline import normalize_question, classify_mode, structured_response
     message = normalize_question(payload.get("message"))
     active_project_id = payload.get("projectId")
-    user_id = request.state.user_id
-    if active_project_id and not store.project_owned_by(active_project_id, user_id):
-        raise HTTPException(status_code=404, detail="Project not found.")
-    conversation_id = f"{user_id}:{payload.get('conversationId', 'default-session')}"
+    anon_id = getattr(request.state, "anon_id", "anonymous")
+    if active_project_id:
+        # Namespacing check (no accounts): a project belongs to the anonymous
+        # session that created it. Best-effort — a store failure must not block
+        # the answer, so only an explicit False denies access.
+        try:
+            if store.project_owned_by(active_project_id, anon_id) is False:
+                raise HTTPException(status_code=404, detail="Project not found.")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            print(f"[CHAT OWNER CHECK WARNING] {exc!r}")
+    conversation_id = f"{anon_id}:{payload.get('conversationId', 'default-session')}"
     request_id = str(payload.get("requestId") or "")
     user_message_id = str(payload.get("messageId") or "")
     import uuid
@@ -273,8 +363,11 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
 
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    if len(message) > MAX_MESSAGE_CHARS:
+        raise HTTPException(status_code=400, detail=f"Message is too long (max {MAX_MESSAGE_CHARS} characters).")
 
-    store.record_message(
+    _safe_store(
+        "record_user_message", store.record_message,
         conversation_id, "user", message, research_id=active_project_id,
         message_id=user_message_id or None,
     )
@@ -310,7 +403,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # Research mode resolution (directive §2): explicit request field wins,
     # then an in-chat switch ("switch to autonomous mode"), then the session
     # choice, then the persisted app setting. Default stays GUIDED.
-    sess_for_mode = store.get_session(conversation_id)
+    sess_for_mode = _safe_store("get_session", store.get_session, conversation_id) or {}
     requested_mode = payload.get("researchMode")
     mode_msg_mode = mode_requested_in_message(message)
     effective_mode = resolve_mode(
@@ -335,7 +428,9 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
                 "MANUAL": "You steer — I'll propose each stage and wait for your go-ahead.",
             }[mode_msg_mode]
         )
-        store.record_message(
+        _safe_store(
+            "record_mode_switch",
+            store.record_message,
             conversation_id, "assistant", mode_reply,
             intent="MODE_SWITCH", message_id=response_message_id,
         )
@@ -360,7 +455,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     execution_mode = classify_mode(message, routing_decision)
     # Persist the selected mode once per user request. Streamed/project updates
     # read this state; they never reclassify partial assistant output.
-    store.update_session(conversation_id, {"research_route": routing_decision})
+    _safe_store("update_session_route", store.update_session, conversation_id, {"research_route": routing_decision})
 
     # Invisible Model Router (backend-only). Classify the task and pick the
     # capability-appropriate provider/model BEFORE any answer is generated, so
@@ -714,7 +809,9 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
             "error": "answer_generation_failed",
         })
 
-    store.record_message(
+    _safe_store(
+        "record_assistant_message",
+        store.record_message,
         conversation_id, "assistant", res.get("response", ""),
         intent=res.get("intent"), topic=res.get("lastTopic"),
         research_id=res.get("projectId") or active_project_id,
@@ -764,8 +861,16 @@ async def chat_stream_endpoint(payload: dict, request: Request):
             result_box["result"] = asyncio.run(
                 chat_endpoint(payload, request, activity_callback=publish, token_callback=publish_token)
             )
+        except HTTPException as http_exc:
+            # An intended, user-facing rejection (e.g. message too long, rate
+            # limit). Its detail is safe to surface verbatim.
+            result_box["error"] = str(http_exc.detail)
         except Exception as exc:
-            result_box["error"] = str(exc)
+            # Never leak internals/stack traces to the browser. Log the real
+            # error server-side and return a generic, safe message.
+            print(f"[CHAT STREAM ERROR] {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            result_box["error"] = "Something went wrong while generating a response. Please try again."
         finally:
             event_queue.put(None)
 
@@ -938,13 +1043,13 @@ def datasets_approve(payload: dict):
 @app.get("/api/conversations/{conversation_id}/messages")
 def get_conversation_messages(conversation_id: str, request: Request):
     """Return the stored per-message history for a conversation (section 3)."""
-    return store.get_messages(f"{request.state.user_id}:{conversation_id}")
+    return store.get_messages(f"{request.state.anon_id}:{conversation_id}")
 
 
 @app.get("/api/conversations")
 def list_conversations(request: Request):
     """List saved chats that have exchanged at least one message."""
-    return store.list_conversations(owner_id=request.state.user_id)
+    return store.list_conversations(owner_id=request.state.anon_id)
 
 
 @app.post("/api/files/analyze")
@@ -963,7 +1068,7 @@ async def analyze_file(file: UploadFile = File(...)):
 
 @app.get("/api/projects")
 def list_projects(request: Request):
-    return store.list_projects(owner_id=request.state.user_id)
+    return store.list_projects(owner_id=request.state.anon_id)
 
 @app.post("/api/research")
 async def start_research(
@@ -1030,7 +1135,7 @@ async def start_research(
             dataset_path=dataset_path,
             test_path=None,
             dataset_meta=None,
-            owner_id=request.state.user_id,
+            owner_id=request.state.anon_id,
         )
 
         try:

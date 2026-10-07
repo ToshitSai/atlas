@@ -1,7 +1,5 @@
 from pathlib import Path
 
-from backend.auth import _authorized_parties
-
 
 def test_public_metadata_uses_atlas_canonical_url():
     html = Path("index.html").read_text(encoding="utf-8")
