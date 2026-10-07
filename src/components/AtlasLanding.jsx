@@ -617,7 +617,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingBottom: '140px'
+                paddingBottom: 0
               }}
             >
               <AnimatePresence mode="wait">
@@ -1043,17 +1043,13 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         {/* =================================================================== */}
         <div
           style={{
-            position: 'absolute',
-            ...(hasConversation
-              ? { bottom: 0, top: 'auto', transform: 'translateY(0)' }
-              : { top: '58%', bottom: 'auto', transform: 'translateY(-50%)' }),
-            left: 0,
-            right: 0,
+            position: 'relative',
             pointerEvents: 'none',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             background: 'linear-gradient(to top, var(--bg-main) 65%, transparent)',
+            width: '100%',
             padding: '0 16px 16px 16px',
             zIndex: 10
           }}
@@ -1251,9 +1247,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               marginTop: hasConversation ? '8px' : 0,
               textAlign: 'center',
               pointerEvents: 'auto',
-              ...(hasConversation
-                ? {}
-                : { position: 'fixed', left: 0, right: 0, bottom: '16px' })
+              ...(hasConversation ? {} : { marginBottom: '0' })
             }}
           >
             Atlas can run experiments and cite sources. Verify important results.
