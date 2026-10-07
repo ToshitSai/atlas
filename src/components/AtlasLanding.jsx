@@ -1210,7 +1210,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 )}
               </div>
 
-              {/* Light Circular Mic Button */}
+              {/* Deep Research mode toggle */}
               <button
                 type="button"
                 onClick={() => setIsDeepResearch(!isDeepResearch)}
@@ -1229,7 +1229,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 }}
                 title={isDeepResearch ? "Deep Research Enabled" : "Enable Deep Research"}
               >
-                <IconMic size={16} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.ink }} />
+                <IconMicroscope size={16} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.ink }} />
               </button>
 
               {/* Solid Black Circular Send Button */}
