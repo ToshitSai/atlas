@@ -631,7 +631,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    width: 'min(100%, 820px)'
                   }}
                 >
                   <h1
@@ -1053,7 +1054,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             flexDirection: 'column',
             alignItems: 'center',
             background: 'linear-gradient(to top, var(--bg-main) 65%, transparent)',
-            padding: '0 24px 20px 24px',
+            padding: '0 16px 16px 16px',
             zIndex: 10
           }}
           className="atlas-prompt-dock"
@@ -1062,11 +1063,12 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             style={{
               width: '100%',
               maxWidth: '820px',
+              minHeight: isExpanded ? '96px' : '72px',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
               borderRadius: isExpanded ? '28px' : '999px',
               boxShadow: '0 4px 24px rgba(20,18,10,0.06)',
-              padding: isExpanded ? '12px 14px 10px 14px' : '10px 16px',
+              padding: isExpanded ? '12px 20px 10px 20px' : '10px 20px',
               pointerEvents: 'auto',
               display: 'flex',
               flexDirection: isExpanded ? 'column' : 'row',
@@ -1213,6 +1215,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               <motion.button
                 type="button"
                 onClick={() => handleSend()}
+                disabled={!inputText.trim()}
                 animate={inputText.trim().length > 0 ? { scale: [1, 1.06, 1] } : { scale: 1 }}
                 transition={
                   inputText.trim().length > 0
@@ -1222,20 +1225,21 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 whileHover={{ scale: 1.1, rotate: -8 }}
                 whileTap={{ scale: 0.9 }}
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '40px',
+                  height: '40px',
                   borderRadius: '50%',
-                  backgroundColor: TOKENS.colors.ink,
+                  backgroundColor: inputText.trim() ? TOKENS.colors.ink : TOKENS.colors.muted,
                   border: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: TOKENS.colors.yellow,
-                  cursor: 'pointer',
+                  color: 'var(--surface)',
+                  cursor: inputText.trim() ? 'pointer' : 'default',
+                  opacity: inputText.trim() ? 1 : 0.55,
                   flexShrink: 0
                 }}
               >
-                <IconPaperPlane2 size={15} style={{ color: TOKENS.colors.yellow }} />
+                <IconPaperPlane2 size={17} style={{ color: 'var(--surface)' }} />
               </motion.button>
             </div>
           </div>
@@ -1249,7 +1253,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               pointerEvents: 'auto',
               ...(hasConversation
                 ? {}
-                : { position: 'fixed', left: 0, right: 0, bottom: '12px' })
+                : { position: 'fixed', left: 0, right: 0, bottom: '16px' })
             }}
           >
             Atlas can run experiments and cite sources. Verify important results.
