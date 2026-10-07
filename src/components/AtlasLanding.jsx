@@ -1065,17 +1065,17 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           <div
             style={{
               width: '100%',
-              maxWidth: '760px',
-              minHeight: isExpanded ? '88px' : '64px',
+              maxWidth: '560px',
+              minHeight: isExpanded ? '76px' : '52px',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
-              borderRadius: isExpanded ? '28px' : '999px',
-              boxShadow: '0 4px 24px rgba(20,18,10,0.06)',
-              padding: isExpanded ? '10px 18px 8px 18px' : '8px 16px',
+              borderRadius: isExpanded ? '20px' : '999px',
+              boxShadow: '0 4px 20px rgba(20,18,10,0.05)',
+              padding: isExpanded ? '8px 14px 6px 14px' : '6px 14px',
               pointerEvents: 'auto',
               display: 'flex',
               flexDirection: isExpanded ? 'column' : 'row',
-              gap: '8px'
+              gap: '6px'
             }}
           >
             <textarea
@@ -1099,36 +1099,36 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 outline: 'none',
                 resize: 'none',
                 fontFamily: TOKENS.fonts.sans,
-                fontSize: '15px',
+                fontSize: '14px',
                 color: TOKENS.colors.ink,
                 lineHeight: '1.4'
               }}
             />
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative' }}>
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"
                     onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
                     style={{
-                      height: '28px',
-                      padding: '0 10px',
+                      height: '25px',
+                      padding: '0 8px',
                       borderRadius: '999px',
                       border: `1px solid ${TOKENS.colors.line}`,
                       backgroundColor: TOKENS.colors.card,
-                      fontSize: '12px',
+                      fontSize: '11.5px',
                       fontWeight: 500,
                       color: TOKENS.colors.ink,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
+                      gap: '5px',
                       cursor: 'pointer'
                     }}
                   >
-                    <IconSparkle size={13} style={{ color: TOKENS.colors.amber }} />
+                    <IconSparkle size={12} style={{ color: TOKENS.colors.amber }} />
                     <span>{selectedModel}</span>
-                    <IconChevronDown size={13} style={{ color: TOKENS.colors.muted }} />
+                    <IconChevronDown size={12} style={{ color: TOKENS.colors.muted }} />
                   </button>
 
                   {modelDropdownOpen && (
@@ -1136,8 +1136,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                       style={{
                         position: 'absolute',
                         left: 0,
-                        bottom: '34px',
-                        width: '160px',
+                        bottom: '30px',
+                        width: '150px',
                         backgroundColor: TOKENS.colors.card,
                         border: `1px solid ${TOKENS.colors.line}`,
                         borderRadius: '12px',
@@ -1157,10 +1157,10 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                           style={{
                             width: '100%',
                             textAlign: 'left',
-                            padding: '6px 12px',
+                            padding: '5px 10px',
                             border: 'none',
                             backgroundColor: 'transparent',
-                            fontSize: '12px',
+                            fontSize: '11.5px',
                             fontWeight: selectedModel === m ? 600 : 400,
                             color: TOKENS.colors.ink,
                             display: 'flex',
@@ -1181,17 +1181,17 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   type="button"
                   onClick={() => setIsDeepResearch(!isDeepResearch)}
                   style={{
-                    height: '28px',
-                    padding: '0 10px',
+                    height: '25px',
+                    padding: '0 8px',
                     borderRadius: '999px',
                     border: isDeepResearch ? `1px solid ${TOKENS.colors.amberBorder}` : `1px solid ${TOKENS.colors.line}`,
                     backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'transparent',
-                    fontSize: '12px',
+                    fontSize: '11.5px',
                     fontWeight: 500,
                     color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.muted,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '5px',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease'
                   }}
@@ -1202,15 +1202,15 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                       animate={{ scale: [1, 1.3, 1] }}
                       transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
                       style={{
-                        width: '5px',
-                        height: '5px',
+                        width: '4px',
+                        height: '4px',
                         borderRadius: '50%',
                         backgroundColor: TOKENS.colors.amber,
                         display: 'inline-block'
                       }}
                     />
                   )}
-                  <IconMicroscope size={13} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.muted }} />
+                  <IconMicroscope size={12} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.muted }} />
                   <span>Deep research</span>
                 </button>
               </div>
@@ -1228,8 +1228,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 whileHover={{ scale: 1.1, rotate: -8 }}
                 whileTap={{ scale: 0.9 }}
                 style={{
-                  width: '40px',
-                  height: '40px',
+                  width: '32px',
+                  height: '32px',
                   borderRadius: '50%',
                   backgroundColor: inputText.trim() ? TOKENS.colors.ink : TOKENS.colors.muted,
                   border: 'none',
@@ -1242,7 +1242,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   flexShrink: 0
                 }}
               >
-                <IconPaperPlane2 size={17} style={{ color: 'var(--surface)' }} />
+                <IconPaperPlane2 size={14} style={{ color: 'var(--surface)' }} />
               </motion.button>
             </div>
           </div>

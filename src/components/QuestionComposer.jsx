@@ -227,13 +227,13 @@ export default function QuestionComposer({
           isListening
             ? 'border-[var(--accent-yellow)]'
             : 'border-[var(--border-subtle)] focus-within:border-[var(--focus-ring)]'
-        } rounded-[22px] px-3 py-2.5 flex items-center gap-2 sm:gap-3 shadow-[0_8px_30px_rgba(20,18,10,.07)] transition-all duration-300 ease-in-out`}
+        } rounded-[18px] px-3 py-1.5 flex items-center gap-2 sm:gap-2.5 shadow-[0_4px_20px_rgba(20,18,10,.05)] transition-all duration-300 ease-in-out`}
       >
         {/* Left "+" Icon / Quick Access Trigger */}
         <button
           type="button"
           onClick={() => textareaRef.current?.focus()}
-          className="text-[var(--text-secondary)] hover:text-[var(--text-body)] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
+          className="text-[var(--text-secondary)] hover:text-[var(--text-body)] text-lg font-light leading-none shrink-0 transition-colors cursor-pointer p-0.5"
           title="Quick access commands"
           aria-label="Quick access"
         >
@@ -255,7 +255,7 @@ export default function QuestionComposer({
           rows={1}
           disabled={isPending}
           aria-label="Research question input"
-          className="flex-1 bg-transparent text-[15px] text-[var(--text-main)] placeholder-[var(--text-secondary)] focus:outline-none resize-none font-sans leading-relaxed min-h-[24px] py-0.5"
+          className="flex-1 bg-transparent text-[14px] text-[var(--text-main)] placeholder-[var(--text-secondary)] focus:outline-none resize-none font-sans leading-relaxed min-h-[22px] py-0.5"
         />
 
         {/* Right Action Stack: Microphone or Send Button */}
@@ -267,12 +267,12 @@ export default function QuestionComposer({
               disabled={isPending}
               aria-label="Send question"
               title="Send question (Enter)"
-              className="w-8 h-8 rounded-full bg-[var(--text-main)] hover:scale-110 text-[var(--accent-yellow)] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer"
+              className="w-7 h-7 rounded-full bg-[var(--text-main)] hover:scale-105 text-[var(--accent-yellow)] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer"
             >
               {isPending ? (
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
                   <line x1="22" y1="2" x2="11" y2="13" />
                   <polygon points="22 2 15 22 11 13 2 9 22 2" />
                 </svg>
@@ -286,7 +286,7 @@ export default function QuestionComposer({
               disabled={isPending}
               aria-label={isListening ? "Stop listening" : "Start voice recognition"}
               title={isListening ? "Stop listening" : "Click to speak"}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 shrink-0 ${
+              className={`w-7.5 h-7.5 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0 ${
                 isListening
                   ? 'bg-[#F15A3A] text-white shadow-md ring-2 ring-[#F15A3A]/40 animate-pulse cursor-pointer'
                   : 'bg-white hover:bg-slate-200 text-[#F15A3A] cursor-pointer shadow'

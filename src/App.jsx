@@ -691,7 +691,7 @@ function WorkspaceApp({ onSignOut }) {
                 transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                 className="atlas-prompt-dock absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent z-20"
               >
-                <div className={isDeepResearch ? "max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto w-full" : "max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full"}>
+                <div className="max-w-xl mx-auto w-full">
                   <QuestionComposer
                     onSubmit={handleSendQuestion}
                     isPending={isPending}
