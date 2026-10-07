@@ -396,6 +396,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         display: 'flex',
         flexDirection: 'row',
         overflow: 'hidden',
+        position: 'relative',
         backgroundColor: TOKENS.colors.bg,
         fontFamily: TOKENS.fonts.sans,
         color: TOKENS.colors.ink,
@@ -413,7 +414,10 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           display: 'flex',
           flexDirection: 'column',
           flexShrink: 0,
-          height: '100%'
+          height: '100%',
+          position: 'absolute',
+          inset: '0 auto 0 0',
+          zIndex: 20
         }}
       >
         {/* Top Header Row */}
@@ -516,7 +520,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
       {/* =================================================================== */}
       <main
         style={{
-          flex: 1,
+          width: '100vw',
+          flex: '0 0 100vw',
           position: 'relative',
           display: 'flex',
           flexDirection: 'column',
