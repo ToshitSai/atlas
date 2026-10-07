@@ -1080,7 +1080,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           >
             <textarea
               ref={inputRef}
-              rows={step === 0 ? 2 : 1}
+              rows={isExpanded ? 2 : 1}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
