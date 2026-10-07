@@ -616,7 +616,10 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            position: 'relative'
+            position: 'relative',
+            width: '100%',
+            alignItems: 'center',
+            overflowX: 'hidden'
           }}
         >
           {/* =================================================================== */}
@@ -648,12 +651,13 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     flexDirection: 'column',
                     alignItems: 'center',
                     textAlign: 'center',
-                    width: 'min(100%, 820px)'
+                    width: 'min(100%, 1000px)',
+                    gap: '44px'
                   }}
                 >
                   <h1
                     style={{
-                      fontSize: '34px',
+                      fontSize: 'clamp(32px, 3vw, 46px)',
                       fontWeight: 400,
                       letterSpacing: '-0.02em',
                       color: TOKENS.colors.ink,
@@ -1065,30 +1069,32 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            background: 'linear-gradient(to top, var(--bg-main) 65%, transparent)',
+            background: hasConversation ? 'linear-gradient(to top, var(--bg-main) 65%, transparent)' : 'transparent',
             width: '100%',
-            padding: '0 16px 16px 16px',
+            padding: hasConversation ? '0 16px 16px 16px' : '0 24px 16px',
             zIndex: 10
           }}
           className="atlas-prompt-dock"
         >
           <div
             style={{
-              width: '100%',
-              maxWidth: '680px',
-              height: '50px',
+              width: 'min(100%, 1000px)',
+              maxWidth: '1000px',
+              minHeight: hasConversation ? '50px' : '132px',
+              height: hasConversation ? '50px' : 'auto',
               backgroundColor: TOKENS.colors.card,
               border: `1px solid ${TOKENS.colors.line}`,
               borderRadius: '9999px',
               boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-              padding: '4px 6px 4px 14px',
+              padding: '16px 18px 14px',
               pointerEvents: 'auto',
               display: 'flex',
-              flexDirection: 'row',
+              flexDirection: hasConversation ? 'row' : 'column',
               alignItems: 'center',
               gap: '10px'
             }}
           >
+            <div style={{ display: 'flex', alignItems: 'center', width: hasConversation ? 'auto' : '100%', flex: hasConversation ? 1 : 'none', gap: '10px', minHeight: '42px' }}>
             {/* Left "+" Button */}
             <button
               type="button"
@@ -1126,7 +1132,8 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               }}
               placeholder="Ask Atlas"
               style={{
-                flex: 1,
+                flex: '1 1 auto',
+                width: '100%',
                 backgroundColor: 'transparent',
                 border: 'none',
                 outline: 'none',
@@ -1139,9 +1146,10 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 minHeight: '22px'
               }}
             />
+            </div>
 
             {/* Right Action Stack: Dropdown + Mic + Send */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: hasConversation ? 'auto' : '100%', gap: '8px', flexShrink: 0, position: 'relative' }}>
               {/* Model Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
@@ -1267,7 +1275,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             style={{
               fontSize: '11px',
               color: TOKENS.colors.muted,
-              marginTop: hasConversation ? '8px' : 0,
+              marginTop: hasConversation ? '8px' : '12px',
               textAlign: 'center',
               pointerEvents: 'auto',
               ...(hasConversation ? {} : { marginBottom: '0' })
