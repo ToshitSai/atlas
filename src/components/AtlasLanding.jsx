@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ChatMarkdown from './ChatMarkdown';
 import ConfidenceBlock from './ConfidenceBlock';
+import AtlasLogo from './AtlasLogo';
 
 // ============================================================================
 // DESIGN SYSTEM TOKENS (Section 1)
@@ -1297,7 +1298,7 @@ function ConversationThread({ turns, isPending }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-            <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: TOKENS.colors.yellow, display: 'grid', placeItems: 'center', flexShrink: 0 }}><IconAtom size={17} /></div>
+            <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: TOKENS.colors.yellow, display: 'grid', placeItems: 'center', flexShrink: 0 }}><AtlasLogo className="w-5 h-5" /></div>
             <div style={{ flex: 1, color: TOKENS.colors.body, fontSize: '16px', lineHeight: 1.7, minWidth: 0 }}>
               {turn.isLoading && !turn.answer ? <div style={{ color: TOKENS.colors.muted }}>Preparing a verified answer…</div> : <ChatMarkdown content={turn.answer || ''} />}
               {!turn.isLoading && turn.confidence ? <ConfidenceBlock confidence={turn.confidence} /> : null}
