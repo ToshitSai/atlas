@@ -110,12 +110,13 @@ export async function sendChatMessage(message, projectId = null, conversationId 
 //   token    -> onToken(text)      (incremental answer text from the provider)
 //   final    -> resolves with the authoritative result dict
 //   error    -> rejects
-async function streamChat(body, { onActivity = () => {}, onToken = () => {} } = {}) {
+async function streamChat(body, { onActivity = () => {}, onToken = () => {}, signal } = {}) {
   const response = await fetch(`${API_BASE}/chat/stream`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
+    ,signal
   });
   if (!response.ok || !response.body) {
     let detail = '';
@@ -136,8 +137,9 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {} } = 
     const raw = (frame.match(/^data:\s*([\s\S]+)$/m) || [])[1];
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (kind === 'activity') onActivity(data);
-    else if (kind === 'token') { if (data.text) onToken(data.text); }
+    if (kind === 'activity' || ['plan','search_start','search_result','read_source','synthesizing','verifying'].includes(kind)) onActivity(data);
+    else if (kind === 'token' || kind === 'answer_delta') { if (data.text) onToken(data.text); }
+    else if (kind === 'sources') onActivity({ ...data, stage: 'sources', status: 'completed', eventType: kind });
     else if (kind === 'final') finalResult = data;
     else if (kind === 'error') throw new Error(data.error || 'Stream failed');
   };
@@ -156,19 +158,19 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {} } = 
   return finalResult;
 }
 
-export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}, onToken = () => {}) {
+export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}, onToken = () => {}, signal = undefined) {
   return streamChat(
     { message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, ...correlation },
-    { onActivity, onToken }
+    { onActivity, onToken, signal }
   );
 }
 
 // Normal-answer path over SSE so answer text renders token-by-token. The final
 // frame still carries the authoritative, post-processed response for reconcile.
-export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {} } = {}) {
+export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {}, signal } = {}) {
   return streamChat(
     { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, ...correlation },
-    { onActivity, onToken }
+    { onActivity, onToken, signal }
   );
 }
 

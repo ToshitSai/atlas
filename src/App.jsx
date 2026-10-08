@@ -148,6 +148,7 @@ function WorkspaceApp({ onSignOut }) {
   // Keep every exchange in the visible session thread; the current response
   // payload below is only the active turn's workspace state.
   const [conversationTurns, setConversationTurns] = useState([]);
+  const requestControllerRef = useRef(null);
 
   // Check Backend Connection on Mount & Periodically
   const checkBackend = async () => {
@@ -234,6 +235,9 @@ function WorkspaceApp({ onSignOut }) {
 
     setUserQuestion(queryText);
     setIsPending(true);
+    requestControllerRef.current?.abort();
+    const requestController = new AbortController();
+    requestControllerRef.current = requestController;
     setErrorFeedback(null);
     setActiveNav('research');
     const deepCheck = isLikelyDeepResearch(queryText);
@@ -335,7 +339,9 @@ function WorkspaceApp({ onSignOut }) {
           null,
           { requestId, messageId },
           priorHistory,
-          onActivity
+          onActivity,
+          () => {},
+          requestController.signal
         );
 
         if (res) {
@@ -414,6 +420,7 @@ function WorkspaceApp({ onSignOut }) {
           },
           conversationHistory: priorHistory,
           correlation: { requestId, messageId },
+          signal: requestController.signal,
         });
 
         setSessionState('COMPLETE');
@@ -432,6 +439,11 @@ function WorkspaceApp({ onSignOut }) {
         if (onSuccess) onSuccess();
       }
     } catch (err) {
+      if (err?.name === 'AbortError' || requestController.signal.aborted) {
+        setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, isLoading: false, stopped: true } : turn));
+        setErrorFeedback('Stopped');
+        return;
+      }
       setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
         ? { ...turn, isLoading: false, error: err.message }
         : turn));
@@ -439,8 +451,11 @@ function WorkspaceApp({ onSignOut }) {
       setErrorFeedback(`Submission failed: ${err.message}`);
     } finally {
       setIsPending(false);
+      if (requestControllerRef.current === requestController) requestControllerRef.current = null;
     }
   };
+
+  const handleStopRequest = () => requestControllerRef.current?.abort();
 
   const handleSelectConversation = async (item) => {
     const selectedId = item?.conversationId || item?.id;
@@ -700,6 +715,7 @@ function WorkspaceApp({ onSignOut }) {
                     backendConnected={backendConnected}
                     connectionState={connectionState}
                     errorFeedback={errorFeedback}
+                    onStop={handleStopRequest}
                     isEmptyState={false}
                   />
                 </div>

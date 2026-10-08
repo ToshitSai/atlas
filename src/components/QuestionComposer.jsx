@@ -20,6 +20,7 @@ export default function QuestionComposer({
   backendConnected = false,
   connectionState = 'CONNECTING',
   errorFeedback = null,
+  onStop = null,
   placeholder = null,
   isEmptyState = false,
 }) {
@@ -288,14 +289,15 @@ export default function QuestionComposer({
 
           {/* Solid Black Send Button */}
           <button
-            type="submit"
-            disabled={isPending || !text.trim()}
-            aria-label="Send question"
-            title="Send question (Enter)"
+            type={isPending ? 'button' : 'submit'}
+            onClick={isPending ? onStop : undefined}
+            disabled={!isPending && !text.trim()}
+            aria-label={isPending ? 'Stop response' : 'Send question'}
+            title={isPending ? 'Stop response' : 'Send question (Enter)'}
             className="w-9.5 h-9.5 rounded-full bg-[var(--text-main)] hover:scale-105 text-[var(--bg-main)] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer disabled:opacity-60"
           >
             {isPending ? (
-              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <span className="w-3.5 h-3.5 rounded-sm bg-current" />
             ) : (
               <svg className="w-4 h-4 fill-current text-[var(--bg-main)]" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.996.996 0 00-1.37 1.14L4.2 11.5h9.3a.5.5 0 010 1H4.2l-2.17 6.76a1 1 0 001.37 1.14z" />

@@ -857,6 +857,23 @@ async def chat_stream_endpoint(payload: dict, request: Request):
         if delta:
             event_queue.put({"type": "token", "text": delta})
 
+    def structured_activity(event):
+        """Translate the canonical trace into the public SSE vocabulary."""
+        stage = str(event.get("stage") or "").lower()
+        status = str(event.get("status") or "").lower()
+        kind = "progress"
+        if stage in {"planning", "research_question"}:
+            kind = "plan"
+        elif stage in {"web_search", "literature_search"}:
+            kind = "search_start" if status in {"running", "started"} else "search_result"
+        elif stage in {"source_reading", "read_source"}:
+            kind = "read_source"
+        elif stage in {"synthesis", "report_generation"}:
+            kind = "synthesizing"
+        elif stage in {"verification", "citation_verification", "cross_checking"}:
+            kind = "verifying"
+        return {"eventType": kind, "timestamp": event.get("timestamp") or int(time.time() * 1000), **event}
+
     def run_chat():
         try:
             result_box["result"] = asyncio.run(
@@ -879,17 +896,28 @@ async def chat_stream_endpoint(payload: dict, request: Request):
         worker = threading.Thread(target=run_chat, daemon=True)
         worker.start()
         while True:
-            event = await asyncio.to_thread(event_queue.get)
+            try:
+                event = await asyncio.wait_for(asyncio.to_thread(event_queue.get), timeout=15)
+            except asyncio.TimeoutError:
+                yield f": keep-alive {int(time.time() * 1000)}\n\n"
+                continue
             if event is None:
                 break
             if event.get("type") == "token":
-                yield f"event: token\ndata: {json.dumps({'text': event.get('text', '')})}\n\n"
+                yield f"event: answer_delta\ndata: {json.dumps({'text': event.get('text', ''), 'timestamp': int(time.time() * 1000)})}\n\n"
             else:
-                yield f"event: activity\ndata: {json.dumps(event)}\n\n"
+                public = structured_activity(event)
+                yield f"event: {public['eventType']}\ndata: {json.dumps(public)}\n\n"
+            if await request.is_disconnected():
+                break
+
         if result_box.get("error"):
-            yield f"event: error\ndata: {json.dumps({'error': result_box['error']})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'error': result_box['error'], 'timestamp': int(time.time() * 1000)})}\n\n"
         else:
-            yield f"event: final\ndata: {json.dumps(result_box.get('result') or {})}\n\n"
+            result = result_box.get("result") or {}
+            yield f"event: sources\ndata: {json.dumps({'sources': result.get('sources') or [], 'timestamp': int(time.time() * 1000)})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'timestamp': int(time.time() * 1000)})}\n\n"
+            yield f"event: final\ndata: {json.dumps(result)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
