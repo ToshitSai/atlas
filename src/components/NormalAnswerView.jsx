@@ -42,6 +42,7 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
                 <span className="font-semibold text-[var(--text-main)]">Atlas</span>
               </div>
               {loading ? <AnswerSkeleton /> : <ChatMarkdown content={turn.answer || ''} />}
+              {turn.stopped && <p className="mt-2 text-sm text-[var(--text-secondary)]" role="status">Stopped</p>}
               {!loading && <ConfidenceBlock confidence={turn.confidence || null} />}
               {turn.sources?.length > 0 && !loading && (
               <section className="mt-5 pt-4 border-t border-[var(--border-subtle)] space-y-2">

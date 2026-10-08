@@ -33,6 +33,8 @@ export default function ScientificInquiryCard({
     }
     return base;
   })();
+  const activeEvent = [...stageEvents].reverse().find((event) => event.status === 'running') || stageEvents[stageEvents.length - 1];
+  const liveStatus = activeEvent?.detail || (sessionState === 'COMPLETE' ? 'Research complete' : 'Waiting for research activity');
 
   // 13 Required Stages (1-indexed)
   const STAGES = [
@@ -100,9 +102,10 @@ export default function ScientificInquiryCard({
               <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
             </svg>
           </div>
-          <h2 className="text-xs sm:text-sm font-semibold tracking-normal text-[var(--text-main)] truncate font-sans">
-            {headingText}
-          </h2>
+          <div className="min-w-0" aria-live="polite">
+            <h2 className="text-xs sm:text-sm font-semibold tracking-normal text-[var(--text-main)] truncate font-sans">{headingText}</h2>
+            <p className="text-[11px] text-[var(--text-secondary)] truncate">{liveStatus}</p>
+          </div>
         </div>
 
         {/* Retry button only when a real retry operation exists */}
