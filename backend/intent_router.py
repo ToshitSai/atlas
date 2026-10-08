@@ -2026,9 +2026,7 @@ def _handle_intent_message_impl(
         if research.get("status") == "ok" and research.get("report"):
             resp_text = (
                 f"I ran a multi-step research pass on: {goal}\n\n"
-                f"{research['report']}\n\n"
-                f"_Pipeline: plan ({len(research['subqueries'])} sub-queries) -> web + academic "
-                f"search -> synthesis -> verification ({research['sourceCount']} sources)._"
+                f"{research['report']}"
             )
         else:
             if not activity:

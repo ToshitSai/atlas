@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import ScientificInquiryCard from './ScientificInquiryCard';
 import ChatMarkdown from './ChatMarkdown';
 import ConfidenceBlock from './ConfidenceBlock';
+import AtlasLogo from './AtlasLogo';
 
 /**
  * Research Workspace View (Center Column):
@@ -44,7 +45,7 @@ export default function ResearchWorkspaceView({
             <div className="mt-0.5 w-7 h-7 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] text-[10px] font-mono text-[var(--text-muted)] flex items-center justify-center shrink-0">Y</div>
           </div>
           {turn.answer && <div className="flex items-start gap-3 pl-1 pb-2 border-b border-[#303030]/70">
-            <span className="mt-1 text-[#F15A3A] text-sm">✦</span>
+            <span className="mt-1 w-7 h-7 rounded-lg bg-[var(--accent-yellow)] flex items-center justify-center shrink-0"><AtlasLogo className="w-4 h-4" /></span>
             <div className="min-w-0 flex-1 text-sm text-[var(--text-body)] leading-relaxed"><ChatMarkdown content={turn.answer} /></div>
           </div>}
         </React.Fragment>
