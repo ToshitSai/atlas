@@ -668,16 +668,18 @@ function WorkspaceApp({ onSignOut }) {
       {/* Main Workspace Stack (Center Column + Right Context Sidebar) */}
       <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
         
-        {/* Compact Top Header */}
-        <Header
-          sessionStatus={sessionState}
-          routingMode={routingMode}
-          backendConnected={backendConnected}
-          connectionState={connectionState}
-          onOpenMobileNav={() => setIsMobileNavOpen(true)}
-          onNewQuestion={handleNewQuestion}
-          activeNavTitle={navTitles[activeNav] || 'Research Workspace'}
-        />
+        {/* Compact Top Header (rendered for conversation thread & secondary views) */}
+        {(userQuestion || sessionState !== 'IDLE' || activeNav !== 'research') && (
+          <Header
+            sessionStatus={sessionState}
+            routingMode={routingMode}
+            backendConnected={backendConnected}
+            connectionState={connectionState}
+            onOpenMobileNav={() => setIsMobileNavOpen(true)}
+            onNewQuestion={handleNewQuestion}
+            activeNavTitle={navTitles[activeNav] || 'Research Workspace'}
+          />
+        )}
 
         {/* 3-Column Content Body */}
         <div className="flex-1 min-w-0 flex overflow-hidden relative">

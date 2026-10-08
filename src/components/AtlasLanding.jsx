@@ -417,6 +417,49 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         WebkitFontSmoothing: 'antialiased'
       }}
     >
+      {/* Top Navigation Bar */}
+      <header className="flex h-[52px] min-h-[52px] shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-main)] px-3.5 text-[var(--text-main)] select-none z-30">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="Open navigation menu"
+            className="flex lg:hidden items-center justify-center rounded-lg border border-[var(--border-subtle)] p-2 text-[var(--text-main)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors shrink-0 cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          <div className="flex lg:hidden items-center gap-1.5 font-bold text-sm text-[var(--text-main)]">
+            <AtlasLogo className="w-4 h-4 text-[var(--accent-yellow)] shrink-0" />
+            <span className="truncate">Atlas</span>
+          </div>
+
+          <span className="hidden lg:block text-sm font-semibold text-[var(--text-main)] truncate">
+            Research Workspace
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleNewChat}
+            aria-label="New chat"
+            title="New chat"
+            className="flex lg:hidden items-center justify-center rounded-lg border border-[var(--border-subtle)] p-2 text-[var(--text-main)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+          <span className="hidden lg:inline text-xs text-[var(--text-secondary)] font-mono">
+            Research workspace
+          </span>
+        </div>
+      </header>
+
       {/* MAIN WORKSPACE SURFACE */}
       <main
         style={{
