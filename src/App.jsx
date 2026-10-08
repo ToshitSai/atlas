@@ -641,44 +641,6 @@ function WorkspaceApp({ onSignOut }) {
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
         />
         <main className="flex-1 min-w-0 h-screen overflow-hidden relative flex flex-col bg-[var(--bg-main)]" inert={isMobileNavOpen ? '' : undefined}>
-          {/* Mobile Top Header Bar */}
-          <header className="flex md:hidden h-[52px] min-h-[52px] shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-main)] px-3.5 text-[var(--text-main)] select-none z-30">
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => setIsMobileNavOpen(true)}
-                aria-label="Open sidebar menu"
-                className="flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                  <rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/>
-                </svg>
-              </button>
-              <div className="flex items-center gap-2 font-bold text-base text-[var(--text-main)]">
-                <span className="grid grid-cols-3 gap-[2px] w-[24px] h-4 shrink-0" aria-hidden="true">
-                  <i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#0D0C0A]" /><i className="rounded-[1px] bg-[#FFD800]" />
-                  <i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#FFD800]" />
-                </span>
-                <span>Atlas</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleNewQuestion}
-                aria-label="New chat"
-                title="New chat"
-                className="flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-            </div>
-          </header>
-
           {!sidebarOpen && <button type="button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar" title="Open sidebar (Ctrl+B)" aria-expanded="false" className="fixed left-4 top-4 z-30 hidden h-10 w-10 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] md:flex"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg></button>}
           <AtlasLanding
             greeting={greeting}

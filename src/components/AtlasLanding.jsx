@@ -916,7 +916,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             <textarea
               className="atlas-composer-input"
               ref={inputRef}
-              rows={2}
+              rows={1}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
@@ -939,7 +939,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 color: TOKENS.colors.ink,
                 lineHeight: '1.4',
                 paddingTop: '2px',
-                minHeight: '34px',
+                minHeight: '26px',
                 overflowY: 'auto'
               }}
             />
@@ -1044,13 +1044,14 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               {/* Solid Black Circular Send Button */}
               <motion.button
                 type="button"
+                className="atlas-send-button"
                 onClick={() => handleSend()}
                 disabled={!inputText.trim()}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 style={{
-                  width: '40px',
-                  height: '40px',
+                  width: '36px',
+                  height: '36px',
                   borderRadius: '50%',
                   backgroundColor: TOKENS.colors.ink,
                   border: 'none',

@@ -150,7 +150,7 @@ export default function Sidebar({
       {(!historyItems || historyItems.length === 0) && <div className="mt-4 h-4 shrink-0 bg-[#FAFAF9] border-b border-[#E9E7E1]" aria-hidden="true" />}
 
       {/* Navigation & History List */}
-      <nav className="sidebar-scroll-area flex-1 min-h-0 overflow-y-auto px-2 py-3 space-y-1 font-sans" aria-label="Primary navigation">
+      <nav className="sidebar-scroll-area hidden" aria-hidden="true" aria-label="Primary navigation">
         <div className="px-2 text-xs font-medium text-[var(--text-muted)] mb-1.5 font-sans">
           Workspace
         </div>
