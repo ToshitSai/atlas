@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import AtlasLogo from './AtlasLogo';
 
 /**
  * Scientific Inquiry Card:
@@ -36,57 +37,33 @@ export default function ScientificInquiryCard({
   const activeEvent = [...stageEvents].reverse().find((event) => event.status === 'running') || stageEvents[stageEvents.length - 1];
   const liveStatus = activeEvent?.detail || (sessionState === 'COMPLETE' ? 'Research complete' : 'Waiting for research activity');
 
-  // 13 Required Stages (1-indexed)
-  const STAGES = [
-    { id: 1, name: 'Understanding the research question' },
-    { id: 2, name: 'Planning the investigation' },
-    { id: 3, name: 'Searching the literature' },
-    { id: 4, name: 'Evaluating sources' },
-    { id: 5, name: 'Finding datasets' },
-    { id: 6, name: 'Establishing baseline' },
-    { id: 7, name: 'Designing experiment' },
-    { id: 8, name: 'Executing experiment' },
-    { id: 9, name: 'Analyzing findings' },
-    { id: 10, name: 'Error analysis' },
-    { id: 11, name: 'Testing competing explanations' },
-    { id: 12, name: 'Next experiment' },
-    { id: 13, name: 'Preparing research report' },
-  ];
+  const [startedAt, setStartedAt] = useState(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (sessionState === 'IN_PROGRESS' || sessionState === 'QUEUED') setStartedAt((value) => value || Date.now());
+    if (sessionState === 'IDLE') setStartedAt(null);
+  }, [sessionState]);
+  useEffect(() => {
+    if (!startedAt || sessionState !== 'IN_PROGRESS') return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt, sessionState]);
 
-  // Map events to stage indices
-  const eventsByStage = {};
-  stageEvents.forEach((evt) => {
-    if (evt.stageIndex) {
-      eventsByStage[evt.stageIndex] = evt;
-    }
-  });
-
-  const getStageState = (stageId) => {
-    const evt = eventsByStage[stageId];
-    if (evt) {
-      return {
-        status: evt.status, // 'completed' | 'running' | 'failed' | 'pending'
-        detail: evt.detail,
-        timestamp: evt.timestamp,
-      };
-    }
-    if (sessionState === 'IDLE') return { status: 'pending' };
-    return { status: 'pending' };
-  };
+  const liveSteps = useMemo(() => stageEvents.filter((event) => event && event.stage), [stageEvents]);
 
   const renderStatusSymbol = (status) => {
     switch (status) {
       case 'completed':
-        return <span className="text-emerald-400 font-bold">✓</span>;
+        return <span className="status-check" aria-label="Completed" />;
       case 'running':
         return <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" aria-label="In progress" />;
       case 'failed':
-        return <span className="text-[#F87171] font-bold">✕</span>;
+        return <span className="status-warning" aria-label="Failed" />;
       case 'skipped':
-        return <span className="text-[#6B6966] font-bold" title="Skipped — not applicable">⊘</span>;
+        return <span className="text-[var(--text-muted)]" title="Skipped">Skipped</span>;
       case 'pending':
       default:
-        return <span className="text-[#8A8884]">○</span>;
+        return <span className="inline-block w-2 h-2 rounded-full bg-[var(--text-muted)]" aria-label="Pending" />;
     }
   };
 
@@ -96,15 +73,12 @@ export default function ScientificInquiryCard({
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-2.5 mb-3">
         <div className="flex items-center gap-2 min-w-0">
           {/* Small orange icon */}
-          <div className="w-5 h-5 rounded bg-[#F15A3A]/10 border border-[#F15A3A]/30 flex items-center justify-center shrink-0">
-            <svg className="w-3 h-3 text-[#F15A3A]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
-            </svg>
+          <div className={`w-7 h-7 rounded-lg bg-[var(--accent-yellow)] flex items-center justify-center shrink-0 ${sessionState === 'IN_PROGRESS' ? 'animate-running-pulse' : ''}`}>
+            <AtlasLogo className="w-4 h-4" />
           </div>
           <div className="min-w-0" aria-live="polite">
             <h2 className="text-xs sm:text-sm font-semibold tracking-normal text-[var(--text-main)] truncate font-sans">{headingText}</h2>
-            <p className="text-[11px] text-[var(--text-secondary)] truncate">{liveStatus}</p>
+            <p className="text-[11px] text-[var(--text-secondary)] truncate" aria-live="polite">{liveStatus}{startedAt ? ` · ${Math.max(0, Math.floor((now - startedAt) / 1000))}s` : ''}</p>
           </div>
         </div>
 
@@ -120,10 +94,10 @@ export default function ScientificInquiryCard({
         )}
       </div>
 
-      {/* 13 Stages List (Desktop: 2-column, Mobile: 1-column) */}
+      {/* Only stages emitted by the backend are shown. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-xs font-sans">
-        {STAGES.map((stage) => {
-          const { status, detail, timestamp } = getStageState(stage.id);
+        {liveSteps.map((stage, index) => {
+          const { status, detail, timestamp } = stage;
           return (
             <div key={stage.id} className="flex flex-col min-w-0 py-0.5">
               <div className="flex items-center gap-2 min-w-0">
@@ -131,7 +105,7 @@ export default function ScientificInquiryCard({
                   {renderStatusSymbol(status)}
                 </span>
                 <span className="text-[var(--text-muted)] text-[11px] shrink-0 font-mono w-5">
-                  {String(stage.id).padStart(2, '0')}.
+                  {String(index + 1).padStart(2, '0')}.
                 </span>
                 <span className={`truncate text-xs font-sans ${
                   status === 'completed' ? 'text-[var(--text-main)] font-medium' :
@@ -139,7 +113,7 @@ export default function ScientificInquiryCard({
                   status === 'failed' ? 'text-[var(--danger)] font-medium' :
                   status === 'skipped' ? 'text-[var(--text-muted)] font-normal' : 'text-[var(--text-secondary)] font-normal'
                 }`}>
-                  {stage.name}
+                  {stage.label || stage.name || stage.stage}
                 </span>
               </div>
 

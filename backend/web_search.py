@@ -4,7 +4,8 @@ Multi-provider with graceful degradation:
   1. Tavily   (TAVILY_API_KEY)
   2. Serper   (SERPER_API_KEY — Google results)
   3. Brave    (BRAVE_API_KEY)
-  4. DuckDuckGo Instant Answers (keyless; limited but real)
+  4. Scrape.do (SCRAPE_DO_API_KEY; search-results HTML fallback)
+  5. DuckDuckGo Instant Answers (keyless; limited but real)
 
 Returns a normalised list of {title, url, snippet, source}. It never
 fabricates: if every provider fails, ``search_web`` returns [] and callers
@@ -95,6 +96,41 @@ def _search_brave(query: str, limit: int) -> List[Dict[str, str]]:
         "snippet": clean_snippet(r.get("description") or ""),
         "source": "Brave",
     } for r in (data.get("web") or {}).get("results", [])]
+
+
+def _search_scrape_do(query: str, limit: int) -> List[Dict[str, str]]:
+    """Use Scrape.do to fetch a public search-results page.
+
+    Scrape.do is a page-fetching API rather than a search index.  We use it
+    only as a transport for DuckDuckGo's HTML results, then normalize the
+    links exactly like other providers.  The token is never included in logs.
+    """
+    token = os.environ.get("SCRAPE_DO_API_KEY")
+    if not token:
+        return []
+    target = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
+    endpoint = "https://api.scrape.do/?" + urllib.parse.urlencode({"token": token, "url": target})
+    req = urllib.request.Request(endpoint, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+        html = resp.read().decode("utf-8", errors="replace")
+    results: List[Dict[str, str]] = []
+    # DDG's result markup is intentionally simple and stable; avoid a new
+    # parser dependency for this optional provider.
+    # Match anchors directly rather than attempting to balance nested result
+    # divs (which vary between DDG's desktop and mobile markup).
+    anchors = re.findall(r'<a\b[^>]*class=["\'][^"\']*result__a[^"\']*["\'][^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.S | re.I)
+    for href_value, title_value in anchors:
+        def _text(value: str) -> str:
+            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", value)).strip()
+        url = urllib.parse.unquote(href_value)
+        if "uddg=" in url:
+            url = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get("uddg", [url])[0]
+        results.append({"title": _text(title_value), "url": url,
+                        "snippet": "",
+                        "source": "Scrape.do (DuckDuckGo)"})
+        if len(results) >= limit:
+            break
+    return results
 
 
 # Words that make a query too specific for topic-abstract APIs (DDG/Wikipedia).
@@ -205,7 +241,7 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
 
 # Preference order: keyed, higher-quality providers first; keyless fallback last.
 # Looked up by name at call time so tests (and future overrides) can patch them.
-_PROVIDER_NAMES = ("tavily", "serper", "brave", "duckduckgo")
+_PROVIDER_NAMES = ("tavily", "serper", "brave", "scrape_do", "duckduckgo")
 
 
 def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:

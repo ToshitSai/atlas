@@ -6,6 +6,25 @@
 const API_BASE = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api`;
 export const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
+const LOCAL_HISTORY_DB = 'atlas-history';
+function openLocalHistory() {
+  if (!('indexedDB' in globalThis)) return Promise.reject(new Error('IndexedDB unavailable'));
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(LOCAL_HISTORY_DB, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('chats', { keyPath: 'id' });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function localHistoryAll() {
+  const db = await openLocalHistory();
+  return new Promise((resolve, reject) => { const req = db.transaction('chats').objectStore('chats').getAll(); req.onsuccess = () => resolve(req.result || []); req.onerror = () => reject(req.error); });
+}
+export async function saveLocalConversation(chat) {
+  const db = await openLocalHistory();
+  return new Promise((resolve, reject) => { const req = db.transaction('chats', 'readwrite').objectStore('chats').put(chat); req.onsuccess = () => resolve(chat); req.onerror = () => reject(req.error); });
+}
+
 // Accounts/auth were removed. The server issues an anonymous HttpOnly session
 // cookie and namespaces data by it; requests only need to send cookies along
 // (credentials: 'include'), never an Authorization header.
@@ -62,15 +81,22 @@ export async function fetchConversationMessages(conversationId) {
   try {
     return await safeFetchJson(`${API_BASE}/conversations/${conversationId}/messages`);
   } catch (err) {
-    return [];
+    try { return (await localHistoryAll()).find((chat) => chat.id === conversationId)?.messages || []; } catch { return []; }
   }
+}
+
+export async function checkAnswerConfidence(answer, sources = [], question = '') {
+  return safeFetchJson(`${API_BASE}/confidence/check`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer, sources, question })
+  });
 }
 
 export async function fetchConversations() {
   try {
     return await safeFetchJson(`${API_BASE}/conversations`);
   } catch (err) {
-    return [];
+    try { return localHistoryAll(); } catch { return []; }
   }
 }
 
@@ -137,7 +163,7 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {}, sig
     const raw = (frame.match(/^data:\s*([\s\S]+)$/m) || [])[1];
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (kind === 'activity' || ['plan','search_start','search_result','read_source','synthesizing','verifying'].includes(kind)) onActivity(data);
+    if (kind === 'activity' || ['plan','search_start','search_result','read_source','source_checked','synthesizing','verifying','progress'].includes(kind)) onActivity(data);
     else if (kind === 'token' || kind === 'answer_delta') { if (data.text) onToken(data.text); }
     else if (kind === 'sources') onActivity({ ...data, stage: 'sources', status: 'completed', eventType: kind });
     else if (kind === 'final') finalResult = data;

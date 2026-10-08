@@ -18,7 +18,7 @@ function safeHttpUrl(value) {
  * Raw HTML is deliberately not enabled; links are limited to http(s) and open
  * in a separate tab, so generated or sourced content cannot inject markup.
  */
-export default function ChatMarkdown({ content }) {
+function ChatMarkdown({ content }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -55,6 +55,8 @@ export default function ChatMarkdown({ content }) {
     </ReactMarkdown>
   );
 }
+
+export default React.memo(ChatMarkdown, (previous, next) => previous.content === next.content);
 
 function CodeBlock({ children, className }) {
   const raw = String(children || '').replace(/\n$/, '');

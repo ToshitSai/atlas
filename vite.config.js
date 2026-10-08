@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 const buildTimestamp = Date.now();
+const buildCommit = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || 'local';
 
 export default defineConfig({
+  define: {
+    __ATLAS_BUILD_VERSION__: JSON.stringify({ commit: buildCommit, builtAt: new Date().toISOString() })
+  },
   plugins: [
     tailwindcss(),
     react()

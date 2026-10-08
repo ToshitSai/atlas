@@ -915,6 +915,15 @@ def query_llm(
     """
     Unified multi-provider LLM caller supporting OpenAI, Gemini, Anthropic Claude, and Mistral.
     """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        now = datetime.now(ZoneInfo(os.getenv('ATLAS_TIMEZONE', 'Asia/Kolkata')))
+    except Exception:
+        now = datetime.now()
+    freshness = ("Classify the user question as time-sensitive if it asks for latest, current, prices, versions, news, laws, years, or who is. "
+                 "Time-sensitive questions require retrieval; do not answer from memory alone.")
+    system_prompt = f"{system_prompt or ''}\nCurrent date/time: {now.isoformat()} ({now.tzname()}).\n{freshness}".strip()
     if on_token is not None and any_provider_configured():
         try:
             streamed = query_llm_stream(prompt, system_prompt, on_token=on_token, timeout=timeout, max_tokens=max_tokens, role=role, provider=provider)

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import ChatMarkdown from './ChatMarkdown';
+import ProgressiveMarkdown from './ProgressiveMarkdown';
 import ConfidenceBlock from './ConfidenceBlock';
 import AtlasLogo from './AtlasLogo';
 
@@ -39,6 +39,10 @@ function IconPlus({ size = 16, style = {} }) {
       <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   );
+}
+
+function IconMenu({ size = 18, style = {} }) {
+  return <svg width={size} height={size} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>;
 }
 
 function IconUser({ size = 16, style = {} }) {
@@ -259,12 +263,12 @@ const RAW_ANSWER_CONTENT = {
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
-export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, historyItems = [], onSelectHistoryItem, theme = 'system', onThemeChange }) {
+export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, historyItems = [], onSelectHistoryItem, theme = 'system', onThemeChange, sidebarOpen = true, onToggleSidebar, historyLoadState = 'ready', activeConversationId, confidenceChecking = false }) {
   // Step state: 0 (idle) -> 1 (thinking) -> 2 (streaming) -> 3 (done)
   const [step, setStep] = useState(0);
   const [inputText, setInputText] = useState('');
   const [userQuestion, setUserQuestion] = useState('');
-  const [isDeepResearch, setIsDeepResearch] = useState(true);
+  const [isDeepResearch, setIsDeepResearch] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState('Atlas Large');
   
@@ -355,7 +359,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
     if (!prompt) return;
 
     if (onSendMessage) {
-      onSendMessage(prompt, () => setInputText(''));
+      onSendMessage(prompt, () => setInputText(''), { deepResearch: isDeepResearch, model: selectedModel });
     }
     // The landing component is input-only. Conversation state and the real
     // response stream belong to WorkspaceApp; keeping a local demo response
@@ -399,11 +403,12 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
 
   return (
     <div
+      className="atlas-shell"
       style={{
-        height: '100vh',
-        width: '100vw',
+        height: '100%',
+        width: '100%',
         display: 'flex',
-        flexDirection: 'row',
+        flexDirection: 'column',
         overflow: 'hidden',
         position: 'relative',
         backgroundColor: TOKENS.colors.bg,
@@ -412,120 +417,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         WebkitFontSmoothing: 'antialiased'
       }}
     >
-      {/* =================================================================== */}
-      {/* SECTION 3: SIDEBAR */}
-      {/* =================================================================== */}
-      <aside
-        style={{
-          width: '262px',
-          backgroundColor: TOKENS.colors.sidebar,
-          borderRight: `1px solid ${TOKENS.colors.line}`,
-          display: 'flex',
-          flexDirection: 'column',
-          flexShrink: 0,
-          height: '100%',
-          position: 'relative',
-          zIndex: 20
-        }}
-      >
-        {/* Top Header Row */}
-        <div
-          style={{
-            height: '52px',
-            padding: '0 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <AtlasPixelGrid cellSize={7} gap={2} />
-            <span style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em', color: TOKENS.colors.ink }}>
-              Atlas
-            </span>
-          </div>
-          <IconGrid size={16} style={{ color: TOKENS.colors.muted, cursor: 'pointer' }} />
-        </div>
-
-        {/* "New Chat" White Pill Button */}
-        <div style={{ padding: '4px 14px 12px 14px', flexShrink: 0 }}>
-          <motion.button
-            type="button"
-            onClick={handleNewChat}
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-            style={{
-              width: '100%',
-              height: '42px',
-              backgroundColor: TOKENS.colors.card,
-              border: `1px solid ${TOKENS.colors.line}`,
-              borderRadius: '12px',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              fontSize: '13.5px',
-              fontWeight: 600,
-              color: TOKENS.colors.ink,
-              cursor: 'pointer'
-            }}
-          >
-            <IconPlus size={15} style={{ color: TOKENS.colors.ink }} />
-            <span>New chat</span>
-          </motion.button>
-        </div>
-
-        {/* History Grouped by Date */}
-        <div
-          style={{
-            flex: hasConversation ? 1 : '0 0 auto',
-            overflowY: 'auto',
-            padding: '0 10px 12px 10px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}
-        >
-          {historyItems.map((chat, index) => (
-            <motion.div
-              key={chat.id || chat.conversationId || index}
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 + index * 0.04, type: 'spring', stiffness: 300, damping: 22 }}
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <motion.button
-                  type="button"
-                  onClick={() => onSelectHistoryItem ? onSelectHistoryItem(chat) : handleSend(chat.title || chat.question)}
-                  whileHover={{ x: 4, backgroundColor: TOKENS.colors.hover }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                  style={{ width: '100%', textAlign: 'left', padding: '7px 8px', borderRadius: '9px', border: 'none', backgroundColor: 'transparent', fontSize: '12.5px', color: TOKENS.colors.body, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
-                >
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: '6px' }}>
-                    {chat.title || chat.question || 'Untitled chat'}
-                  </span>
-                  {chat.type === 'Deep research' && <IconMicroscope size={13} style={{ color: TOKENS.colors.amber, flexShrink: 0 }} />}
-                </motion.button>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-        {onThemeChange && (
-          <div style={{ borderTop: `1px solid ${TOKENS.colors.line}`, padding: '10px 14px' }}>
-            <button type="button" onClick={onThemeChange} aria-label={`Theme: ${theme}. Switch theme`} title="Switch theme" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', background: 'transparent', color: TOKENS.colors.muted, fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}>
-              <span className="theme-toggle-icon" aria-hidden="true">{theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}</span>
-              {theme[0].toUpperCase() + theme.slice(1)} theme
-            </button>
-          </div>
-        )}
-      </aside>
-
-      {/* =================================================================== */}
-      {/* MAIN WORKSPACE */}
-      {/* =================================================================== */}
+      {/* MAIN WORKSPACE SURFACE */}
       <main
         style={{
           flex: '1 1 auto',
@@ -539,77 +431,12 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           justifyContent: hasConversation ? 'flex-start' : 'center'
         }}
       >
-        {/* =================================================================== */}
-        {/* SECTION 4: HEADER */}
-        {/* =================================================================== */}
-        <header
-          style={{
-            height: '52px',
-            padding: '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: step >= 1 ? `1px solid ${TOKENS.colors.line}` : 'none',
-            flexShrink: 0,
-            transition: 'border-color 0.3s ease'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, paddingRight: '16px' }}>
-            {step >= 1 && (
-              <motion.span
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                style={{
-                  fontSize: '13.5px',
-                  fontWeight: 600,
-                  color: TOKENS.colors.ink,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}
-              >
-                {userQuestion || 'Do vision-language models stay calibrated under distribution shift?'}
-              </motion.span>
-            )}
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            {step === 1 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  fontSize: '11px',
-                  fontFamily: TOKENS.fonts.mono,
-                  color: TOKENS.colors.amber
-                }}
-              >
-                <IconClock size={13} style={{ color: TOKENS.colors.amber }} />
-                <span>researching…</span>
-              </motion.div>
-            ) : step >= 2 ? (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                style={{
-                  fontSize: '11px',
-                  fontFamily: TOKENS.fonts.mono,
-                  color: TOKENS.colors.muted
-                }}
-              >
-                working
-              </motion.span>
-            ) : null}
-          </div>
-        </header>
 
         {/* Scroll Area */}
         <div
           ref={scrollRef}
+          className="scroll-fade"
           style={{
             flex: hasConversation ? 1 : '0 0 auto',
             overflowY: 'auto',
@@ -625,7 +452,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           {/* SECTION 5: IDLE HERO */}
           {/* =================================================================== */}
           {conversationTurns.length > 0 ? (
-            <ConversationThread turns={conversationTurns} isPending={isPending} />
+            <ConversationThread turns={conversationTurns} isPending={isPending} confidenceChecking={confidenceChecking} />
           ) : step === 0 && (
             <div
               style={{
@@ -656,11 +483,13 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 >
                   <h1
                     style={{
-                      fontSize: 'clamp(32px, 3vw, 42px)',
+                      fontSize: 'clamp(24px, 5.5vw, 42px)',
                       fontWeight: 400,
                       letterSpacing: '-0.02em',
                       color: TOKENS.colors.ink,
-                      margin: 0
+                      margin: 0,
+                      padding: '0 16px',
+                      lineHeight: '1.25'
                     }}
                   >
                     How can Atlas help you today?
@@ -1073,7 +902,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             padding: hasConversation ? '0 16px 16px 16px' : '0 24px 16px',
             zIndex: 10
           }}
-          className="atlas-prompt-dock"
+      className="atlas-prompt-dock"
         >
           <div
             style={{
@@ -1095,6 +924,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           >
             {/* Input Textarea */}
             <textarea
+              className="atlas-composer-input"
               ref={inputRef}
               rows={2}
               value={inputText}
@@ -1119,46 +949,45 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 color: TOKENS.colors.ink,
                 lineHeight: '1.4',
                 paddingTop: '2px',
-                minHeight: '56px',
-                maxHeight: '40vh',
+                minHeight: '34px',
                 overflowY: 'auto'
               }}
             />
 
             {/* Right Action Stack: Dropdown + Mic + Send */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', flexShrink: 0, position: 'relative' }}>
+            <div className="atlas-composer-controls" style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', flexShrink: 0, position: 'relative' }}>
               {/* Model Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
                   type="button"
                   onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
                   style={{
-                    height: '36px',
-                    padding: '0 14px',
+                    height: '34px',
+                    padding: '0 10px',
                     borderRadius: '999px',
                     border: `1px solid ${TOKENS.colors.line}`,
                     backgroundColor: 'transparent',
-                    fontSize: '13.5px',
+                    fontSize: '12.5px',
                     fontWeight: 500,
                     color: TOKENS.colors.body,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '4px',
                     cursor: 'pointer'
                   }}
                 >
-                  <IconSparkle size={14} style={{ color: TOKENS.colors.amber }} />
-                  <span>{selectedModel}</span>
-                  <IconChevronDown size={14} style={{ color: TOKENS.colors.muted }} />
+                  <IconSparkle size={13} style={{ color: TOKENS.colors.amber }} />
+                  <span className="atlas-model-label">{selectedModel}</span>
+                  <IconChevronDown size={13} style={{ color: TOKENS.colors.muted }} />
                 </button>
 
                 {modelDropdownOpen && (
                   <div
                     style={{
                       position: 'absolute',
-                      right: 0,
+                      left: 0,
                       bottom: '38px',
-                      width: '160px',
+                      width: '150px',
                       backgroundColor: TOKENS.colors.card,
                       border: `1px solid ${TOKENS.colors.line}`,
                       borderRadius: '12px',
@@ -1206,20 +1035,20 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 aria-pressed={isDeepResearch}
                 title="Deep research"
                 style={{
-                  height: '36px',
+                  height: '34px',
                   borderRadius: '999px',
-                  padding: '0 12px',
+                  padding: '0 10px',
                   border: `1px solid ${isDeepResearch ? TOKENS.colors.amberBorder : TOKENS.colors.line}`,
                   backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : TOKENS.colors.card,
                   color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.body,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  gap: '4px',
                   cursor: 'pointer'
                 }}
               >
-                <IconMicroscope size={14} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.body }} />
-                <span style={{ fontSize: '13px' }}>Deep research</span>
+                <IconMicroscope size={13} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.body }} />
+                <span className="atlas-research-label" style={{ fontSize: '12.5px' }}>Deep research</span>
               </button>
 
               {/* Solid Black Circular Send Button */}
@@ -1280,9 +1109,9 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   );
 }
 
-function ConversationThread({ turns, isPending }) {
+function ConversationThread({ turns, isPending, confidenceChecking = false }) {
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '42px 24px 150px', width: '100%', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '42px 24px calc(176px + 24px)', width: '100%', maxWidth: '900px', margin: '0 auto' }}>
       {turns.map((turn) => (
           <motion.div
             key={turn.id}
@@ -1297,17 +1126,15 @@ function ConversationThread({ turns, isPending }) {
               {turn.question}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-            <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: TOKENS.colors.yellow, display: 'grid', placeItems: 'center', flexShrink: 0 }}><AtlasLogo className="w-5 h-5" /></div>
+          <div style={{ display: 'flex', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, color: TOKENS.colors.body, fontSize: '16px', lineHeight: 1.7, minWidth: 0 }}>
-              {turn.isLoading && !turn.answer ? <div style={{ color: TOKENS.colors.muted }}>Preparing a verified answer…</div> : <ChatMarkdown content={turn.answer || ''} />}
-              {!turn.isLoading && turn.confidence ? <ConfidenceBlock confidence={turn.confidence} /> : null}
+              {turn.isLoading && !turn.answer ? <div style={{ color: TOKENS.colors.muted }}>Preparing a verified answer…</div> : <ProgressiveMarkdown content={turn.answer || ''} streaming={Boolean(turn.isLoading)} />}
+              {!turn.isLoading && <ConfidenceBlock confidence={turn.confidence} checking={confidenceChecking} />}
               {turn.error ? <div role="alert" style={{ color: '#B42318', marginTop: '8px' }}>{turn.error}</div> : null}
             </div>
           </div>
         </motion.div>
       ))}
-      {isPending && turns.at(-1)?.answer ? <div style={{ color: TOKENS.colors.muted, fontSize: '13px', paddingLeft: '48px' }}>Updating…</div> : null}
     </div>
   );
 }

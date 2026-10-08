@@ -13,19 +13,30 @@ import HistoryView from './components/HistoryView';
 import SettingsModal from './components/SettingsModal';
 import AtlasLanding from './components/AtlasLanding';
 import { getDynamicGreeting, ROTATING_PLACEHOLDERS } from './utils/greeting';
-import { supabase } from './lib/supabase';
 
 import {
   fetchHealth,
   fetchSettings,
   fetchConversations,
   fetchConversationMessages,
+  saveLocalConversation,
   sendDeepResearchStream,
   sendChatStream,
+  checkAnswerConfidence,
 } from './api';
 
 function createConversationId() {
   return 'conv-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+}
+
+function mergeConversationHistory(items) {
+  const byId = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const id = item?.conversationId || item?.id;
+    if (!id || byId.has(id)) return;
+    byId.set(id, { ...item, id, conversationId: id });
+  });
+  return [...byId.values()].sort((a, b) => String(b.updatedAt || b.timestamp || '').localeCompare(String(a.updatedAt || a.timestamp || '')));
 }
 
 function isLikelyDeepResearch(text) {
@@ -85,6 +96,11 @@ const STAGE_NAME_MAP = {
 const DATASET_DEPENDENT_STAGES = [5, 6, 7, 8, 10, 11, 12];
 
 function WorkspaceApp({ onSignOut }) {
+  useEffect(() => {
+    if (globalThis.__ATLAS_BUILD_VERSION_LOGGED__) return;
+    globalThis.__ATLAS_BUILD_VERSION_LOGGED__ = true;
+    console.info('[Atlas build]', typeof __ATLAS_BUILD_VERSION__ !== 'undefined' ? __ATLAS_BUILD_VERSION__ : { commit: 'unknown' });
+  }, []);
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('atlas-theme') || 'system'; } catch { return 'system'; }
   });
@@ -109,6 +125,12 @@ function WorkspaceApp({ onSignOut }) {
   // Navigation & Active View
   const [activeNav, setActiveNav] = useState('research'); // 'research' | 'experiments' | 'sources' | 'hypotheses' | 'reports' | 'history'
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.innerWidth < 768) return false;
+      return localStorage.getItem('atlas-sidebar-open') !== '0';
+    } catch { return true; }
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // System & Connection State
@@ -132,6 +154,7 @@ function WorkspaceApp({ onSignOut }) {
   const [normalSources, setNormalSources] = useState([]);
   const [isBuiltInExplanation, setIsBuiltInExplanation] = useState(false);
   const [responseConfidence, setResponseConfidence] = useState(null);
+  const [confidenceChecking, setConfidenceChecking] = useState(false);
 
   // Deep Research Workspace Data
   const [stageEvents, setStageEvents] = useState([]);
@@ -146,10 +169,12 @@ function WorkspaceApp({ onSignOut }) {
 
   // Session History List
   const [historyItems, setHistoryItems] = useState([]);
+  const [historyLoadState, setHistoryLoadState] = useState('idle');
   // Keep every exchange in the visible session thread; the current response
   // payload below is only the active turn's workspace state.
   const [conversationTurns, setConversationTurns] = useState([]);
   const requestControllerRef = useRef(null);
+  const sendingRef = useRef(false);
 
   // Check Backend Connection on Mount & Periodically
   const checkBackend = async () => {
@@ -193,21 +218,38 @@ function WorkspaceApp({ onSignOut }) {
   // erase previously persisted conversations from the sidebar.
   useEffect(() => {
     let cancelled = false;
+    setHistoryLoadState('loading');
     fetchConversations().then((items) => {
       if (cancelled || !Array.isArray(items)) return;
-      setHistoryItems(items.map((item) => ({
+      setHistoryItems(mergeConversationHistory(items).map((item) => ({
         id: item.id || item.conversationId,
         conversationId: item.id || item.conversationId,
         question: item.title || item.question || 'Conversation',
         timestamp: item.updatedAt || item.createdAt || 'Recent',
         isDeep: Boolean(item.isDeep || item.mode === 'deep_research'),
       })));
-    }).catch(() => {});
+      setHistoryLoadState('ready');
+    }).catch(() => setHistoryLoadState('ready'));
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('atlas-sidebar-open', sidebarOpen ? '1' : '0'); } catch { /* unavailable */ }
+  }, [sidebarOpen]);
+  useEffect(() => {
+    const toggle = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        setSidebarOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', toggle);
+    return () => window.removeEventListener('keydown', toggle);
   }, []);
 
   // Handle New Question / Reset State
   const handleNewQuestion = () => {
+    if (window.location.pathname !== '/') window.history.pushState({}, '', '/');
     setGreeting(getDynamicGreeting());
     setUserQuestion('');
     setNormalAnswer('');
@@ -232,8 +274,9 @@ function WorkspaceApp({ onSignOut }) {
   };
 
   // Main Question Submission Handler
-  const handleSendQuestion = async (queryText, onSuccess) => {
-    if (!queryText.trim()) return;
+  const handleSendQuestion = async (queryText, onSuccess, options = {}) => {
+    if (!queryText.trim() || sendingRef.current) return;
+    sendingRef.current = true;
 
     setUserQuestion(queryText);
     setIsPending(true);
@@ -242,7 +285,7 @@ function WorkspaceApp({ onSignOut }) {
     requestControllerRef.current = requestController;
     setErrorFeedback(null);
     setActiveNav('research');
-    const deepCheck = isLikelyDeepResearch(queryText);
+    const deepCheck = typeof options.deepResearch === 'boolean' ? options.deepResearch : isLikelyDeepResearch(queryText);
     const turnId = `${conversationId}:${Date.now()}`;
     const requestId = createConversationId();
     const messageId = turnId;
@@ -264,9 +307,8 @@ function WorkspaceApp({ onSignOut }) {
     setStageEvents([]);
 
     // Do not discard a real user request while the startup health probe is
-    // still catching up with Supabase session restoration. The chat request
-    // carries its own token and is the authoritative connectivity check;
-    // failures are surfaced by the request error handler below.
+    // The chat request is the authoritative connectivity check; failures are
+    // surfaced by the request error handler below.
 
     if (onSuccess) onSuccess();
 
@@ -288,15 +330,15 @@ function WorkspaceApp({ onSignOut }) {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isDeep: deepCheck,
     };
-    setHistoryItems((prev) => [newHistoryEntry, ...prev]);
+    setHistoryItems((prev) => mergeConversationHistory([newHistoryEntry, ...prev]));
+    saveLocalConversation({ ...newHistoryEntry, messages: [{ role: 'user', content: queryText, created_at: new Date().toISOString() }] }).catch(() => {});
 
     // The timeline starts in a queued state.  A synthetic "running" stage
     // here used to remain stuck while later backend stages completed.  Only
     // backend activity is allowed to mark a stage in progress now.
-    const initialEvents = [
-      { stageIndex: 1, status: 'pending', detail: 'Waiting for the research pipeline', timestamp: new Date().toLocaleTimeString() },
-    ];
-    setStageEvents(initialEvents);
+    // The research panel is driven exclusively by backend lifecycle events;
+    // do not fabricate pending stages before the server has emitted one.
+    setStageEvents([]);
 
     try {
       if (deepCheck) {
@@ -307,12 +349,17 @@ function WorkspaceApp({ onSignOut }) {
           const idx = STAGE_NAME_MAP[activity.stage] || 2;
           setStageEvents((prev) => {
             const updated = [...prev];
-            const existing = updated.findIndex((e) => e.stageIndex === idx);
+            const eventKey = activity.id || `${activity.stage || idx}`;
+            const existing = updated.findIndex((e) => e.eventKey === eventKey);
             const evtObj = {
+              eventKey,
+              stage: activity.stage,
+              label: activity.label,
+              metadata: activity.metadata,
               stageIndex: idx,
               status: activity.status === 'completed' ? 'completed' : activity.status === 'failed' ? 'failed' : 'running',
               detail: activity.detail || activity.label,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              timestamp: activity.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             };
             if (existing >= 0) updated[existing] = evtObj;
             else updated.push(evtObj);
@@ -369,46 +416,18 @@ function WorkspaceApp({ onSignOut }) {
             setValidatedSources(res.sources);
           }
           setResponseConfidence(res.confidence || null);
-
-          // Reconcile the 13-step list against what actually executed:
-          // Ensure EVERY stage from 1 to 13 reaches a terminal state (completed, skipped, or failed).
-          const ranExperiments = !!res.project;
-          setStageEvents((prev) => {
-            const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const existingMap = new Map(prev.map((e) => [e.stageIndex, e]));
-            const ALL_STAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-            
-            return ALL_STAGES.map((s) => {
-              const existing = existingMap.get(s);
-              if (existing) {
-                return {
-                  ...existing,
-                  status: existing.status === 'failed' ? 'failed' : 'completed',
-                  timestamp: existing.timestamp || now,
-                };
-              }
-              if (s === 1) {
-                return { stageIndex: 1, status: 'completed', detail: 'Research problem analyzed and scoped', timestamp: now };
-              }
-              if (s === 13) {
-                return { stageIndex: 13, status: 'completed', detail: 'Final research report compiled', timestamp: now };
-              }
-              if (!ranExperiments && DATASET_DEPENDENT_STAGES.includes(s)) {
-                return {
-                  stageIndex: s,
-                  status: 'skipped',
-                  detail: 'Skipped — not applicable: literature investigation (no dataset attached)',
-                  timestamp: now,
-                };
-              }
-              return {
-                stageIndex: s,
-                status: 'skipped',
-                detail: 'Skipped — not applicable to query scope',
-                timestamp: now,
-              };
-            });
-          });
+          setConfidenceChecking(true);
+          checkAnswerConfidence(reportText, res.sources || [], queryText).then((checked) => {
+            const confidence = checked?.confidence;
+            if (!confidence) return;
+            setResponseConfidence(confidence);
+            setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, confidence } : turn));
+            saveLocalConversation({ ...newHistoryEntry, updatedAt: new Date().toISOString(), messages: [{ role: 'user', content: queryText }, { role: 'assistant', content: reportText, sources: res.sources || [], confidence }] }).catch(() => {});
+          }).catch((error) => console.warn('[confidence check failed]', error.message)).finally(() => setConfidenceChecking(false));
+          saveLocalConversation({ ...newHistoryEntry, updatedAt: new Date().toISOString(), messages: [
+            { role: 'user', content: queryText, created_at: new Date().toISOString() },
+            { role: 'assistant', content: reportText, sources: res.sources || [], confidence: res.confidence || null, created_at: new Date().toISOString() },
+          ] }).catch(() => {});
 
           if (res.project) {
             setActiveProject(res.project);
@@ -438,6 +457,18 @@ function WorkspaceApp({ onSignOut }) {
         console.debug('[Atlas raw stream final]', res.response || streamed || '');
         setNormalAnswer(res.response || streamed || 'No response returned.');
         setResponseConfidence(res.confidence || null);
+        setConfidenceChecking(true);
+        checkAnswerConfidence(res.response || streamed || '', res.sources || [], queryText).then((checked) => {
+          const confidence = checked?.confidence;
+          if (!confidence) return;
+          setResponseConfidence(confidence);
+          setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, confidence } : turn));
+          saveLocalConversation({ ...newHistoryEntry, updatedAt: new Date().toISOString(), messages: [{ role: 'user', content: queryText }, { role: 'assistant', content: res.response || streamed || '', sources: res.sources || [], confidence }] }).catch(() => {});
+        }).catch((error) => console.warn('[confidence check failed]', error.message)).finally(() => setConfidenceChecking(false));
+        saveLocalConversation({ ...newHistoryEntry, updatedAt: new Date().toISOString(), messages: [
+          { role: 'user', content: queryText, created_at: new Date().toISOString() },
+          { role: 'assistant', content: res.response || streamed || '', sources: res.sources || [], confidence: res.confidence || null, created_at: new Date().toISOString() },
+        ] }).catch(() => {});
         setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
           ? { ...turn, answer: res.response || streamed || 'No response returned.', sources: res.sources || [], confidence: res.confidence || null, isLoading: false }
           : turn));
@@ -463,26 +494,39 @@ function WorkspaceApp({ onSignOut }) {
     } finally {
       setIsPending(false);
       if (requestControllerRef.current === requestController) requestControllerRef.current = null;
+      sendingRef.current = false;
     }
   };
 
   const handleStopRequest = () => requestControllerRef.current?.abort();
 
-  const handleSelectConversation = async (item) => {
+  const handleSelectConversation = async (item, updateUrl = true) => {
     const selectedId = item?.conversationId || item?.id;
     if (!selectedId) return;
+    setSidebarOpen(false);
+    if (updateUrl) window.history.pushState({ chatId: selectedId }, '', `/chat/${encodeURIComponent(selectedId)}`);
+    setHistoryLoadState('loading');
     const messages = await fetchConversationMessages(selectedId);
     const rows = Array.isArray(messages) ? messages : (messages?.messages || []);
     const turns = [];
     let current = null;
     for (const message of rows) {
       if (message.role === 'user') {
-        current = { id: message.id || `${selectedId}:${turns.length}`, question: message.content || '', answer: '', sources: [], confidence: null, isLoading: false, mode: 'normal' };
+        current = { id: message.id || `${selectedId}:${turns.length}`, question: message.content || '', answer: '', sources: [], confidence: null, activity: [], isLoading: false, mode: 'normal' };
         turns.push(current);
       } else if (message.role === 'assistant' && current) {
         current.answer = message.content || '';
+        current.sources = message.sources || message.metadata?.sources || [];
+        current.confidence = message.confidence || message.metadata?.confidence || null;
+        current.activity = message.activity || message.research_steps || message.metadata?.activity || [];
       }
     }
+    if (!turns.length) {
+      setHistoryLoadState('not_found');
+      setErrorFeedback('Conversation not found');
+      return;
+    }
+    setHistoryLoadState('ready');
     setConversationId(selectedId);
     setConversationTurns(turns);
     setUserQuestion(turns.at(-1)?.question || '');
@@ -493,6 +537,31 @@ function WorkspaceApp({ onSignOut }) {
     setActiveNav('research');
   };
 
+  useEffect(() => {
+    const onPopState = () => {
+      const match = window.location.pathname.match(/^\/chat\/([^/]+)/);
+      if (!match) {
+        handleNewQuestion();
+        return;
+      }
+      const item = historyItems.find((entry) => String(entry.conversationId || entry.id) === decodeURIComponent(match[1]));
+      if (item) handleSelectConversation(item, false);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [historyItems]);
+
+  useEffect(() => {
+    if (!historyItems.length) return;
+    const match = window.location.pathname.match(/^\/chat\/([^/]+)/);
+    if (match && !conversationTurns.length) {
+      const id = decodeURIComponent(match[1]);
+      const item = historyItems.find((entry) => String(entry.conversationId || entry.id) === id);
+      if (item) handleSelectConversation(item, false);
+      else setHistoryLoadState('not_found');
+    }
+  }, [historyItems]);
+
   // Initialize and synchronize URL path (/atlas, /atlas/experiments, etc.)
   useEffect(() => {
     const path = window.location.pathname;
@@ -501,7 +570,7 @@ function WorkspaceApp({ onSignOut }) {
       if (['research', 'experiments', 'sources', 'hypotheses', 'reports', 'history'].includes(sub)) {
         setActiveNav(sub);
       }
-    } else {
+    } else if (!path.startsWith('/chat/')) {
       window.history.replaceState(null, '', '/atlas');
     }
 
@@ -568,6 +637,11 @@ function WorkspaceApp({ onSignOut }) {
         backendConnected={backendConnected}
         connectionState={connectionState}
         errorFeedback={errorFeedback}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((open) => !open)}
+        historyLoadState={historyLoadState}
+        activeConversationId={conversationId}
+        confidenceChecking={confidenceChecking}
       />
     );
   }
@@ -583,6 +657,8 @@ function WorkspaceApp({ onSignOut }) {
         onOpenSettings={() => setIsSettingsOpen(true)}
         isMobileOpen={isMobileNavOpen}
         onMobileClose={() => setIsMobileNavOpen(false)}
+        historyItems={historyItems}
+        onSelectHistoryItem={handleSelectConversation}
         backendConnected={backendConnected}
         connectionState={connectionState}
         theme={theme}
@@ -599,6 +675,7 @@ function WorkspaceApp({ onSignOut }) {
           backendConnected={backendConnected}
           connectionState={connectionState}
           onOpenMobileNav={() => setIsMobileNavOpen(true)}
+          onNewQuestion={handleNewQuestion}
           activeNavTitle={navTitles[activeNav] || 'Research Workspace'}
         />
 
@@ -648,6 +725,7 @@ function WorkspaceApp({ onSignOut }) {
                         answer={normalAnswer}
                         sources={normalSources}
                         confidence={responseConfidence}
+                        confidenceChecking={confidenceChecking}
                         isLoading={isPending && !normalAnswer}
                         turns={conversationTurns}
                       />
@@ -665,6 +743,7 @@ function WorkspaceApp({ onSignOut }) {
                         backendConnected={backendConnected}
                         connectionState={connectionState}
                         confidence={responseConfidence}
+                        confidenceChecking={confidenceChecking}
                         priorTurns={conversationTurns.slice(0, -1)}
                         canRetry={sessionState === 'FAILED'}
                         onRetryStage={() => handleSendQuestion(userQuestion)}
@@ -750,24 +829,6 @@ function WorkspaceApp({ onSignOut }) {
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
-  const [session, setSession] = useState(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setIsLoaded(true);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setIsLoaded(true);
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     const handlePopState = () => setCurrentPath(window.location.pathname);
@@ -782,18 +843,10 @@ export default function App() {
     }
   }, [currentPath]);
 
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.warn('[SIGN OUT NOTICE]', err);
-    }
-    setSession(null);
+  const handleSignOut = () => {
     window.history.pushState({}, '', '/atlas');
     setCurrentPath('/atlas');
   };
-
-  if (!isLoaded) return null;
 
   return (
     <WorkspaceApp

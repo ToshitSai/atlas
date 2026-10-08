@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 import shutil
 import tempfile
 import asyncio
@@ -25,6 +26,8 @@ from backend import hf_datasets as hf
 from backend import rag
 
 app = FastAPI(title="Atlas Research API", version="2.0.0")
+BUILD_COMMIT = os.environ.get("VERCEL_GIT_COMMIT_SHA") or os.environ.get("GIT_COMMIT_SHA") or "local"
+BUILD_TIME = os.environ.get("ATLAS_BUILD_TIME") or datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +78,7 @@ def _valid_sid(sid: str) -> bool:
 class AnonymousSessionMiddleware(BaseHTTPMiddleware):
     """Issue/refresh the anonymous session cookie; cap body size; rate-limit chat.
 
-    Replaces the removed Supabase auth middleware. It never rejects a request for
+    Public anonymous-session middleware. It never rejects a request for
     lack of identity — it only attaches ``request.state.anon_id`` and applies
     size/rate guards to the public chat endpoints.
     """
@@ -264,6 +267,7 @@ def health_check():
         "database": store.database_health(),
         "llm": llm_configured,
         "docker": docker_ready,
+        "build": {"commit": BUILD_COMMIT, "builtAt": BUILD_TIME},
         "llmExecution": get_llm_telemetry(),
         "modelRouting": model_router.snapshot(),
     }
@@ -290,6 +294,7 @@ def config_status():
             "academicProvider": "Semantic Scholar + OpenAlex fallback",
             "semanticScholarConfigured": bool(os.environ.get("SEMANTIC_SCHOLAR_API_KEY")),
             "openAlexConfigured": bool(os.environ.get("OPENALEX_API_KEY")),
+            "scrapeDoConfigured": bool(os.environ.get("SCRAPE_DO_API_KEY")),
         },
     }
 
@@ -488,6 +493,39 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         token_callback=token_callback,
         cancel_check=cancel_check,
     )
+    # The research router is authoritative for live lookups.  The legacy
+    # intent handler can classify conversational phrasing such as "do you know
+    # X" as EXPLANATION and invoke the LLM, which risks unsourced facts.  For
+    # every routed web lookup, replace that path with the real provider result.
+    if routing_decision.get("mode") == "web_search":
+        try:
+            from backend.web_search import clean_snippet, search_web
+            web_query = re.sub(r"^do you know\s+", "", message, flags=re.IGNORECASE).strip()
+            web_results = search_web(web_query, limit=5)
+            if web_results:
+                # Attach auditable metadata used by the evidence scorer.  A
+                # search hit is evidence of retrieval, not a guarantee of
+                # correctness; confidence is therefore capped by the scorer.
+                web_results = [{**item,
+                                "tier": item.get("tier") or "general web",
+                                "relevance_score": item.get("relevance_score", 0.8)}
+                               for item in web_results]
+                lines = [f"Here are the most relevant results for **{web_query}**:", ""]
+                for idx, item in enumerate(web_results, 1):
+                    lines.append(f"{idx}. **{item.get('title') or item.get('url')}** — {clean_snippet(item.get('snippet') or '(Open the source for details.)')}")
+                    lines.append(f"   Source: {item.get('url')}")
+                res["response"] = "\n".join(lines)
+                res["sources"] = web_results
+                res["verification"] = {"available": True, "failed": False}
+            else:
+                res["response"] = (f"I couldn't find a reliable result for \"{web_query}\" right now. "
+                                    "Try a more specific name or URL.")
+                res["sources"] = []
+                res["verification"] = {"available": True, "failed": False}
+        except Exception as web_err:
+            print(f"[ROUTED WEB SEARCH WARNING] {web_err}")
+            res["response"] = "Live web search failed for this request. Please try again."
+            res["sources"] = []
     res["researchRouting"] = routing_decision
     # Publicly auditable routing metadata.  This is metadata only; the
     # established handlers remain the source of truth for tool execution.
@@ -856,6 +894,15 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     )
     return res
 
+
+@app.post("/api/confidence/check")
+async def confidence_check_endpoint(payload: dict):
+    """Run evidence checking after answer delivery; this never delays chat."""
+    from backend.confidence import run_evidence_check
+    answer = str(payload.get("answer") or "")
+    if not answer:
+        raise HTTPException(status_code=400, detail="Answer text is required")
+    return {"confidence": run_evidence_check(answer, payload.get("sources") or [], str(payload.get("question") or ""))}
 
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(payload: dict, request: Request):

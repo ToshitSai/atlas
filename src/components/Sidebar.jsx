@@ -2,8 +2,8 @@ import React from 'react';
 import AtlasLogo from './AtlasLogo';
 
 /**
- * Sidebar Navigation:
- * Fixed 262px left column. Dark/muted canvas with active accent orange #F15A3A.
+ * Sidebar Navigation & Mobile Drawer:
+ * Fixed 262px left rail on desktop, 82vw slide-in drawer on mobile.
  */
 export default function Sidebar({
   activeNav = 'research',
@@ -12,8 +12,8 @@ export default function Sidebar({
   onOpenSettings,
   isMobileOpen = false,
   onMobileClose,
-  backendConnected = true,
-  connectionState = 'CONNECTED',
+  historyItems = [],
+  onSelectHistoryItem,
   theme = 'system',
   onThemeChange,
 }) {
@@ -21,9 +21,7 @@ export default function Sidebar({
     {
       id: 'research',
       label: 'Research',
-      icon: (
-        <AtlasLogo className="w-4 h-4" />
-      ),
+      icon: <AtlasLogo className="w-4 h-4" />,
     },
     {
       id: 'experiments',
@@ -80,15 +78,15 @@ export default function Sidebar({
   ];
 
   const content = (
-    <div className="flex flex-col h-full justify-between select-none">
-      {/* Top Header & New Question Action */}
-      <div className="p-3 border-b border-[#E9E7E1] space-y-3">
+    <div className="flex flex-col h-full justify-between select-none bg-[var(--bg-left-nav)]">
+      {/* Top Header & New Chat Action */}
+      <div className="p-3 border-b border-[var(--border-subtle)] space-y-3 shrink-0">
         {/* Brand Mark & Title */}
         <div className="flex items-center justify-between gap-2 px-1 pt-1">
           <div className="flex items-center gap-2 min-w-0">
-            <AtlasLogo className="w-6 h-6 shrink-0" />
+            <AtlasLogo className="w-6 h-6 text-[var(--accent-yellow)] shrink-0" />
             <div className="min-w-0">
-              <span className="font-bold text-[15px] tracking-normal text-[#0D0C0A] block leading-none truncate font-sans">
+              <span className="font-bold text-[15px] tracking-normal text-[var(--text-main)] block leading-none truncate font-sans">
                 Atlas
               </span>
             </div>
@@ -100,36 +98,36 @@ export default function Sidebar({
               type="button"
               onClick={onMobileClose}
               aria-label="Close navigation"
-              className="lg:hidden p-1.5 rounded text-[#8A8884] hover:text-[#E8E5DF] hover:bg-[#1B1B1B] transition-colors"
+              className="lg:hidden p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 18L18 6M6 6l12 12" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           )}
         </div>
 
-        {/* New Question Control */}
+        {/* New Chat Control */}
         <button
           type="button"
           onClick={() => {
             onNewQuestion();
             onMobileClose?.();
           }}
-          className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-[#fffefb] border border-[#E9E7E1] text-[#44403B] text-[13.5px] font-semibold flex items-center justify-center gap-1.5 btn-transition cursor-pointer shadow-sm font-sans"
-          aria-label="New question"
+          className="w-full py-2.5 px-3 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border-subtle)] text-[var(--text-main)] text-[13.5px] font-semibold flex items-center justify-center gap-1.5 btn-transition cursor-pointer shadow-sm font-sans"
+          aria-label="New chat"
         >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+          <svg className="w-4 h-4 text-[var(--text-main)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          New question
+          New chat
         </button>
       </div>
 
-      {/* Navigation List */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1 font-sans" aria-label="Primary navigation">
-        <div className="px-2 text-xs font-medium text-[#8A8884] mb-1.5 font-sans">
+      {/* Navigation & History List */}
+      <nav className="sidebar-scroll-area flex-1 overflow-y-auto px-2 py-3 space-y-1 font-sans" aria-label="Primary navigation">
+        <div className="px-2 text-xs font-medium text-[var(--text-muted)] mb-1.5 font-sans">
           Workspace
         </div>
         {navItems.map((item) => {
@@ -143,13 +141,13 @@ export default function Sidebar({
                 onMobileClose?.();
               }}
               aria-current={isActive ? 'page' : undefined}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded text-xs text-left nav-item-transition ${
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs text-left nav-item-transition cursor-pointer ${
                 isActive
-                  ? 'bg-white text-[#0D0C0A] font-medium border-l-2 border-[#FFD800]'
-                  : 'text-[#44403B] hover:text-[#0D0C0A] hover:bg-black/[0.035] font-normal'
+                  ? 'bg-[var(--surface)] text-[var(--text-main)] font-semibold shadow-xs border-l-2 border-[var(--accent-yellow)]'
+                  : 'text-[var(--text-body)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] font-normal'
               }`}
             >
-              <span className={isActive ? 'text-[#F15A3A]' : 'text-[#8A8884]'}>
+              <span className={isActive ? 'text-[var(--accent-amber)]' : 'text-[var(--text-muted)]'}>
                 {item.icon}
               </span>
               <span className="truncate min-w-0">{item.label}</span>
@@ -157,38 +155,63 @@ export default function Sidebar({
           );
         })}
 
+        {/* Recent Chat History Items if available */}
+        {historyItems && historyItems.length > 0 && (
+          <div className="pt-4 space-y-1">
+            <div className="px-2 text-xs font-medium text-[var(--text-muted)] mb-1 font-sans">
+              Recent Chats
+            </div>
+            {historyItems.slice(0, 10).map((chat, idx) => (
+              <button
+                key={chat.id || chat.conversationId || idx}
+                type="button"
+                onClick={() => {
+                  onSelectHistoryItem?.(chat);
+                  onMobileClose?.();
+                }}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg text-[12px] text-[var(--text-body)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] truncate transition-colors cursor-pointer flex items-center justify-between"
+              >
+                <span className="truncate pr-1">{chat.title || chat.question || 'Untitled chat'}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {onOpenSettings && (
-          <button
-            type="button"
-            onClick={() => {
-              onOpenSettings();
-              onMobileClose?.();
-            }}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded text-xs text-left text-[#44403B] hover:text-[#0D0C0A] hover:bg-black/[0.035] font-normal font-sans"
-          >
-            <span className="text-[#8A8884]">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </span>
-            <span className="truncate min-w-0">Settings</span>
-          </button>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenSettings();
+                onMobileClose?.();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs text-left text-[var(--text-body)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] font-normal font-sans cursor-pointer"
+            >
+              <span className="text-[var(--text-muted)]">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </span>
+              <span className="truncate min-w-0">Settings</span>
+            </button>
+          </div>
         )}
       </nav>
 
+      {/* Theme switch button */}
       {onThemeChange && (
-        <div className="border-t border-[var(--border-subtle)] px-3 py-3">
+        <div className="border-t border-[var(--border-subtle)] px-3 py-3 shrink-0">
           <button
             type="button"
             onClick={onThemeChange}
-            className="w-full flex items-center justify-between gap-2 rounded px-2.5 py-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors"
+            className="w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
             aria-label={`Theme: ${theme}. Switch theme`}
             title="Switch theme"
           >
             <span className="flex items-center gap-2">
               <span className="theme-toggle-icon" aria-hidden="true">{theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}</span>
-              <span>{theme[0].toUpperCase() + theme.slice(1)} theme</span>
+              <span className="capitalize">{theme} theme</span>
             </span>
           </button>
         </div>
@@ -206,8 +229,8 @@ export default function Sidebar({
       {/* Mobile Drawer Slide-in (<1024px) */}
       {isMobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Navigation drawer">
-          <div className="fixed inset-0 bg-black/75" onClick={onMobileClose} aria-hidden="true" />
-          <aside className="relative w-[262px] max-w-[80vw] h-full bg-[var(--bg-left-nav)] border-r border-[var(--border-subtle)] shadow-2xl z-10">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs" onClick={onMobileClose} aria-hidden="true" />
+          <aside className="relative w-[280px] max-w-[82vw] h-full bg-[var(--bg-left-nav)] border-r border-[var(--border-subtle)] shadow-2xl z-10">
             {content}
           </aside>
         </div>
@@ -215,3 +238,4 @@ export default function Sidebar({
     </>
   );
 }
+

@@ -3,6 +3,7 @@ import ast
 import json
 import operator
 import re
+import time
 from typing import Dict, Any, Optional, List, Tuple, Callable
 from backend.llm import (
     query_llm, query_llm_with_continuation, query_llm_stream, any_provider_configured, set_llm_budget, clear_llm_budget, DEFAULT_REQUEST_BUDGET,
@@ -100,7 +101,7 @@ GENERAL_ASSISTANT_SYSTEM_PROMPT = (
     "Be concise but complete. Only include a link or citation when you are naming a specific "
     "external resource the user would genuinely benefit from opening, or when supporting a specific "
     "current/statistical claim. Do not add citations to general advice, explanations, opinions, coding, "
-    "or mathematics merely for decoration.\n\n" + _BEHAVIOR_ANCHORS + "\n" + identity_system_instruction()
+    "or mathematics merely for decoration. When the current message is a follow-up, answer the requested operation first: lead with the requested detail, example, or simplification; mention earlier content in at most one short line; never repeat a definition already given unless the user asks for it. Label invented examples exactly 'Example (illustrative)' and never present made-up quotes, ticket numbers, or error messages as real.\n\n" + _BEHAVIOR_ANCHORS + "\n" + identity_system_instruction()
 )
 
 CODING_SYSTEM_PROMPT = (
@@ -604,8 +605,26 @@ def classify_research_route(message: str) -> Dict[str, Any]:
               "requires_web": False, "requires_deep_research": False, **assessment}
     if not text:
         return normal
+    # Multi-part stress tests are framing/reasoning tasks, not requests to
+    # explain the keyword "stress-test". Preserve each requested part so the
+    # downstream research planner can solve them independently.
+    if re.search(r"\bstress[- ]?test\b", text) and (
+        re.search(r"\bpart\s*[2-9]\b", text) or text.count("?") >= 2
+    ):
+        return {"mode": "deep_research", "confidence": 0.96,
+                "reason": "Multi-part stress test requires explicit framing and independent checks.",
+                "requires_web": bool(re.search(r"\b(?:paper|latest|source|literature)\b", text)),
+                "requires_deep_research": True, "framing": True,
+                "parts": re.split(r"(?=\bpart\s*\d+\b)", message, flags=re.I), **assessment}
     if re.search(r"\b(?:just (?:answer|explain)|brief answer|don't research|do not research)\b", text):
         return {**normal, "confidence": 0.99, "reason": "The user explicitly requested a direct answer."}
+    # Entity lookups such as "do you know [film/person]" are requests for
+    # current, source-backed knowledge.  Do not answer from the model's memory
+    # because that path can confidently invent release dates or cast details.
+    if re.search(r"\bdo you know\b", text) and len(text.split()) >= 4:
+        return {"mode": "web_search", "confidence": 0.9,
+                "reason": "Entity lookup requires live source verification.",
+                "requires_web": True, "requires_deep_research": False, **assessment}
     explicit_override = bool(re.search(r"\b(?:do deep research|research this thoroughly|conduct a full .*research)\b", text))
     # A quick current lookup is web search unless it also asks for a synthesis
     # or comparative study.
@@ -1405,6 +1424,22 @@ def _history_last_topic(history: Optional[List[Dict[str, Any]]]) -> Optional[str
             return "coding"
     return None
 
+def rewrite_followup_query(message: str, history: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Resolve short anaphoric follow-ups without contaminating topic changes."""
+    text = (message or '').strip()
+    topic = _history_last_topic(history)
+    if not topic:
+        prior = next((str(item.get('content') or '').strip() for item in reversed(history or [])
+                      if isinstance(item, dict) and item.get('role') == 'user'), '')
+        topic = re.sub(r"^(?:what is|what are|explain|tell me about)\s+", "", prior, flags=re.I).strip(' ?.!') or None
+    if not topic or not re.search(r"\b(it|this|that|they|them|how does it work|explain more|tell me more|give me more|real world example|simplify|simply|why)\b", text, re.I):
+        return text
+    recent_user = next((str(item.get('content') or '') for item in reversed(history or [])
+                        if isinstance(item, dict) and item.get('role') == 'user'), '')
+    if recent_user and recent_user.strip().lower() == text.lower():
+        return text
+    return f"{text} (in the context of {topic})"
+
 
 def _starter_code_example(message: str, history: Optional[List[Dict[str, Any]]]) -> Optional[str]:
     """Return a useful deterministic code starter for an underspecified ask."""
@@ -2006,7 +2041,15 @@ def _handle_intent_message_impl(
     #    verify -> cited report. Honest fallback when no source is reachable.
     elif intent == "DEEP_RESEARCH":
         store.clear_pending_action(sid)
-        goal = extract_research_topic(re.sub(r"https?://\S+", "", message).strip() or message.strip())
+        search_message = rewrite_followup_query(message, conversation_history)
+        if activity_callback and search_message != message:
+            activity_callback({
+                "id": f"{sid}-followup-rewrite", "requestId": sid, "jobId": sid,
+                "stage": "planning", "status": "completed",
+                "label": "Follow-up query rewritten", "detail": search_message,
+                "timestamp": int(time.time() * 1000),
+            })
+        goal = extract_research_topic(re.sub(r"https?://\S+", "", search_message).strip() or search_message.strip())
         # The goal must be a TOPIC, not an imperative sentence: strip leading
         # research verbs so search queries are not polluted with them.
         goal = re.sub(
@@ -2027,10 +2070,7 @@ def _handle_intent_message_impl(
         # execution — never a re-derived summary of what should have happened.
         activity = list(research.get("trace", {}).get("steps") or [])
         if research.get("status") == "ok" and research.get("report"):
-            resp_text = (
-                f"I ran a multi-step research pass on: {goal}\n\n"
-                f"{research['report']}"
-            )
+            resp_text = research['report']
         else:
             if not activity:
                 # The pipeline itself failed to run (unexpected error): one

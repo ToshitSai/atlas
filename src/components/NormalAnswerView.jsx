@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import ChatMarkdown from './ChatMarkdown';
+import ProgressiveMarkdown from './ProgressiveMarkdown';
 import ConfidenceBlock from './ConfidenceBlock';
-import AtlasLogo from './AtlasLogo';
 
 /** Focused direct-answer thread, without document-style Question/Answer cards. */
 export default function NormalAnswerView({ userQuestion = '', answer = '', sources = [], confidence = null, isLoading = false, turns = [] }) {
@@ -15,8 +14,6 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
     const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
     if (previousAnswerLength.current > 0 && answer.length > previousAnswerLength.current && nearBottom) {
       node.scrollTop = node.scrollHeight;
-    } else if (previousAnswerLength.current === 0) {
-      node.scrollTop = 0;
     }
     previousAnswerLength.current = answer.length;
     const onScroll = () => setShowJump(node.scrollHeight - node.scrollTop - node.clientHeight > 80);
@@ -25,7 +22,7 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
     return () => node.removeEventListener('scroll', onScroll);
   }, [answer, turns.length]);
   return (
-    <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl lg:max-w-4xl mx-auto w-full space-y-8 animate-panel-entrance select-none font-sans pb-[calc(8rem+24px)] text-[var(--text-body)]">
+    <div ref={scrollRef} className="chat-scroll-area relative flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl lg:max-w-4xl mx-auto w-full space-y-8 animate-panel-entrance select-none font-sans pb-[calc(8rem+24px)] text-[var(--text-body)]">
       {visibleTurns.map((turn) => {
         const loading = Boolean(turn.isLoading);
         return <React.Fragment key={turn.id}>
@@ -33,23 +30,20 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
             <div className="bg-[var(--surface-alt)] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[var(--text-body)] leading-relaxed break-words overflow-wrap-anywhere">{turn.question}</div>
             <div className="mt-0.5 w-7 h-7 rounded-full border border-[#E3E0D8] bg-[#FAF9F6] text-[10px] font-sans text-[#7A8794] flex items-center justify-center shrink-0" aria-label="You">Y</div>
           </article>
-          <article className="flex items-start gap-3">
-            <div className="mt-0.5 w-8 h-8 rounded-xl bg-[#FACC00] flex items-center justify-center shrink-0" aria-label="Atlas">
-              <AtlasLogo className="w-5 h-5" />
-            </div>
+      <article className="flex items-start" style={{ overflowAnchor: 'none' }}>
             <div className="min-w-0 flex-1 pt-0.5 text-[15px] text-[var(--text-body)] leading-7 break-words overflow-wrap-anywhere">
               <div className="mb-3 flex items-center gap-2 text-sm">
                 <span className="font-semibold text-[var(--text-main)]">Atlas</span>
               </div>
-              {loading ? <AnswerSkeleton /> : <ChatMarkdown content={turn.answer || ''} />}
+              {loading && !turn.answer ? <AnswerSkeleton /> : <ProgressiveMarkdown content={turn.answer || ''} streaming={loading} />}
               {turn.stopped && <p className="mt-2 text-sm text-[var(--text-secondary)]" role="status">Stopped</p>}
               {!loading && <ConfidenceBlock confidence={turn.confidence || null} />}
               {turn.sources?.length > 0 && !loading && (
               <section className="mt-5 pt-4 border-t border-[var(--border-subtle)] space-y-2">
               <div className="text-[11px] font-sans uppercase tracking-wide text-[var(--text-secondary)]">Sources</div>
-              <div className="space-y-1.5">
+                  <div className="space-y-1.5">
                   {turn.sources.map((src, idx) => (
-                  <div key={idx} className="text-xs flex items-center gap-2"><span className="text-[var(--accent-amber)]">•</span><a href={src.url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent-amber)] underline underline-offset-2 transition-colors truncate">{src.title || src.url}</a></div>
+                  <div key={idx} className="text-xs flex items-center gap-2"><span className="source-status-dot" aria-hidden="true" /><a href={src.url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent-amber)] underline underline-offset-2 transition-colors truncate">{src.title || src.url}</a><span className="text-[var(--text-muted)] shrink-0">{src.publishedAt || src.year ? `Published ${src.publishedAt || src.year}` : ''}{src.retrievedAt ? ` · Retrieved ${src.retrievedAt}` : ''}</span></div>
                 ))}
               </div>
             </section>

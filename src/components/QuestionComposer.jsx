@@ -259,7 +259,7 @@ export default function QuestionComposer({
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            className="text-[13.5px] font-medium text-[var(--text-body)] hover:text-[var(--text-main)] flex items-center gap-1 cursor-pointer bg-transparent border-none px-1"
+            className="hidden sm:flex items-center gap-1 text-[13.5px] font-medium text-[var(--text-body)] hover:text-[var(--text-main)] cursor-pointer bg-transparent border-none px-1"
           >
             <span>Thinking</span>
             <svg className="w-3.5 h-3.5 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>

@@ -418,6 +418,12 @@ class ResearchOpsMixin:
                  "confidence": confidence,
              }.items() if value}),
              created_at))
+        if role == "user":
+            self._execute(
+                """UPDATE conversations
+                   SET title=LEFT(regexp_replace(%s, '\\s+', ' ', 'g'), 77)
+                   WHERE id=%s AND (title IS NULL OR btrim(title)='' OR lower(title) IN ('new research','untitled research chat'))""",
+                (content or "Untitled research chat", conversation_id))
         return {"id": mid, "conversation_id": conversation_id, "role": role,
                 "content": content, "intent": intent, "topic": topic,
                 "research_id": research_id,
