@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ProgressiveMarkdown from './ProgressiveMarkdown';
-import ConfidenceBlock from './ConfidenceBlock';
 
 /** Focused direct-answer thread, without document-style Question/Answer cards. */
 export default function NormalAnswerView({ userQuestion = '', answer = '', sources = [], confidence = null, isLoading = false, turns = [] }) {
@@ -35,9 +34,8 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
               <div className="mb-3 flex items-center gap-2 text-sm">
                 <span className="font-semibold text-[var(--text-main)]">Atlas</span>
               </div>
-              {loading && !turn.answer ? <AnswerSkeleton /> : <ProgressiveMarkdown content={turn.answer || ''} streaming={loading} />}
+              {loading && !turn.answer ? <AnswerSkeleton /> : <ProgressiveMarkdown content={turn.answer || ''} streaming={loading} instant={Boolean(turn.loadedFromHistory)} deliveryPath={turn.loadedFromHistory ? 'loaded from history' : 'new answer'} />}
               {turn.stopped && <p className="mt-2 text-sm text-[var(--text-secondary)]" role="status">Stopped</p>}
-              {!loading && <ConfidenceBlock confidence={turn.confidence || null} />}
               {turn.sources?.length > 0 && !loading && (
               <section className="mt-5 pt-4 border-t border-[var(--border-subtle)] space-y-2">
               <div className="text-[11px] font-sans uppercase tracking-wide text-[var(--text-secondary)]">Sources</div>

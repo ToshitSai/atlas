@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ProgressiveMarkdown from './ProgressiveMarkdown';
-import ConfidenceBlock from './ConfidenceBlock';
 import AtlasLogo from './AtlasLogo';
 
 // ============================================================================
@@ -368,15 +367,6 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
     return;
   };
 
-  const handleNewChat = () => {
-    if (onNewChat) onNewChat();
-    setStep(0);
-    setUserQuestion('');
-    setInputText('');
-    setThinkingIndex(0);
-    setStreamIndex(0);
-  };
-
   const handleCopy = () => {
     const textToCopy = `${RAW_ANSWER_CONTENT.block1}\n\n${RAW_ANSWER_CONTENT.block3}`;
     if (navigator.clipboard) {
@@ -417,49 +407,6 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         WebkitFontSmoothing: 'antialiased'
       }}
     >
-      {/* Top Navigation Bar */}
-      <header className="flex h-[52px] min-h-[52px] shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-main)] px-3.5 text-[var(--text-main)] select-none z-30">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            aria-label="Open navigation menu"
-            className="flex lg:hidden items-center justify-center rounded-lg border border-[var(--border-subtle)] p-2 text-[var(--text-main)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors shrink-0 cursor-pointer"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-
-          <div className="flex lg:hidden items-center gap-1.5 font-bold text-sm text-[var(--text-main)]">
-            <AtlasLogo className="w-4 h-4 text-[var(--accent-yellow)] shrink-0" />
-            <span className="truncate">Atlas</span>
-          </div>
-
-          <span className="hidden lg:block text-sm font-semibold text-[var(--text-main)] truncate">
-            Research Workspace
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleNewChat}
-            aria-label="New chat"
-            title="New chat"
-            className="flex lg:hidden items-center justify-center rounded-lg border border-[var(--border-subtle)] p-2 text-[var(--text-main)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
-          <span className="hidden lg:inline text-xs text-[var(--text-secondary)] font-mono">
-            Research workspace
-          </span>
-        </div>
-      </header>
-
       {/* MAIN WORKSPACE SURFACE */}
       <main
         style={{
@@ -945,7 +892,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             padding: hasConversation ? '0 16px 16px 16px' : '0 24px 16px',
             zIndex: 10
           }}
-      className="atlas-prompt-dock"
+      className={`atlas-prompt-dock ${hasConversation ? 'is-chat' : 'is-home'}`}
         >
           <div
             style={{
@@ -1171,8 +1118,7 @@ function ConversationThread({ turns, isPending, confidenceChecking = false }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, color: TOKENS.colors.body, fontSize: '16px', lineHeight: 1.7, minWidth: 0 }}>
-              {turn.isLoading && !turn.answer ? <div style={{ color: TOKENS.colors.muted }}>Preparing a verified answer…</div> : <ProgressiveMarkdown content={turn.answer || ''} streaming={Boolean(turn.isLoading)} />}
-              {!turn.isLoading && <ConfidenceBlock confidence={turn.confidence} checking={confidenceChecking} />}
+              {turn.isLoading && !turn.answer ? <div style={{ color: TOKENS.colors.muted }}>Preparing a verified answer…</div> : <ProgressiveMarkdown content={turn.answer || ''} streaming={Boolean(turn.isLoading)} instant={Boolean(turn.loadedFromHistory)} deliveryPath={turn.loadedFromHistory ? 'loaded from history' : 'new answer'} />}
               {turn.error ? <div role="alert" style={{ color: '#B42318', marginTop: '8px' }}>{turn.error}</div> : null}
             </div>
           </div>

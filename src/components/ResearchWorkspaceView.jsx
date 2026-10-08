@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import ScientificInquiryCard from './ScientificInquiryCard';
 import ChatMarkdown from './ChatMarkdown';
 import ProgressiveMarkdown from './ProgressiveMarkdown';
-import ConfidenceBlock from './ConfidenceBlock';
 
 /**
  * Research Workspace View (Center Column):
@@ -68,7 +67,6 @@ export default function ResearchWorkspaceView({
         canRetry={canRetry}
       />
 
-      {sessionState === 'COMPLETE' && <ConfidenceBlock confidence={confidence} />}
 
       {/* Disconnected Backend Warning Banner */}
       {connectionState === 'OFFLINE' && !backendConnected && (

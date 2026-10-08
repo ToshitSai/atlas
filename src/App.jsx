@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
-import Header from './components/Header';
 import QuestionComposer from './components/QuestionComposer';
 import NormalAnswerView from './components/NormalAnswerView';
 import ResearchWorkspaceView from './components/ResearchWorkspaceView';
@@ -127,7 +126,7 @@ function WorkspaceApp({ onSignOut }) {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
-      if (typeof window !== 'undefined' && window.innerWidth < 768) return false;
+      if (typeof window !== 'undefined' && window.innerWidth < 768) return true;
       return localStorage.getItem('atlas-sidebar-open') !== '0';
     } catch { return true; }
   });
@@ -512,7 +511,7 @@ function WorkspaceApp({ onSignOut }) {
     let current = null;
     for (const message of rows) {
       if (message.role === 'user') {
-        current = { id: message.id || `${selectedId}:${turns.length}`, question: message.content || '', answer: '', sources: [], confidence: null, activity: [], isLoading: false, mode: 'normal' };
+        current = { id: message.id || `${selectedId}:${turns.length}`, question: message.content || '', answer: '', sources: [], confidence: null, activity: [], isLoading: false, mode: 'normal', loadedFromHistory: true };
         turns.push(current);
       } else if (message.role === 'assistant' && current) {
         current.answer = message.content || '';
@@ -624,25 +623,84 @@ function WorkspaceApp({ onSignOut }) {
 
   if (activeNav === 'research') {
     return (
-      <AtlasLanding 
-        greeting={greeting}
-        onSendMessage={handleSendQuestion}
-        conversationTurns={conversationTurns}
-        isPending={isPending}
-        onNewChat={handleNewQuestion}
-        historyItems={historyItems}
-        onSelectHistoryItem={handleSelectConversation}
-        theme={theme}
-        onThemeChange={() => setTheme((current) => current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system')}
-        backendConnected={backendConnected}
-        connectionState={connectionState}
-        errorFeedback={errorFeedback}
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={() => setSidebarOpen((open) => !open)}
-        historyLoadState={historyLoadState}
-        activeConversationId={conversationId}
-        confidenceChecking={confidenceChecking}
-      />
+      <div className="flex h-screen w-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans overflow-hidden select-none">
+        <Sidebar
+          activeNav={activeNav}
+          onSelectNav={handleSelectNav}
+          onNewQuestion={handleNewQuestion}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          isMobileOpen={isMobileNavOpen}
+          onMobileClose={() => setIsMobileNavOpen(false)}
+          historyItems={historyItems}
+          onSelectHistoryItem={handleSelectConversation}
+          backendConnected={backendConnected}
+          connectionState={connectionState}
+          theme={theme}
+          onThemeChange={() => setTheme((current) => current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system')}
+          isOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((open) => !open)}
+        />
+        <main className="flex-1 min-w-0 h-screen overflow-hidden relative flex flex-col bg-[var(--bg-main)]" inert={isMobileNavOpen ? '' : undefined}>
+          {/* Mobile Top Header Bar */}
+          <header className="flex md:hidden h-[52px] min-h-[52px] shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-main)] px-3.5 text-[var(--text-main)] select-none z-30">
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsMobileNavOpen(true)}
+                aria-label="Open sidebar menu"
+                className="flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/>
+                </svg>
+              </button>
+              <div className="flex items-center gap-2 font-bold text-base text-[var(--text-main)]">
+                <span className="grid grid-cols-3 gap-[2px] w-[24px] h-4 shrink-0" aria-hidden="true">
+                  <i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#0D0C0A]" /><i className="rounded-[1px] bg-[#FFD800]" />
+                  <i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#FFD800]" />
+                </span>
+                <span>Atlas</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleNewQuestion}
+                aria-label="New chat"
+                title="New chat"
+                className="flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] text-[var(--text-main)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+            </div>
+          </header>
+
+          {!sidebarOpen && <button type="button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar" title="Open sidebar (Ctrl+B)" aria-expanded="false" className="fixed left-4 top-4 z-30 hidden h-10 w-10 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] md:flex"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg></button>}
+          <AtlasLanding
+            greeting={greeting}
+            onSendMessage={handleSendQuestion}
+            conversationTurns={conversationTurns}
+            isPending={isPending}
+            onNewChat={handleNewQuestion}
+            historyItems={historyItems}
+            onSelectHistoryItem={handleSelectConversation}
+            theme={theme}
+            onThemeChange={() => setTheme((current) => current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system')}
+            backendConnected={backendConnected}
+            connectionState={connectionState}
+            errorFeedback={errorFeedback}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen((open) => !open)}
+            historyLoadState={historyLoadState}
+            activeConversationId={conversationId}
+            confidenceChecking={confidenceChecking}
+          />
+        </main>
+      </div>
     );
   }
 
@@ -663,24 +721,13 @@ function WorkspaceApp({ onSignOut }) {
         connectionState={connectionState}
         theme={theme}
         onThemeChange={() => setTheme((current) => current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system')}
+        isOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((open) => !open)}
       />
 
       {/* Main Workspace Stack (Center Column + Right Context Sidebar) */}
       <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
         
-        {/* Compact Top Header (rendered for conversation thread & secondary views) */}
-        {(userQuestion || sessionState !== 'IDLE' || activeNav !== 'research') && (
-          <Header
-            sessionStatus={sessionState}
-            routingMode={routingMode}
-            backendConnected={backendConnected}
-            connectionState={connectionState}
-            onOpenMobileNav={() => setIsMobileNavOpen(true)}
-            onNewQuestion={handleNewQuestion}
-            activeNavTitle={navTitles[activeNav] || 'Research Workspace'}
-          />
-        )}
-
         {/* 3-Column Content Body */}
         <div className="flex-1 min-w-0 flex overflow-hidden relative">
           
