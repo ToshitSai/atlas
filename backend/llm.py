@@ -836,6 +836,17 @@ def _stream_anthropic(prompt: str, system_prompt: Optional[str], on_token: Calla
     return res if res.strip() else None
 
 
+def _stream_mistral(prompt: str, system_prompt: Optional[str], on_token: Callable[[str], None], timeout: int, max_tokens: Optional[int]) -> Optional[str]:
+    """Adapter giving stream_mistral_api the _stream_* calling convention.
+
+    The active streaming path (query_llm_stream) previously had no Mistral
+    streamer, so a deployment whose only reachable provider is Mistral fell back
+    to a single non-streaming blob. This wires the existing, proven Mistral SSE
+    reader into that path so tokens stream live.
+    """
+    return stream_mistral_api(prompt, system_prompt, timeout=timeout, max_tokens=max_tokens, on_token=on_token)
+
+
 def query_llm_stream(
     prompt: str,
     system_prompt: Optional[str] = None,
@@ -849,13 +860,30 @@ def query_llm_stream(
     if not on_token:
         return query_llm(prompt, system_prompt, provider=provider, role=role, timeout=timeout, max_tokens=max_tokens)
 
-    stream_funcs = []
-    if os.environ.get("OPENAI_API_KEY"):
-        stream_funcs.append(_stream_openai)
-    if os.environ.get("GEMINI_API_KEY"):
-        stream_funcs.append(_stream_gemini)
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        stream_funcs.append(_stream_anthropic)
+    # Provider -> streamer, gated on the key being configured. Mistral is now
+    # included so a Mistral-only deployment streams instead of falling back to a
+    # single non-streaming blob.
+    available = {
+        "openai": (os.environ.get("OPENAI_API_KEY"), _stream_openai),
+        "gemini": (os.environ.get("GEMINI_API_KEY"), _stream_gemini),
+        "anthropic": (os.environ.get("ANTHROPIC_API_KEY"), _stream_anthropic),
+        "mistral": (os.environ.get("MISTRAL_API_KEY"), _stream_mistral),
+    }
+    default_order = ["openai", "gemini", "anthropic", "mistral"]
+
+    # Honour the same routing signal the non-streaming path uses: an explicitly
+    # selected provider first, then the router's capability preference, then the
+    # remaining configured providers. This avoids spending a slow failing
+    # round-trip on a provider the router did not pick.
+    explicit = (provider or "auto").lower()
+    if explicit == "auto":
+        explicit = (_selected_provider.get() or "").lower()
+    preference = list(_provider_preference.get() or [])
+    ordered: List[str] = []
+    for name in ([explicit] if explicit in available else []) + preference + default_order:
+        if name in available and available[name][0] and name not in ordered:
+            ordered.append(name)
+    stream_funcs = [available[name][1] for name in ordered]
 
     for fn in stream_funcs:
         try:
@@ -865,6 +893,7 @@ def query_llm_stream(
                 return res.strip()
         except Exception as err:
             print(f"[LLM STREAM WARNING] {fn.__name__} failed: {err}")
+
 
     # Fallback to non-streaming query_llm if all stream functions fail
     fallback = query_llm(prompt, system_prompt, provider=provider, role=role, timeout=timeout, max_tokens=max_tokens)

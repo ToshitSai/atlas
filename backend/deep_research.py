@@ -7,7 +7,9 @@ collected source, and if no source can be reached it reports that instead of
 inventing content.
 """
 import datetime
+import os
 import re
+import time
 from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
@@ -151,19 +153,38 @@ def _paper_to_source(paper: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
-def _collect_sources(goal: str, subqueries: List[str], per_query: int, papers_on_first: int = 2, trace: Optional[StepTrace] = None) -> List[Dict[str, Any]]:
+def _collect_sources(goal: str, subqueries: List[str], per_query: int, papers_on_first: int = 2, trace: Optional[StepTrace] = None, cancel_check: Optional[callable] = None) -> List[Dict[str, Any]]:
     """Run web + academic searches per sub-query and deduplicate by URL.
 
     A paper hit without real evidence (empty snippet after dropping the
-    literature tool's filler abstracts) is not a usable source and is skipped."""
+    literature tool's filler abstracts) is not a usable source and is skipped.
+
+    Each source that survives the trust + relevance filters is announced with a
+    real ``source_reading`` step carrying the actual verdict metadata. This is
+    honest about scope: the pipeline evaluates the retrieved snippet/metadata, it
+    does NOT fetch the page, so no HTTP status code is invented."""
     sources: List[Dict[str, Any]] = []
     seen_urls = set()
     for idx, sq in enumerate(subqueries):
+        if cancel_check and cancel_check():
+            if trace:
+                trace.skip_step(Stages.WEB_SEARCH, "Search cancelled", f"Stopped before query {idx + 1}/{len(subqueries)}")
+            break
         if trace:
             trace.start_step(Stages.WEB_SEARCH, f"Searching: \"{sq}\"", f"Query {idx + 1}/{len(subqueries)}")
-        web_hits = search_web(sq, limit=per_query)
-        if trace:
-            trace.complete_step(Stages.WEB_SEARCH, f"Search completed: \"{sq}\"", f"Found {len(web_hits)} web results")
+        try:
+            web_hits = search_web(sq, limit=per_query)
+        except Exception as exc:
+            # Per-step failure is reported and the pass continues with the
+            # remaining queries/providers instead of aborting the whole run.
+            print(f"[DEEP RESEARCH WARNING] web search failed for '{sq}': {exc}")
+            web_hits = []
+            if trace:
+                trace.fail_step(Stages.WEB_SEARCH, f"Web search failed: \"{sq}\"", str(exc))
+        else:
+            if trace:
+                trace.complete_step(Stages.WEB_SEARCH, f"Search completed: \"{sq}\"", f"Found {len(web_hits)} web results")
+
 
         paper_hits: List[Dict[str, str]] = []
         if idx < papers_on_first:
@@ -197,16 +218,50 @@ def _collect_sources(goal: str, subqueries: List[str], per_query: int, papers_on
             # in the final report; we never turn its title into a factual claim.
             seen_urls.add(url)
             sources.append({**hit, "query": sq})
+            if trace:
+                domain = (urlparse(url).hostname or "").lower()
+                trace.complete_step(
+                    Stages.SOURCE_READING,
+                    f"Source checked: {(title or domain)[:60]}",
+                    f"{domain or url} — trusted publisher/official domain, on-topic for this goal "
+                    f"(snippet-level; page not fetched)",
+                    {
+                        "url": url,
+                        "domain": domain,
+                        "provider": hit.get("source") or "web",
+                        "publishedYear": hit.get("year"),
+                        "retrievedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "trustworthy": True,
+                        "relevant": True,
+                        "evidenceLevel": "snippet",
+                    },
+                )
     return sources
 
 
-def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]], trace: Optional[StepTrace] = None) -> str:
+
+def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]], trace: Optional[StepTrace] = None, token_callback: Optional[callable] = None, cancel_check: Optional[callable] = None) -> str:
     """Build the report: grounded LLM synthesis when a provider is reachable,
-    otherwise an honest sourced-snippet digest. Verification notes included."""
+    otherwise an honest sourced-snippet digest. Verification notes included.
+
+    When ``token_callback`` is supplied the report is streamed as it is written:
+    LLM synthesis sections forward the provider's real token stream, and the
+    templated front-matter/tail are emitted at the moment they are composed. The
+    returned string is unchanged, so the authoritative ``final`` frame still
+    reconciles the live preview exactly."""
     by_query: Dict[str, List[Dict[str, Any]]] = {}
     for n, source in enumerate(sources, 1):
         source["n"] = n
         by_query.setdefault(source["query"], []).append(source)
+
+    def emit(text: str) -> None:
+        # Live answer text. A callback error (e.g. client disconnected) must
+        # never abort report construction, so it is swallowed here.
+        if token_callback and text:
+            try:
+                token_callback(text)
+            except Exception:
+                pass
 
     lines = [
         f"# Deep Research Report: {goal}",
@@ -225,30 +280,41 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]],
     ]
     lines += [f"{i}. {sq}" for i, sq in enumerate(subqueries, 1)]
     lines += ["", "## Findings", ""]
+    # Front-matter is composed now, so it is streamed now (not batched at the end).
+    emit("\n".join(lines))
 
     use_llm = True
     for sq in subqueries:
+        if cancel_check and cancel_check():
+            if trace:
+                trace.skip_step(Stages.SYNTHESIS, "Writing cancelled", f"Stopped before \"{sq}\"")
+            break
         items = by_query.get(sq) or []
         if not items:
+            emit(f"\n### {sq}\n_No sources were found for this sub-question._\n")
             lines += [f"### {sq}", "_No sources were found for this sub-question._", ""]
             continue
 
         evidence = "\n".join(f"[{s['n']}] {s['title']} — {s['snippet']}" for s in items if s.get("snippet"))
         section = None
+        emit(f"\n### {sq}\n")
         if use_llm and evidence:
             if trace:
-                trace.start_step(Stages.SYNTHESIS, f"Synthesizing: \"{sq}\"", f"Processing {len(items)} sources via LLM")
+                trace.start_step(Stages.SYNTHESIS, f"Writing section: \"{sq}\"", f"Synthesizing {len(items)} sources via LLM")
+            # on_token forwards the provider's real token stream to the client,
+            # so this section renders progressively instead of all at once.
             section = query_llm(
                 f"Research goal: {goal}\nSub-question: {sq}\n\n"
                 f"Evidence snippets (cite by [n]):\n{evidence}\n\n"
                 "Write a 3-5 sentence synthesis of this sub-question using ONLY the evidence "
                 "above, citing sources inline like [1]. Say explicitly if the evidence is insufficient.",
                 _SYNTH_SYSTEM_PROMPT,
+                on_token=token_callback,
             )
             if section is None:
                 use_llm = False  # no provider reachable; digest the rest honestly
             if trace:
-                trace.complete_step(Stages.SYNTHESIS, f"Synthesized: \"{sq}\"", "LLM synthesis complete")
+                trace.complete_step(Stages.SYNTHESIS, f"Wrote section: \"{sq}\"", "LLM synthesis complete")
         if not section:
             if trace:
                 trace.start_step(Stages.SYNTHESIS, f"Compiling evidence: \"{sq}\"", f"Building digest from {len(items)} sources")
@@ -256,39 +322,73 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]],
                 f"- **[{s['n']}] {s['title']}** ({s['source']}): {s.get('snippet') or '(no snippet available — open the source)'}"
                 for s in items
             )
+            # Fallback digest is composed here, so it is streamed here.
+            emit(section)
             if trace:
                 trace.complete_step(Stages.SYNTHESIS, f"Compiled evidence: \"{sq}\"", "Fallback digest complete")
+        emit("\n")
         lines += [f"### {sq}", section, ""]
 
     if trace:
         trace.start_step(Stages.VERIFICATION, "Cross-checking claims", f"Verifying {len(sources)} sources across {len(subqueries)} queries")
-    lines += [
+    tail = [
         "## Verification",
         f"- {len(sources)} unique sources collected across {len(subqueries)} planned searches (web + academic), deduplicated by URL.",
         "- Only sourced material is included; statements are snippet-level and should be verified against the full sources before being relied on.",
         "",
         "## Sources",
     ]
-    lines += [f"{s['n']}. [{s['title'] or s['url']}]({s['url']}) — {s['source']}" for s in sources]
+    tail += [f"{s['n']}. [{s['title'] or s['url']}]({s['url']}) — {s['source']}" for s in sources]
+    lines += tail
+    emit("\n" + "\n".join(tail))
     if trace:
         trace.complete_step(Stages.VERIFICATION, "Cross-checking complete", f"Verified {len(sources)} sources")
     return "\n".join(lines)
 
 
-def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional[callable] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
-    """Execute the full deep-research pass for a goal."""
+
+def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional[callable] = None, trace_id: Optional[str] = None, cancel_check: Optional[callable] = None, token_callback: Optional[callable] = None) -> Dict[str, Any]:
+    """Execute the full deep-research pass for a goal.
+
+    ``cancel_check`` (client disconnect) and a wall-clock budget both feed a
+    single ``_stop`` predicate checked at every stage boundary and inside the
+    collection/synthesis loops, so an aborted or over-budget run returns the
+    partial, honest result instead of hanging. ``token_callback`` streams the
+    report text live as it is written."""
     trace = create_trace("deep_research", trace_id)
     if progress_callback:
         trace.add_callback(progress_callback)
+
+    budget_seconds = max(10, int(os.environ.get("DEEP_RESEARCH_BUDGET_SECONDS", "120")))
+    deadline = time.monotonic() + budget_seconds
+
+    def _stop() -> bool:
+        if cancel_check and cancel_check():
+            return True
+        return time.monotonic() > deadline
+
+    # The staged scientist pass is design/review only.  It adds roughly a minute
+    # of LLM work before the sourced report, which overruns the production
+    # function budget (Vercel Hobby caps at 60s), so it is skipped there via
+    # DEEP_RESEARCH_SKIP_SCIENTIST.  It still runs by default (local/dev) so the
+    # design pass and the established SSE contract stay intact.
+    ai_scientist: Dict[str, Any] = {}
+    if os.environ.get("DEEP_RESEARCH_SKIP_SCIENTIST", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        from backend.ai_scientist_pipeline import run_ai_scientist_pipeline
+        ai_scientist = run_ai_scientist_pipeline(goal, trace, cancel_check=cancel_check) or {}
+
+    if _stop():
+        trace.skip_step(Stages.PLANNING, "Research stopped", "Cancelled by client or time budget exhausted before planning")
+        return {"status": "cancelled", "report": "", "sourceCount": 0, "subqueries": [], "trace": trace.to_dict(), "ai_scientist": ai_scientist}
 
     trace.start_step(Stages.PLANNING, "Planning research approach", f"Analyzing goal: {goal[:100]}")
     subqueries = plan_subqueries(goal, per_query, trace=trace)
     if not subqueries:
         trace.fail_step(Stages.PLANNING, "Research planning failed", "No usable research question was produced")
-        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": [], "trace": trace.to_dict()}
+        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": [], "trace": trace.to_dict(), "ai_scientist": ai_scientist}
 
     try:
-        sources = _collect_sources(goal, subqueries, per_query, trace=trace)
+        sources = _collect_sources(goal, subqueries, per_query, trace=trace, cancel_check=_stop)
     except TypeError as exc:
         # Compatibility for integrations that provide the original two-argument
         # collector. Built-in collection always receives the progress callback.
@@ -296,12 +396,15 @@ def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional
             raise
         sources = _collect_sources(goal, subqueries, per_query, trace=trace)
     if not sources:
+        if _stop():
+            trace.skip_step(Stages.LITERATURE_SEARCH, "Research stopped", "Cancelled or time budget exhausted during source collection")
+            return {"status": "cancelled", "report": "", "sourceCount": 0, "subqueries": subqueries, "trace": trace.to_dict(), "ai_scientist": ai_scientist}
         trace.fail_step(Stages.LITERATURE_SEARCH, "Literature search failed", "No verifiable sources were retrieved")
-        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": subqueries, "trace": trace.to_dict()}
+        return {"status": "no_sources", "report": "", "sourceCount": 0, "subqueries": subqueries, "trace": trace.to_dict(), "ai_scientist": ai_scientist}
     academic_sources = sum(1 for source in sources if source.get("source") in ("Semantic Scholar", "OpenAlex"))
     trace.complete_step(Stages.LITERATURE_SEARCH, "Literature search complete", f"Collected {len(sources)} unique sources ({academic_sources} academic)")
 
-    report = _synthesize(goal, subqueries, sources, trace=trace)
+    report = _synthesize(goal, subqueries, sources, trace=trace, token_callback=token_callback, cancel_check=_stop)
 
     trace.start_step(Stages.VERIFICATION, "Verifying citations", "Checking source traceability")
     trace.complete_step(Stages.VERIFICATION, "Verification complete", "All claims traceable to sources")
@@ -316,4 +419,6 @@ def run_deep_research(goal: str, per_query: int = 3, progress_callback: Optional
         "sources": sources,
         "subqueries": subqueries,
         "trace": trace.to_dict(),
+        "ai_scientist": ai_scientist,
     }
+

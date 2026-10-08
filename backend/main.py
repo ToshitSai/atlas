@@ -323,7 +323,7 @@ def update_settings(payload: dict):
     return {"status": "ok", "settings": st}
 
 @app.post("/api/chat")
-async def chat_endpoint(payload: dict, request: Request, activity_callback=None, token_callback=None):
+async def chat_endpoint(payload: dict, request: Request, activity_callback=None, token_callback=None, cancel_check=None):
     """
     Conversational AI Chat Endpoint powered by Intent Router.
     Routes incoming user messages into intents (CONFIRM_PENDING_ACTION, EXPLANATION, RESEARCH_START, RESEARCH_FOLLOWUP, RESEARCH_CONTROL, REPORT_REQUEST, TECHNICAL_DETAILS, CASUAL_CHAT).
@@ -486,6 +486,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         conversation_history=conversation_history,
         activity_callback=activity_callback,
         token_callback=token_callback,
+        cancel_check=cancel_check,
     )
     res["researchRouting"] = routing_decision
     # Publicly auditable routing metadata.  This is metadata only; the
@@ -791,6 +792,26 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     from backend.confidence import assess_confidence
     res["confidence"] = assess_confidence(message, res)
 
+    # Surface the real, evidence-derived confidence as a streamed step too, so a
+    # streaming client sees it at the moment it is computed (not only in the
+    # final frame). It reuses the verification stage the UI already routes; the
+    # label is built from the actual assessed level/percentage, never invented.
+    if activity_callback and isinstance(res.get("confidence"), dict):
+        overall = res["confidence"].get("overall") or {}
+        level = overall.get("level")
+        pct = overall.get("percentage")
+        conf_label = "Confidence assessed"
+        if level:
+            conf_label = f"Confidence: {str(level).capitalize()}" + (f" ({pct}%)" if pct is not None else "")
+        activity_callback({
+            "id": f"{request_id or 'request'}-confidence",
+            "stage": "verification",
+            "status": "completed",
+            "label": conf_label,
+            "detail": "Calculated from real source coverage, quality, agreement and verification.",
+            "timestamp": int(time.time() * 1000),
+        })
+
     # Canonical response contract.  Never fall back to an older answer when a
     # model/provider fails: return an explicit error response instead.
     try:
@@ -848,6 +869,10 @@ async def chat_stream_endpoint(payload: dict, request: Request):
     """
     event_queue: queue.Queue = queue.Queue()
     result_box: Dict[str, Any] = {}
+    # Set when the client disconnects so the research pipeline can stop real
+    # work (searches, LLM calls) at its next stage boundary instead of running
+    # to completion for nobody.
+    cancel_event = threading.Event()
 
     def publish(event):
         event_queue.put({"type": "research_activity", **event})
@@ -855,10 +880,22 @@ async def chat_stream_endpoint(payload: dict, request: Request):
     def publish_token(delta):
         # Forwarded verbatim from the provider stream; contains no credentials.
         if delta:
+            # Record that the answer was streamed live so the generator below
+            # does not ALSO replay the finished text (which would duplicate it).
+            result_box["token_streamed"] = True
             event_queue.put({"type": "token", "text": delta})
 
+
     def structured_activity(event):
-        """Translate the canonical trace into the public SSE vocabulary."""
+        """Translate the canonical trace into the public SSE vocabulary.
+
+        Every real pipeline stage is mapped onto an event kind the client routes
+        to its activity view. The reasoning/analysis stages (hypothesis
+        ideation, error analysis, experiment design) are genuine work the
+        staged scientist pass performs, so they map to ``synthesizing`` rather
+        than falling through to ``progress`` — which the client does not render,
+        leaving long stretches of real work invisible.
+        """
         stage = str(event.get("stage") or "").lower()
         status = str(event.get("status") or "").lower()
         kind = "progress"
@@ -868,16 +905,21 @@ async def chat_stream_endpoint(payload: dict, request: Request):
             kind = "search_start" if status in {"running", "started"} else "search_result"
         elif stage in {"source_reading", "read_source"}:
             kind = "read_source"
-        elif stage in {"synthesis", "report_generation"}:
+        elif stage in {"synthesis", "report_generation",
+                       "hypothesis_generation", "hypothesis_gen",
+                       "experiment_design", "experiment_execution",
+                       "baseline_training", "dataset_analysis", "error_analysis"}:
             kind = "synthesizing"
         elif stage in {"verification", "citation_verification", "cross_checking"}:
             kind = "verifying"
         return {"eventType": kind, "timestamp": event.get("timestamp") or int(time.time() * 1000), **event}
 
+
     def run_chat():
         try:
             result_box["result"] = asyncio.run(
-                chat_endpoint(payload, request, activity_callback=publish, token_callback=publish_token)
+                chat_endpoint(payload, request, activity_callback=publish, token_callback=publish_token,
+                              cancel_check=cancel_event.is_set)
             )
         except HTTPException as http_exc:
             # An intended, user-facing rejection (e.g. message too long, rate
@@ -909,24 +951,31 @@ async def chat_stream_endpoint(payload: dict, request: Request):
                 public = structured_activity(event)
                 yield f"event: {public['eventType']}\ndata: {json.dumps(public)}\n\n"
             if await request.is_disconnected():
+                # Tell the worker to stop real backend work at its next stage
+                # boundary, then stop streaming to a client that is gone.
+                cancel_event.set()
                 break
 
         if result_box.get("error"):
             yield f"event: error\ndata: {json.dumps({'error': result_box['error'], 'timestamp': int(time.time() * 1000)})}\n\n"
         else:
             result = result_box.get("result") or {}
-            # Deep research produces a completed report after synthesis. Send
-            # that already-generated text in bounded deltas so the client can
-            # render it progressively without inventing pipeline events.
-            answer_text = result.get("response") or result.get("report") or ""
-            for offset in range(0, len(answer_text), 240):
-                yield f"event: answer_delta\ndata: {json.dumps({'text': answer_text[offset:offset + 240], 'timestamp': int(time.time() * 1000)})}\n\n"
+            # The answer is normally streamed live via answer_delta while the
+            # provider generates it (token_streamed). Only when nothing streamed
+            # — e.g. a non-streaming intent or every provider stream failed — do
+            # we replay the finished text in bounded deltas so the client still
+            # renders it progressively instead of waiting for `final`.
+            if not result_box.get("token_streamed"):
+                answer_text = result.get("response") or result.get("report") or ""
+                for offset in range(0, len(answer_text), 240):
+                    yield f"event: answer_delta\ndata: {json.dumps({'text': answer_text[offset:offset + 240], 'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: sources\ndata: {json.dumps({'sources': result.get('sources') or [], 'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: done\ndata: {json.dumps({'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: final\ndata: {json.dumps(result)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
+                                      "X-Accel-Buffering": "no"})
 
 
 def _info_to_candidate(info: Dict[str, Any]) -> Dict[str, Any]:
@@ -1486,6 +1535,37 @@ async def stream_project_events(project_id: str):
             await asyncio.sleep(1)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/api/debug/stream")
+async def debug_stream():
+    """Transport proof: emit 6 SSE events, one per second, each timestamped, then end.
+
+    Used to verify that Server-Sent Events actually stream incrementally through
+    the whole path (uvicorn -> any proxy -> Vercel runtime -> browser) instead of
+    arriving in one buffered burst. Headers disable proxy/platform buffering and
+    any transform (e.g. gzip) that would withhold bytes until the response ends.
+    """
+    async def event_generator():
+        for i in range(1, 7):
+            payload = {
+                "i": i,
+                "ts": round(time.time(), 3),
+                "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            yield f"event: tick\ndata: {json.dumps(payload)}\n\n"
+            if i < 6:
+                await asyncio.sleep(1)
+        yield f"event: done\ndata: {json.dumps({'ts': round(time.time(), 3)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 @app.get("/api/projects/{project_id}/dataset")
 def get_dataset_report(project_id: str):

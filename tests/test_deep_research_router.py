@@ -71,7 +71,7 @@ def test_deep_research_activity_contains_only_executed_stages(isolate_store, mon
         {"id": "t-1", "trace_id": "t", "stage": "web_search", "status": "completed",
          "label": "Search completed: \"one\"", "detail": "Found 3 web results", "timestamp": 2},
     ]
-    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress_callback=None: {
+    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress_callback=None, **kwargs: {
         "status": "ok", "report": "# Report\n\nEvidence-backed finding.",
         "sourceCount": 2, "subqueries": ["one", "two"], **_trace(executed),
     })
@@ -95,7 +95,7 @@ def test_deep_research_failure_is_visible_not_fabricated(isolate_store, monkeypa
         {"id": "t-1", "trace_id": "t", "stage": "literature_search", "status": "failed",
          "label": "Literature search failed", "detail": "No verifiable sources were retrieved", "timestamp": 2},
     ]
-    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress_callback=None: {
+    monkeypatch.setattr(deep, "run_deep_research", lambda goal, progress_callback=None, **kwargs: {
         "status": "no_sources", "report": "", "sourceCount": 0, "subqueries": ["one"], **_trace(failed),
     })
     result = handle_intent_message("Research this topic", session_id="deep-failure")
@@ -109,7 +109,7 @@ def test_deep_research_pipeline_crash_is_honest(isolate_store, monkeypatch):
     not a fabricated stage history."""
     import backend.deep_research as deep
 
-    def boom(goal, progress_callback=None):
+    def boom(goal, progress_callback=None, **kwargs):
         raise RuntimeError("search provider unreachable")
 
     monkeypatch.setattr(deep, "run_deep_research", boom)
@@ -124,6 +124,12 @@ def test_deep_research_streams_real_steps_as_they_happen(monkeypatch):
     """Live progress carries the ACTUAL search queries and result counts, in
     execution order — no generic filler, no post-hoc summary."""
     import backend.deep_research as deep
+    import backend.ai_scientist_pipeline as aisp
+
+    # The staged scientist pass is covered by test_ai_scientist_pipeline.py; keep
+    # this test focused on deep_research's own streaming by no-op'ing it (it runs
+    # first and would otherwise emit its own PLANNING events before ours).
+    monkeypatch.setattr(aisp, "run_ai_scientist_pipeline", lambda *args, **kwargs: {})
 
     monkeypatch.setattr(deep, "plan_subqueries", lambda goal, max_subqueries=3, trace=None: ["first query", "second query"])
     monkeypatch.setattr(deep, "search_web", lambda query, limit=3: [
@@ -133,7 +139,7 @@ def test_deep_research_streams_real_steps_as_they_happen(monkeypatch):
     monkeypatch.setattr(deep, "search_literature", lambda query, limit=2: [
         {"title": f"Paper on {query}", "url": f"https://doi.org/{query.replace(' ', '-')}", "abstract": "Real abstract text"},
     ])
-    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
+    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None, **kwargs: "# Report")
     events = []
 
     result = deep.run_deep_research("Test goal", progress_callback=events.append)
@@ -178,7 +184,9 @@ def test_deep_research_trace_registry_roundtrip(monkeypatch):
 def test_deep_research_drops_irrelevant_results(monkeypatch):
     """A generic title such as a TV programme must never enter a fraud report."""
     import backend.deep_research as deep
+    import backend.ai_scientist_pipeline as aisp
 
+    monkeypatch.setattr(aisp, "run_ai_scientist_pipeline", lambda *args, **kwargs: {})
     monkeypatch.setattr(deep, "plan_subqueries", lambda *args, **kwargs: [
         "improve credit card fraud detection model",
     ])
@@ -187,7 +195,7 @@ def test_deep_research_drops_irrelevant_results(monkeypatch):
         {"title": "Credit card fraud detection methods", "url": "https://en.wikipedia.org/wiki/Credit_card_fraud", "snippet": "Fraud detection model evaluation"},
     ])
     monkeypatch.setattr(deep, "search_literature", lambda *args, **kwargs: [])
-    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
+    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None, **kwargs: "# Report")
 
     result = deep.run_deep_research("Improve credit card fraud detection")
 
@@ -198,14 +206,16 @@ def test_deep_research_drops_irrelevant_results(monkeypatch):
 
 def test_deep_research_drops_low_quality_domains(monkeypatch):
     import backend.deep_research as deep
+    import backend.ai_scientist_pipeline as aisp
 
+    monkeypatch.setattr(aisp, "run_ai_scientist_pipeline", lambda *args, **kwargs: {})
     monkeypatch.setattr(deep, "plan_subqueries", lambda *args, **kwargs: ["history of coffee origins"])
     monkeypatch.setattr(deep, "search_web", lambda *args, **kwargs: [
         {"title": "Coffee history discussion", "url": "https://random-seo-blog.example/coffee", "snippet": "Coffee origins"},
         {"title": "History of coffee", "url": "https://en.wikipedia.org/wiki/History_of_coffee", "snippet": "Coffee originated in Ethiopia"},
     ])
     monkeypatch.setattr(deep, "search_literature", lambda *args, **kwargs: [])
-    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None: "# Report")
+    monkeypatch.setattr(deep, "_synthesize", lambda goal, queries, sources, trace=None, **kwargs: "# Report")
 
     result = deep.run_deep_research("history of coffee origins")
 

@@ -1517,6 +1517,7 @@ def handle_intent_message(
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     activity_callback=None,
     token_callback: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1551,7 +1552,7 @@ def handle_intent_message(
             result = _handle_intent_message_impl(message, active_project_id, session_id,
                                                  payload_pending_action, payload_last_topic,
                                                  conversation_history, activity_callback,
-                                                 token_callback)
+                                                 token_callback, cancel_check)
         # The API preserves its existing response shape and adds an optional,
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
@@ -1571,6 +1572,7 @@ def _handle_intent_message_impl(
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     activity_callback=None,
     token_callback: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
@@ -2015,7 +2017,8 @@ def _handle_intent_message_impl(
         dr_error = None
         try:
             from backend.deep_research import run_deep_research
-            research = run_deep_research(goal, progress_callback=activity_callback)
+            research = run_deep_research(goal, progress_callback=activity_callback,
+                                         token_callback=token_callback, cancel_check=cancel_check)
         except Exception as dr_err:
             dr_error = str(dr_err)
             print(f"[DEEP RESEARCH WARNING]: {dr_err}")
