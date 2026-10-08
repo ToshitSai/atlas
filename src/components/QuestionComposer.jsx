@@ -21,6 +21,7 @@ export default function QuestionComposer({
   connectionState = 'CONNECTING',
   errorFeedback = null,
   onStop = null,
+  onRetry = null,
   placeholder = null,
   isEmptyState = false,
 }) {
@@ -193,8 +194,9 @@ export default function QuestionComposer({
     <div className="w-full font-sans select-none space-y-1.5">
       {/* Feedback alerts if disconnected, failed, or speech error */}
       {errorFeedback ? (
-        <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5">
+        <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5 flex items-center justify-between gap-2">
           {errorFeedback}
+          {onRetry && <button type="button" onClick={onRetry} className="text-[var(--text-secondary)] underline underline-offset-2">Retry</button>}
         </div>
       ) : (connectionState === 'OFFLINE' && !backendConnected) ? (
         <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5 flex items-center justify-between">

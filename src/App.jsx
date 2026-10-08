@@ -142,6 +142,7 @@ function WorkspaceApp({ onSignOut }) {
   const [nextHypothesis, setNextHypothesis] = useState(null);
   const [nextExperiment, setNextExperiment] = useState(null);
   const [reportMd, setReportMd] = useState(null);
+  const [streamedResearchAnswer, setStreamedResearchAnswer] = useState('');
 
   // Session History List
   const [historyItems, setHistoryItems] = useState([]);
@@ -223,6 +224,7 @@ function WorkspaceApp({ onSignOut }) {
     setNextHypothesis(null);
     setNextExperiment(null);
     setReportMd(null);
+    setStreamedResearchAnswer('');
     setActiveProject(null);
     setConversationTurns([]);
     setConversationId(createConversationId());
@@ -257,6 +259,7 @@ function WorkspaceApp({ onSignOut }) {
     setIsBuiltInExplanation(false);
     setResponseConfidence(null);
     setReportMd(null);
+    setStreamedResearchAnswer('');
     setLatestInsight(null);
     setStageEvents([]);
 
@@ -331,6 +334,13 @@ function WorkspaceApp({ onSignOut }) {
           });
         };
 
+        const onResearchToken = (delta) => {
+          setStreamedResearchAnswer((prev) => prev + delta);
+          setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
+            ? { ...turn, answer: `${turn.answer || ''}${delta}` }
+            : turn));
+        };
+
         const res = await sendDeepResearchStream(
           queryText,
           activeProject?.id,
@@ -340,7 +350,7 @@ function WorkspaceApp({ onSignOut }) {
           { requestId, messageId },
           priorHistory,
           onActivity,
-          () => {},
+          onResearchToken,
           requestController.signal
         );
 
@@ -349,6 +359,7 @@ function WorkspaceApp({ onSignOut }) {
           const reportText = res.report || res.response || '';
           if (reportText) {
             setReportMd(reportText);
+            setStreamedResearchAnswer(reportText);
             setLatestInsight(reportText.slice(0, 300) + '…');
           }
           setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
@@ -448,7 +459,7 @@ function WorkspaceApp({ onSignOut }) {
         ? { ...turn, isLoading: false, error: err.message }
         : turn));
       setSessionState('FAILED');
-      setErrorFeedback(`Submission failed: ${err.message}`);
+      setErrorFeedback(err?.name === 'TypeError' ? 'Connection lost' : `Submission failed: ${err.message}`);
     } finally {
       setIsPending(false);
       if (requestControllerRef.current === requestController) requestControllerRef.current = null;
@@ -650,7 +661,7 @@ function WorkspaceApp({ onSignOut }) {
                         experiments={experiments}
                         currentExperiment={currentExperiment}
                         latestFinding={latestInsight}
-                        reportMd={reportMd}
+                        reportMd={reportMd || streamedResearchAnswer}
                         backendConnected={backendConnected}
                         connectionState={connectionState}
                         confidence={responseConfidence}
@@ -716,6 +727,7 @@ function WorkspaceApp({ onSignOut }) {
                     connectionState={connectionState}
                     errorFeedback={errorFeedback}
                     onStop={handleStopRequest}
+                    onRetry={() => userQuestion && handleSendQuestion(userQuestion)}
                     isEmptyState={false}
                   />
                 </div>

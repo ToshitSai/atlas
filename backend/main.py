@@ -915,6 +915,12 @@ async def chat_stream_endpoint(payload: dict, request: Request):
             yield f"event: error\ndata: {json.dumps({'error': result_box['error'], 'timestamp': int(time.time() * 1000)})}\n\n"
         else:
             result = result_box.get("result") or {}
+            # Deep research produces a completed report after synthesis. Send
+            # that already-generated text in bounded deltas so the client can
+            # render it progressively without inventing pipeline events.
+            answer_text = result.get("response") or result.get("report") or ""
+            for offset in range(0, len(answer_text), 240):
+                yield f"event: answer_delta\ndata: {json.dumps({'text': answer_text[offset:offset + 240], 'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: sources\ndata: {json.dumps({'sources': result.get('sources') or [], 'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: done\ndata: {json.dumps({'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: final\ndata: {json.dumps(result)}\n\n"
