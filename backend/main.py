@@ -469,7 +469,13 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # It is returned for clients/telemetry while the existing intent preserves
     # the dataset-approval flow for direct ML build requests.
     from backend.intent_router import classify_research_route
-    routing_decision = classify_research_route(message)
+    from backend.task_decomposer import decompose, bayes_prior_shift
+    decomposition = decompose(message)
+    research_task = next((t for t in decomposition.get("tasks", []) if t.get("requires_web_search")), None)
+    math_task = next((t for t in decomposition.get("tasks", []) if t.get("type") == "mathematical_reasoning"), None)
+    handler_message = research_task["text"] if decomposition.get("mixed") and research_task else message
+    math_result = bayes_prior_shift(math_task["text"]) if math_task else None
+    routing_decision = classify_research_route(handler_message)
     # Live web-search requests use SerpAPI for retrieval and Gemini for the
     # answer synthesis when a Gemini key is configured. Other routes retain
     # the user's selected/default model routing.
@@ -527,7 +533,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
             res = {"intent": "WEATHER", "response": "Which city should I check the weather for?", "sources": [], "verification": {"available": False, "failed": False}, "statusText": "A city is needed for weather"}
     else:
         res = handle_intent_message(
-        message=message, 
+        message=handler_message, 
         active_project_id=active_project_id, 
         session_id=conversation_id,
         payload_pending_action=payload_pending_action,
@@ -538,14 +544,19 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         cancel_check=cancel_check,
         variation_instruction=("Write a fresh formulation. Do not repeat the previous answer's wording or structure:\n" + str(payload.get("previousAnswer") or "")) if payload.get("variation") else "",
         )
+        if decomposition.get("mixed"):
+            res["taskDecomposition"] = decomposition
+            if math_result:
+                res["mathematicalResults"] = [math_result]
+                res["response"] = math_result["text"] + "\n\n" + str(res.get("response") or "")
     # The research router is authoritative for live lookups.  The legacy
     # intent handler can classify conversational phrasing such as "do you know
     # X" as EXPLANATION and invoke the LLM, which risks unsourced facts.  For
     # every routed web lookup, replace that path with the real provider result.
-    if routing_decision.get("mode") == "web_search" and weather_result is None:
+    if routing_decision.get("mode") == "web_search" and weather_result is None and not decomposition.get("mixed"):
         try:
             from backend.web_search import clean_snippet, search_web
-            web_query = re.sub(r"^do you know\s+", "", message, flags=re.IGNORECASE).strip()
+            web_query = re.sub(r"^do you know\s+", "", handler_message, flags=re.IGNORECASE).strip()
             web_results = search_web(web_query, limit=5)
             if web_results:
                 # Attach auditable metadata used by the evidence scorer.  A
