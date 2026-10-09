@@ -670,6 +670,7 @@ function WorkspaceApp({ onSignOut }) {
             historyLoadState={historyLoadState}
             activeConversationId={conversationId}
             confidenceChecking={confidenceChecking}
+            onEditMessage={handleEditMessage}
           />
         </main>
       </div>
@@ -747,6 +748,7 @@ function WorkspaceApp({ onSignOut }) {
                         sources={normalSources}
                         confidence={responseConfidence}
                         confidenceChecking={confidenceChecking}
+                      onEditMessage={handleEditMessage}
                         isLoading={isPending && !normalAnswer}
                         turns={conversationTurns}
                         onRetry={(question) => handleSendQuestion(question, { deepResearch: false })}

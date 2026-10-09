@@ -262,7 +262,7 @@ const RAW_ANSWER_CONTENT = {
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
-export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, historyItems = [], onSelectHistoryItem, theme = 'system', onThemeChange, sidebarOpen = true, onToggleSidebar, historyLoadState = 'ready', activeConversationId, confidenceChecking = false }) {
+export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, historyItems = [], onSelectHistoryItem, theme = 'system', onThemeChange, sidebarOpen = true, onToggleSidebar, historyLoadState = 'ready', activeConversationId, confidenceChecking = false, onEditMessage }) {
   // Step state: 0 (idle) -> 1 (thinking) -> 2 (streaming) -> 3 (done)
   const [step, setStep] = useState(0);
   const [inputText, setInputText] = useState('');
@@ -442,7 +442,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           {/* SECTION 5: IDLE HERO */}
           {/* =================================================================== */}
           {conversationTurns.length > 0 ? (
-            <ConversationThread turns={conversationTurns} isPending={isPending} confidenceChecking={confidenceChecking} />
+            <ConversationThread turns={conversationTurns} isPending={isPending} confidenceChecking={confidenceChecking} onEditMessage={onEditMessage} />
           ) : step === 0 && (
             <div
               style={{
@@ -1100,7 +1100,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   );
 }
 
-function ConversationThread({ turns, isPending, confidenceChecking = false }) {
+function ConversationThread({ turns, isPending, confidenceChecking = false, onEditMessage }) {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '42px 24px calc(176px + 24px)', width: '100%', maxWidth: '900px', margin: '0 auto' }}>
       {turns.map((turn) => (
@@ -1112,9 +1112,10 @@ function ConversationThread({ turns, isPending, confidenceChecking = false }) {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             style={{ marginBottom: '34px' }}
           >
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
-            <div style={{ background: TOKENS.colors.bubble, borderRadius: '16px 16px 4px 16px', padding: '14px 18px', color: TOKENS.colors.ink, maxWidth: '78%', fontSize: '15px', lineHeight: 1.5 }}>
-              {turn.question}
+          <div className="atlas-user-message-wrap" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', maxWidth: '78%' }}>
+              <div style={{ background: TOKENS.colors.bubble, borderRadius: '16px 16px 4px 16px', padding: '14px 18px', color: TOKENS.colors.ink, fontSize: '15px', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{turn.question}</div>
+              <div className="message-actions atlas-message-actions"><button type="button" className="message-action-button" aria-label="Copy message" title="Copy message" onClick={async () => { try { await navigator.clipboard.writeText(turn.question || ''); } catch { const a = document.createElement('textarea'); a.value = turn.question || ''; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); } }}>⧉</button><button type="button" className="message-action-button" aria-label="Edit message" title="Edit message" onClick={() => onEditMessage?.(turns.indexOf(turn), turn.question)}>✎</button></div>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
