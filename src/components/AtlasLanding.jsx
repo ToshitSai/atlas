@@ -1115,7 +1115,7 @@ function ConversationThread({ turns, isPending, confidenceChecking = false, onEd
           <div className="atlas-user-message-wrap" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', maxWidth: '78%' }}>
               <div style={{ background: TOKENS.colors.bubble, borderRadius: '16px 16px 4px 16px', padding: '14px 18px', color: TOKENS.colors.ink, fontSize: '15px', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{turn.question}</div>
-              <div className="message-actions atlas-message-actions"><button type="button" className="message-action-button" aria-label="Copy message" title="Copy message" onClick={async () => { try { await navigator.clipboard.writeText(turn.question || ''); } catch { const a = document.createElement('textarea'); a.value = turn.question || ''; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); } }}>⧉</button><button type="button" className="message-action-button" aria-label="Edit message" title="Edit message" onClick={() => onEditMessage?.(turns.indexOf(turn), turn.question)}>✎</button></div>
+              <MessageActions text={turn.question || ''} onEdit={(value) => onEditMessage?.(turns.indexOf(turn), value)} />
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
@@ -1129,3 +1129,13 @@ function ConversationThread({ turns, isPending, confidenceChecking = false, onEd
     </div>
   );
 }
+
+function MessageActions({ text, onEdit }) {
+  const [editing, setEditing] = useState(false); const [draft, setDraft] = useState(text); const [copied, setCopied] = useState(false); const ref = useRef(null);
+  useEffect(() => { if (editing) { ref.current?.focus(); ref.current?.setSelectionRange(draft.length, draft.length); } }, [editing]);
+  const copy = async () => { try { await navigator.clipboard.writeText(text); } catch { const a = document.createElement('textarea'); a.value = text; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); } setCopied(true); window.setTimeout(() => setCopied(false), 1500); };
+  if (editing) return <div className="mt-2 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] p-2"><textarea ref={ref} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { setDraft(text); setEditing(false); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && draft.trim() && draft.trim() !== text.trim()) { setEditing(false); onEdit(draft.trim()); } }} className="w-full resize-y bg-transparent p-2 text-sm outline-none" aria-label="Edit message" /><div className="flex justify-end gap-2"><button type="button" className="message-edit-secondary" onClick={() => { setDraft(text); setEditing(false); }}>Cancel</button><button type="button" className="message-edit-primary" disabled={!draft.trim() || draft.trim() === text.trim()} onClick={() => { setEditing(false); onEdit(draft.trim()); }}>Send</button></div></div>;
+  return <div className="message-actions atlas-message-actions" aria-live="polite"><button type="button" className="message-action-button" aria-label="Copy message" title={copied ? 'Copied' : 'Copy message'} onClick={copy}><CopyGlyph checked={copied} /></button><button type="button" className="message-action-button" aria-label="Edit message" title="Edit message" onClick={() => { setDraft(text); setEditing(true); }}><EditGlyph /></button>{copied && <span className="sr-only">Copied</span>}</div>;
+}
+function CopyGlyph({ checked }) { return checked ? <span aria-hidden="true">✓</span> : <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>; }
+function EditGlyph() { return <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>; }
