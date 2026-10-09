@@ -132,7 +132,7 @@ _TASK_CAPABILITY_LABEL: Dict[str, str] = {
 #  latency_tier[1=fastest], cost_tier[1=cheapest], reasoning_tier[3=strongest],
 #  coding_tier, capabilities, strengths)
 _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str], List[str]]] = [
-    ("anthropic", "ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022", 200000, 2, 3, 3, 3,
+    ("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929", 200000, 2, 3, 3, 3,
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_TOOLS],
      ["strongest coding & reasoning", "long-form writing", "200k context"]),
@@ -144,7 +144,7 @@ _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str]
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_MULTIMODAL, CAP_TOOLS],
      ["very long context (1M)", "multimodal", "fast & low cost"]),
-    ("mistral", "MISTRAL_MODEL", "mistral-tiny", 32000, 1, 1, 1, 1,
+    ("mistral", "MISTRAL_MODEL", "mistral-tiny-2312", 32000, 1, 1, 1, 1,
      [CAP_GENERAL, CAP_SUMMARIZATION, CAP_WRITING],
      ["cheapest & fastest", "simple general queries"]),
 ]
@@ -218,19 +218,23 @@ class ProviderHealth:
 
     def _entry(self, provider: str) -> Dict[str, Any]:
         return self._state.setdefault(
-            provider, {"consecutive_failures": 0, "status": "available", "cooldown_until": 0.0})
+            provider, {"consecutive_failures": 0, "status": "available", "cooldown_until": 0.0, "total": 0, "errors": 0, "last_success": None, "last_error": None})
 
     def record(self, provider: str, ok: bool, note: str = "") -> None:
         if not provider:
             return
         with self._lock:
             entry = self._entry(provider)
+            entry["total"] += 1
             if ok:
                 entry["consecutive_failures"] = 0
                 entry["status"] = "available"
                 entry["cooldown_until"] = 0.0
+                entry["last_success"] = time.time()
                 return
             entry["consecutive_failures"] += 1
+            entry["errors"] += 1
+            entry["last_error"] = {"time": time.time(), "message": str(note)[:180]}
             status = self._classify_failure(note)
             entry["status"] = status
             if entry["consecutive_failures"] >= self._FAIL_THRESHOLD or status in ("authentication", "unavailable", "rate_limited"):
@@ -274,6 +278,9 @@ class ProviderHealth:
                     "available": not cooling,
                     "consecutive_failures": entry["consecutive_failures"],
                     "cooldown_remaining_s": round(max(0.0, entry["cooldown_until"] - now), 1) if cooling else 0.0,
+                    "last_success": entry.get("last_success"),
+                    "last_error": entry.get("last_error"),
+                    "rolling_error_rate": round(entry.get("errors", 0) / max(1, entry.get("total", 0)), 3),
                 }
             return out
 
@@ -658,7 +665,7 @@ def select_providers(decision: RoutingDecision) -> Tuple[List[str], Optional[Dic
     Healthier providers are preferred, but a cooling provider is never removed
     (it recovers on its own), so a single capable provider still gets used.
     """
-    entries = [e for e in build_registry() if e["configured"] and e["enabled"]]
+    entries = [e for e in build_registry() if e["configured"] and e["enabled"] and not (e["provider"] == "mistral" and decision.complexity != COMPLEXITY_LOW)]
     if not entries:
         return [], None
     scored = [(_score(e, decision, health.is_available(e["provider"])), e) for e in entries]
@@ -745,6 +752,8 @@ def finalize(request_id: str, decision: RoutingDecision) -> Dict[str, Any]:
     for outcome in outcomes:
         try:
             health.record(outcome.get("provider"), bool(outcome.get("ok")), outcome.get("note", ""))
+            if outcome.get("provider"):
+                health.record(f"{outcome.get('provider')}:{model_id_for(outcome.get('provider'))}", bool(outcome.get("ok")), outcome.get("note", ""))
         except Exception:
             continue
     succeeded = next((o.get("provider") for o in outcomes if o.get("ok")), None)

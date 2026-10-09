@@ -22,7 +22,7 @@ _DEFAULT_TIMEOUT = max(1, int(os.environ.get(
 # does not protect a shared local inference server when many HTTP requests
 # arrive at once. The pool is bounded too, so timed-out sockets cannot create
 # an unbounded number of Python threads.
-_MAX_CONCURRENT_REQUESTS = max(1, int(os.environ.get("MAX_CONCURRENT_LLM_REQUESTS", "2")))
+_MAX_CONCURRENT_REQUESTS = min(10, max(1, int(os.environ.get("MAX_CONCURRENT_LLM_REQUESTS", "8"))))
 _QUEUE_TIMEOUT = max(0.05, float(os.environ.get("LLM_QUEUE_TIMEOUT_SECONDS", "2")))
 _MAX_RETRIES = max(0, int(os.environ.get("MAX_RETRIES", "1")))
 _RETRY_BACKOFF = max(0.0, float(os.environ.get("LLM_RETRY_BACKOFF_SECONDS", "0.25")))
@@ -240,7 +240,7 @@ def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout
             "anthropic-version": "2023-06-01"
         }
 
-        model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
         effective_max_tokens = max_tokens or int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096"))
 
         payload = {
@@ -298,7 +298,7 @@ def call_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: 
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        model = os.environ.get("MISTRAL_MODEL", "mistral-tiny")
+        model = os.environ.get("MISTRAL_MODEL", "mistral-tiny-2312")
         effective_max_tokens = max_tokens or int(os.environ.get("MISTRAL_MAX_TOKENS", "4096"))
 
         payload = {
@@ -430,7 +430,7 @@ def stream_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout
     api_key = os.environ.get("MISTRAL_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("MISTRAL_MODEL", "mistral-tiny")
+    model = os.environ.get("MISTRAL_MODEL", "mistral-tiny-2312")
     chunks: List[str] = []
     try:
         url = "https://api.mistral.ai/v1/chat/completions"
@@ -506,7 +506,7 @@ def stream_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeo
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
     chunks: List[str] = []
     try:
         url = "https://api.anthropic.com/v1/messages"
@@ -804,7 +804,7 @@ def _stream_anthropic(prompt: str, system_prompt: Optional[str], on_token: Calla
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
     url = "https://api.anthropic.com/v1/messages"
     headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
     payload = {"model": model, "max_tokens": max_tokens or 4096, "messages": [{"role": "user", "content": prompt}], "stream": True}
