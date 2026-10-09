@@ -273,6 +273,7 @@ def health_check():
             "tavilyConfigured": bool(os.environ.get("TAVILY_API_KEY")),
             "scrapeDoConfigured": bool(os.environ.get("SCRAPE_DO_API_KEY")),
         },
+        "weather": {"provider": "open-meteo", "configured": True, "requiresKey": False},
         "build": {"commit": BUILD_COMMIT, "builtAt": BUILD_TIME},
         "llmExecution": get_llm_telemetry(),
         "modelRouting": model_router.snapshot(),
@@ -495,7 +496,34 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     )
     model_router.apply(routing)
 
-    res = handle_intent_message(
+    # Weather is a first-class tool call, not a keyword search.  Open-Meteo is
+    # keyless and the location is taken only from an explicit city or Vercel's
+    # coarse IP headers; no precise location is persisted.
+    weather_result = None
+    from backend.weather import is_weather_query, city_from_question, forecast as weather_forecast, format_answer as format_weather
+    if is_weather_query(message):
+        city = city_from_question(message)
+        if not city and isinstance(conversation_history, list):
+            for prior in reversed(conversation_history):
+                if isinstance(prior, dict):
+                    city = city_from_question(str(prior.get("content") or ""))
+                    if city: break
+        if not city:
+            city = request.headers.get("x-vercel-ip-city") or request.headers.get("x-city")
+        if city:
+            try:
+                weather_result = weather_forecast(city)
+                res = {"intent": "WEATHER", "response": format_weather(weather_result),
+                       "sources": [{"title": "Open-Meteo", "url": "https://open-meteo.com/", "domain": "open-meteo.com"}],
+                       "verification": {"available": True, "failed": False},
+                       "statusText": f"Checking the weather for {weather_result.get('city', city)}"}
+            except Exception as weather_err:
+                print(f"[WEATHER TOOL WARNING] {type(weather_err).__name__}")
+                res = {"intent": "WEATHER", "response": "I couldn't retrieve live weather right now. Please try again.", "sources": [], "verification": {"available": False, "failed": True}, "statusText": "Weather lookup unavailable"}
+        else:
+            res = {"intent": "WEATHER", "response": "Which city should I check the weather for?", "sources": [], "verification": {"available": False, "failed": False}, "statusText": "A city is needed for weather"}
+    else:
+        res = handle_intent_message(
         message=message, 
         active_project_id=active_project_id, 
         session_id=conversation_id,
@@ -505,12 +533,12 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         activity_callback=activity_callback,
         token_callback=token_callback,
         cancel_check=cancel_check,
-    )
+        )
     # The research router is authoritative for live lookups.  The legacy
     # intent handler can classify conversational phrasing such as "do you know
     # X" as EXPLANATION and invoke the LLM, which risks unsourced facts.  For
     # every routed web lookup, replace that path with the real provider result.
-    if routing_decision.get("mode") == "web_search":
+    if routing_decision.get("mode") == "web_search" and weather_result is None:
         try:
             from backend.web_search import clean_snippet, search_web
             web_query = re.sub(r"^do you know\s+", "", message, flags=re.IGNORECASE).strip()
