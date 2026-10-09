@@ -288,7 +288,8 @@ function WorkspaceApp({ onSignOut }) {
     const turnId = `${conversationId}:${Date.now()}`;
     const requestId = createConversationId();
     const messageId = turnId;
-    const priorHistory = conversationTurns.flatMap((turn) => [
+    const sourceTurns = Array.isArray(options.historyOverride) ? options.historyOverride : conversationTurns;
+    const priorHistory = sourceTurns.flatMap((turn) => [
       { role: 'user', content: turn.question },
       ...(turn.answer ? [{ role: 'assistant', content: turn.answer }] : []),
     ]).slice(-20);
@@ -498,6 +499,14 @@ function WorkspaceApp({ onSignOut }) {
   };
 
   const handleStopRequest = () => requestControllerRef.current?.abort();
+
+  const handleEditMessage = (index, text) => {
+    requestControllerRef.current?.abort();
+    const retained = conversationTurns.slice(0, index);
+    setConversationTurns(retained);
+    setUserQuestion(text);
+    handleSendQuestion(text, undefined, { deepResearch: false, historyOverride: retained });
+  };
 
   const handleSelectConversation = async (item, updateUrl = true) => {
     const selectedId = item?.conversationId || item?.id;
@@ -740,6 +749,7 @@ function WorkspaceApp({ onSignOut }) {
                         isLoading={isPending && !normalAnswer}
                         turns={conversationTurns}
                         onRetry={(question) => handleSendQuestion(question, { deepResearch: false })}
+                        onEdit={handleEditMessage}
                       />
                     ) : (
                       // Deep Research Workspace View

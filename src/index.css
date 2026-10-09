@@ -258,6 +258,21 @@ pre, code {
   .atlas-prompt-dock, .atlas-message-enter { animation: none; }
 }
 
+/* Message actions stay space-reserved to prevent bubble reflow. */
+.message-actions { min-height: 32px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; opacity: 0; transition: opacity 120ms ease; }
+.user-message-row:hover .message-actions, .user-message-row:focus-within .message-actions { opacity: 1; }
+.message-action-button { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--text-secondary); background: transparent; border: 1px solid transparent; cursor: pointer; }
+.message-action-button:hover { background: var(--surface-hover); color: var(--text-main); }
+.message-action-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.message-edit-secondary, .message-edit-primary { min-height: 32px; border-radius: 8px; padding: 0 12px; font-size: 13px; border: 1px solid var(--border-subtle); }
+.message-edit-secondary { color: var(--text-secondary); background: transparent; }
+.message-edit-primary { color: var(--text-main); background: var(--accent-yellow); }
+.message-edit-primary:disabled { opacity: .45; cursor: not-allowed; }
+@media (pointer: coarse) {
+  .message-actions { opacity: .7; }
+  .message-action-button { width: 44px; height: 44px; }
+}
+
 
 
 
