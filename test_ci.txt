@@ -1,0 +1,2 @@
+req: None
+intent: CURRENT_INFORMATION

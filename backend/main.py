@@ -517,15 +517,16 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
                 res["response"] = "\n".join(lines)
                 res["sources"] = web_results
                 res["verification"] = {"available": True, "failed": False}
-            else:
+            elif not res.get("response"):
                 res["response"] = (f"I couldn't find a reliable result for \"{web_query}\" right now. "
                                     "Try a more specific name or URL.")
                 res["sources"] = []
                 res["verification"] = {"available": True, "failed": False}
         except Exception as web_err:
             print(f"[ROUTED WEB SEARCH WARNING] {web_err}")
-            res["response"] = "Live web search failed for this request. Please try again."
-            res["sources"] = []
+            if not res.get("response"):
+                res["response"] = "Live web search failed for this request. Please try again."
+                res["sources"] = []
     res["researchRouting"] = routing_decision
     # Publicly auditable routing metadata.  This is metadata only; the
     # established handlers remain the source of truth for tool execution.

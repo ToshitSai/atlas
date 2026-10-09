@@ -3037,6 +3037,100 @@
         "last_intent": "DEEP_RESEARCH",
         "turns_seen": 1
       }
+    },
+    "default-session": {
+      "session_id": "default-session",
+      "last_user_message": "give me colleges list there in hyderabad",
+      "last_assistant_message": "Here is a categorized list of prominent colleges in Hyderabad, India, across various sectors (academic, technical, and professional):\n\n---\n\n### **1. Central/National Universities & Government Colleges**\n- **University of Hyderabad (UoH)** \u2013 [www.uhyderabad.ac.in](https://www.uhyderabad.ac.in)\n  *Elite multidisciplinary university with strong research focus in humanities, sciences, and social sciences.*\n- **Osmania University** \u2013 [www.osmania.ac.in](https://www.osmania.ac.in)\n  *Oldest and largest university in Telangana, offering undergraduate, postgraduate, and doctoral programs in arts, sciences, law, and medicine.*\n- **Jawaharlal Nehru Technological University (JNTU) Hyderabad** \u2013 [www.jntuh.ac.in](https://www.jntuh.ac.in)\n  *Government-aided technical university with programs in engineering, pharmacy, and architecture.*\n- **National Institute of Technology (NIT) Warangal** \u2013 [www.nitw.ac.in](https://www.nitw.ac.in)\n  *Deemed-to-be university (formerly NIT Warangal), known for engineering, computer science, and management.*\n- **Indian Institute of Chemical Technology (IICT)** \u2013 [www.iict.res.in](https://www.iict.res.in)\n  *Autonomous research institute under the Ministry of Chemicals and Fertilizers, specializing in chemical engineering and R&D.*\n- **National Institute of Technology (NIT) Surathkal (Hyderabad Campus)** \u2013 [www.nitsurathkal.ac.in](https://www.nitsurathkal.ac.in)\n  *Offers M.Tech and PhD programs in collaboration with NIT Surathkal, Karnataka.*\n\n---\n\n### **2. Private Engineering & Technical Colleges**\n- **Vignan\u2019s Institute of Information Technology (VIIT)** \u2013 [www.vignans.in](https://www.vignans.in)\n  *Accredited NAAC and NBA, offers B.Tech, M.Tech, and MBA programs.*\n- **Gokaraju Rangaraju Institute of Engineering and Technology (GRIT)** \u2013 [www.grit.ac.in](https://www.grit.ac.in)\n  *Affiliated to JNTUH, known for computer science, electronics, and civil engineering.*\n- **Rajiv Gandhi Institute of Technology (RGIT)** \u2013 [www.rgit.ac.in](https://www.rgit.ac.in)\n  *NAAC-accredited, offers B.Tech, M.Tech, and MBA with industry collaborations.*\n- **Malla Reddy Institute of Engineering and Technology (MRIET)** \u2013 [www.mriethyderabad.edu.in](https://www.mriethyderabad.edu.in)\n  *Affiliated to JNTUH, recognized for AI, cybersecurity, and mechanical engineering.*\n- **JNTUH\u2013Hyderabad Campus (Affiliated Colleges)**:\n  - **Chaitanya Bharathi Institute of Technology (CBIT)**\n  - **KL University** \u2013 [www.kluniversity.in](https://www.kluniversity.in)\n    *Private deemed-to-be university with UGC approval, offering UG/PG programs in engineering, law, and management.*\n  - **BVRIT Hyderabad Campus** \u2013 [www.bvrit.ac.in](https://www.bvrit.ac.in)\n  - **PVR Engineering College**\n\n---\n\n### **3. Medical & Dental Colleges**\n- **Osmania Medical College (OMC)** \u2013 [www.omchyd.ac.in](https://www.omchyd.ac.in)\n  *Government medical college affiliated to Osmania University, one of the oldest in India.*\n- **Nizam\u2019s Institute of Medical Sciences (NIMS)** \u2013 [www.nims.edu.in](https://www.nims.edu.in)\n  *Autonomous medical college with MBBS, MD, and super-specialty programs.*\n- **Maulana Azad National Urdu University (MANUU) \u2013 Faculty of Medicine** \u2013 [www.manuu.ac.in](https://www.manuu.ac.in)\n  *Offers MBBS and postgraduate medical courses.*\n- **Kakatiya Medical College (KMC)** \u2013 [www.kmchyd.ac.in](https://www.kmchyd.ac.in)\n  *Government medical college affiliated to JNTUH.*\n- **Deccan College of Medical Sciences (DCMS)** \u2013 [www.dcms.edu.in](https://www.dcms.edu.in)\n  *Private medical college with MBBS, MD, and super-specialty programs.*\n- **Nizam\u2019s Institute of Dental Sciences (NIDS)** \u2013 [www.nids.ac.in](https://www.nids.ac.in)\n  *Autonomous dental college affiliated to Osmania University.*\n\n---\n\n### **4. Management & Business Schools**\n- **Indian School of Business (ISB) Hyderabad Campus** \u2013 [www.isb.edu](https://www.isb.edu)\n  *Top-ranked global business school with MBA (PGP) and executive education programs.*\n- **ICFAI Business School (IBS) Hyderabad** \u2013 [www.ibsindia.org](https://www.ibsindia.org)\n  *Offers PGPM, MBA, and executive programs with global accreditations.*\n- **Narsee Monjee Institute of Management Studies (NMIMS) Hyderabad** \u2013 [www.nmims.edu](https://www.nmims.edu)\n  *Private deemed-to-be university with MBA, BBA, and executive education.*\n- **XIME Hyderabad** \u2013 [www.xime.edu](https://www.xime.edu)\n  *Affiliated to Osmania University, offers MBA and PGDM programs.*\n- **GITAM Hyderabad School of International Business (GHSB)** \u2013 [www.gitam.edu](https://www.gitam.edu)\n  *Offers MBA with international exposure and industry integrations.*\n\n---\n\n### **5. Law Colleges**\n- **Osmania University Law College** \u2013 [www.osmanialawcollege.ac.in](https://www.osmanialawcollege.ac.in)\n  *Government-affiliated, offers BA LLB, LLB, and LLM.*\n- **Nizam\u2019s Institute of Legal Studies (NILS)** \u2013 [www.nils.ac.in](https://www.nils.ac.in)\n  *Autonomous law college with BA LLB, LLB, and LLM programs.*\n- **ICFAI Law School (ILS)** \u2013 [www.ilsindia.edu](https://www.ilsindia.edu)\n  *Private law school with BA LLB, LLB, and LLM.*\n- **KL University School of Law** \u2013 [www.kluniversity.in](https://www.kluniversity.in)\n  *Offers integrated and postgraduate law programs.*\n\n---\n\n### **6. Polytechnics & Diploma Colleges**\n- **Osmania Polytechnic** \u2013 [www.osmaniapolytechnic.ac.in](https://www.osmaniapolytechnic.ac.in)\n  *Government polytechnic affiliated to Osmania University.*\n- **JNTUH\u2013Hyderabad Polytechnics**:\n  - **Gokaraju Rangaraju Polytechnic**\n  - **Rajiv Gandhi Polytechnic**\n  - **Maulana Azad Polytechnic**\n- **Private Polytechnics**:\n  - **Vignan\u2019s Polytechnic**\n  - **GRIT Polytechnic**\n  - **PVR Polytechnic**\n\n---\n\n### **7. Arts, Science & Humanities Colleges**\n- **Osmania University Constituent Colleges**:\n  - **Sri Ramachandra Rajaram Shastri (SRRS) College**\n  - **Mahatma Gandhi (MG) College**\n  - **Nizam College** (Oldest constituent college of Osmania University)\n- **Kakatiya University Constituent Colleges** (Nearby, but some programs are accessible):\n  - **Sri Krishnadevaraya University Constituent Colleges** (e.g., **Sri Venkateswara College**)\n- **Private Colleges**:\n  - **KL University (School of Arts & Sciences)**\n  - **BVRIT (School of Humanities & Social Sciences)**\n  - **Vignan\u2019s Foundation for Science, Technology & Research (VFSTR)**\n\n---\n\n### **8. Vocational & Skill Development Institutes**\n- **National Institute of Electronics and Information Technology (NIELIT) Hyderabad** \u2013 [www.doeacc.gov.in](https://www.doeacc.gov.in)\n  *Offers ITI and diploma courses in electronics, IT, and telecom.*\n- **Apprenticeship Training Centers (ATCs)** under **Directorate of Employment & Training (DET), Govt. of Telangana**.\n- **Private Institutes**:\n  - **IIHT (Indian Institute of Information Technology Education & Research)**\n  - **Maulana Azad Education Foundation (MAEF) Institutes** (e.g., MAEF Polytechnic, MAEF ITI).\n\n---\n\n### **9. Foreign Universities & International Campuses**\n- **University of Hyderabad (UoH) \u2013 International Collaborations**:\n  - **University of California, Berkeley (UCB) \u2013 Joint Research Programs**\n  - **University of Oxford \u2013 Exchange Programs**\n- **KL University \u2013 International Collaborations**:\n  - **University of Wollongong (UOW), Australia**\n  - **University of Bedfordshire, UK**\n\n---\n**Note**:\n- **Admission Criteria**: Most government colleges follow **EAMCET** (for engineering/medical) or **TS EAMCET** for UG programs, while private colleges may have their own entrance exams (e.g., **TS EAMCET, TS LAWCET, TS ICET**).\n- **Accreditation**: Verify **NAAC** (colleges), **NBA** (engineering), **NMC** (medical), and **BCI** (law) accreditations for credibility.\n- **Location**: Hyderabad\u2019s key educational clusters include **Gachibowli (UoH, NIT Warangal), Kukatpally (Osmania University), Madinaguda (KL University), and Bowrampet (Nizam\u2019s Institute)**.",
+      "last_topic": "weather status today",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "paper on fake news detectoon",
+          "weather status today",
+          "give me colleges list there in hyderabad"
+        ],
+        "last_task_type": "current_information",
+        "last_intent": "CURRENT_INFORMATION",
+        "turns_seen": 15
+      }
+    },
+    "3aef62e317779057e6d69a8d80d405e3:conv-0d9e2e10-8af2-45c8-95fe-1969ffd4e56e": {
+      "session_id": "3aef62e317779057e6d69a8d80d405e3:conv-0d9e2e10-8af2-45c8-95fe-1969ffd4e56e",
+      "last_user_message": "trees",
+      "last_assistant_message": "Decision trees are hierarchical, rule-based models that recursively partition data into subsets based on feature values to predict outcomes or classify instances. Each internal node represents a decision rule (e.g., \"age > 30\"), branches show possible outcomes, and leaves contain final predictions or class labels.\n\n**How they work:**\n1. **Splitting criterion:** At each node, the algorithm selects the feature and threshold that best splits the data (e.g., Gini impurity, entropy, or variance reduction for regression).\n2. **Recursion:** The process repeats on child nodes until stopping criteria are met (e.g., max depth, min samples per leaf, or purity threshold).\n3. **Prediction:** New data traverses the tree from root to leaf, applying each rule until a class or value is returned.\n\n**Key properties:**\n- **Interpretability:** Rules are human-readable (e.g., \"If feature A \u2264 5 AND feature B > 2, predict class X\").\n- **Nonlinearity:** Capture complex relationships without assuming linearity.\n- **Handling mixed data:** Work with numerical, categorical, and ordinal features (with encoding).\n- **Robustness:** Resistant to outliers (unlike linear models) but sensitive to small data changes (prone to overfitting).\n\n**Example (illustrative):**\nA tree predicting house prices might split on:\n- Node 1: \"Square footage \u2264 1500\" \u2192 Leaf: $200K\n- Node 2 (else): \"Bedrooms \u2265 3\" \u2192 Leaf: $350K\n- Node 3 (else): \"Location = Suburb\" \u2192 Leaf: $300K\n\n**Variants:**\n- **Random Forest:** Ensemble of trees trained on bootstrapped data, reducing variance.\n- **Gradient Boosting (e.g., XGBoost):** Sequentially corrects errors of prior trees, often improving accuracy.\n- **Decision Stumps:** Single-level trees (one split) for baseline comparisons.\n\n**Limitations:**\n- **Bias toward dominant classes:** May ignore rare but important splits.\n- **Overfitting:** Deep trees memorize noise; pruning or regularization mitigates this.\n- **Sensitivity to data:** Small changes in training data can alter splits drastically.\n\n**When to use:**\n- Exploratory analysis (quick insights).\n- High-dimensional data (features > samples).\n- Mixed data types.\n- Nonlinear relationships.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [
+        {
+          "id": "conv-0d9e2e10-8af2-45c8-95fe-1969ffd4e56e:1791520854616",
+          "conversation_id": "3aef62e317779057e6d69a8d80d405e3:conv-0d9e2e10-8af2-45c8-95fe-1969ffd4e56e",
+          "role": "user",
+          "content": "trees",
+          "timestamp": "2026-10-09T04:40:54.667377+00:00",
+          "intent": null,
+          "topic": null,
+          "research_id": null,
+          "pending_action": null,
+          "activity": [],
+          "confidence": null
+        },
+        {
+          "id": "99a53146-eece-475a-821a-9117e02d114c",
+          "conversation_id": "3aef62e317779057e6d69a8d80d405e3:conv-0d9e2e10-8af2-45c8-95fe-1969ffd4e56e",
+          "role": "assistant",
+          "content": "Decision trees are hierarchical, rule-based models that recursively partition data into subsets based on feature values to predict outcomes or classify instances. Each internal node represents a decision rule (e.g., \"age > 30\"), branches show possible outcomes, and leaves contain final predictions or class labels.\n\n**How they work:**\n1. **Splitting criterion:** At each node, the algorithm selects the feature and threshold that best splits the data (e.g., Gini impurity, entropy, or variance reduction for regression).\n2. **Recursion:** The process repeats on child nodes until stopping criteria are met (e.g., max depth, min samples per leaf, or purity threshold).\n3. **Prediction:** New data traverses the tree from root to leaf, applying each rule until a class or value is returned.\n\n**Key properties:**\n- **Interpretability:** Rules are human-readable (e.g., \"If feature A \u2264 5 AND feature B > 2, predict class X\").\n- **Nonlinearity:** Capture complex relationships without assuming linearity.\n- **Handling mixed data:** Work with numerical, categorical, and ordinal features (with encoding).\n- **Robustness:** Resistant to outliers (unlike linear models) but sensitive to small data changes (prone to overfitting).\n\n**Example (illustrative):**\nA tree predicting house prices might split on:\n- Node 1: \"Square footage \u2264 1500\" \u2192 Leaf: $200K\n- Node 2 (else): \"Bedrooms \u2265 3\" \u2192 Leaf: $350K\n- Node 3 (else): \"Location = Suburb\" \u2192 Leaf: $300K\n\n**Variants:**\n- **Random Forest:** Ensemble of trees trained on bootstrapped data, reducing variance.\n- **Gradient Boosting (e.g., XGBoost):** Sequentially corrects errors of prior trees, often improving accuracy.\n- **Decision Stumps:** Single-level trees (one split) for baseline comparisons.\n\n**Limitations:**\n- **Bias toward dominant classes:** May ignore rare but important splits.\n- **Overfitting:** Deep trees memorize noise; pruning or regularization mitigates this.\n- **Sensitivity to data:** Small changes in training data can alter splits drastically.\n\n**When to use:**\n- Exploratory analysis (quick insights).\n- High-dimensional data (features > samples).\n- Mixed data types.\n- Nonlinear relationships.",
+          "timestamp": "2026-10-09T04:40:59.992241+00:00",
+          "intent": "EXPLANATION",
+          "topic": null,
+          "research_id": null,
+          "pending_action": null,
+          "activity": [],
+          "confidence": {
+            "overall": {
+              "level": "Not checked against sources"
+            },
+            "basis": [
+              "This answer has not been checked against retrieved sources."
+            ],
+            "verification": [],
+            "evidence": {
+              "sources_used": 0,
+              "tool_verified": false,
+              "experiment_ids": []
+            },
+            "claims": [],
+            "unknown": "Claim verification was not run because this answer had no retrieved source evidence."
+          }
+        }
+      ],
+      "research_route": {
+        "mode": "normal",
+        "confidence": 0.94,
+        "reason": "A direct answer is sufficient for this request.",
+        "requires_web": false,
+        "requires_deep_research": false,
+        "complexity_score": 0,
+        "signals": {
+          "multi_step": false,
+          "experimentation": false,
+          "external_evidence": false,
+          "dataset_required": false,
+          "statistical_analysis": false,
+          "iterative_reasoning": false,
+          "diagnosis": false,
+          "ml": false
+        }
+      },
+      "conversation_summary": {
+        "topics": [],
+        "last_task_type": "other",
+        "last_intent": "EXPLANATION",
+        "turns_seen": 1
+      }
     }
   },
   "settings": {
@@ -3046,6 +3140,7 @@
     "dockerAvailable": false,
     "maxExperiments": 5,
     "timeBudgetMins": 60,
-    "mlRuntimeAvailable": false
+    "mlRuntimeAvailable": true,
+    "llmEffectiveProvider": "Auto (Openai, Gemini, Anthropic, Mistral configured)"
   }
 }

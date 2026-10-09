@@ -625,10 +625,10 @@ def classify_research_route(message: str) -> Dict[str, Any]:
         return {"mode": "web_search", "confidence": 0.9,
                 "reason": "Entity lookup requires live source verification.",
                 "requires_web": True, "requires_deep_research": False, **assessment}
-    explicit_override = bool(re.search(r"\b(?:do deep research|research this thoroughly|conduct a full .*research)\b", text))
+    explicit_override = bool(re.search(r"\b(?:do deep research|research this .thoroughly|conduct a full .*research)\b", text))
     # A quick current lookup is web search unless it also asks for a synthesis
     # or comparative study.
-    if _WEB_CURRENCY_RE.search(text) and assessment["complexity_score"] < 7 and not explicit_override:
+    if _is_currency_query(text) and assessment["complexity_score"] < 7 and not explicit_override:
         return {"mode": "web_search", "confidence": 0.93,
                 "reason": "This asks for a current fact or quick live lookup.",
                 "requires_web": True, "requires_deep_research": False, **assessment}
@@ -699,6 +699,19 @@ _WEB_CURRENCY_RE = re.compile(
     r"weather|stock price|price of|release date|breaking|this week|this month)\b",
     re.IGNORECASE,
 )
+
+
+def _is_currency_query(text: str) -> bool:
+    if not text:
+        return False
+    msg_low = text.lower()
+    if re.search(r"\b(?:research paper|sample paper|sample research|fake news|news detection|news classifier|news dataset|colleges? list|list of colleges|colleges in)\b", msg_low):
+        return False
+    if not _WEB_CURRENCY_RE.search(msg_low):
+        return False
+    if re.search(r"\b(?:fake news|good news|bad news|news detection|news classification|news dataset|news paper)\b", msg_low) and not re.search(r"\b(?:latest news|breaking news|news today|current news)\b", msg_low):
+        return False
+    return True
 # Comparison / multi-factor reasoning.
 _COMPARISON_RE = re.compile(
     r"\bcompare\b|\bdifference between\b|\bvs\.?\b|\bversus\b|\bbetter than\b|"
@@ -1116,7 +1129,7 @@ def classify_intent(
                 return "CURRENT_INFORMATION"
         except Exception:
             pass
-    if (_WEB_CURRENCY_RE.search(msg_clean)
+    if (_is_currency_query(msg_clean)
             and not re.search(r"\b(?:research|investigate|deep dive|survey)\b", msg_clean)
             and not (active_project_id and project_ref)):
         return "WEB_SEARCH"
@@ -1214,7 +1227,7 @@ def classify_intent(
 
     # 4b. Current-information questions -> live web search ("find the latest ...",
     # "who won ..."), unless the message references the ACTIVE study's results.
-    if _WEB_CURRENCY_RE.search(msg_clean) and not (active_project_id and project_ref):
+    if _is_currency_query(msg_clean) and not (active_project_id and project_ref):
         return "WEB_SEARCH"
 
     # 4b. Self-referential capability / greeting questions are casual chat, not a
@@ -1293,8 +1306,11 @@ def classify_intent(
     if _is_explicit_ml_experiment_request(msg_clean):
         return "RESEARCH_START"
 
-    # 11. CASUAL_CHAT fast-path
+    # 11. Single-word noun lookups (e.g. "trees", "papaya") are explanation queries, not casual chat.
     greetings = ["hi", "hello", "hey", "hi!", "hello!", "hey!", "greetings", "good morning", "good afternoon", "good evening"]
+    if len(msg_clean.split()) == 1 and msg_clean_nopunct not in greetings and msg_clean_nopunct:
+        return "EXPLANATION"
+
     if msg_clean in greetings or "what can you do" in msg_clean or "who are you" in msg_clean or "help" in msg_clean:
         return "CASUAL_CHAT"
 
@@ -1484,6 +1500,15 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
                 "वेब विकास, डेटा विश्लेषण, कृत्रिम बुद्धिमत्ता और ऑटोमेशन में "
                 "किया जाता है।"
             )
+        try:
+            from backend.web_search import search_web
+            search_query = topic or message
+            web_hits = search_web(search_query, limit=3)
+            if web_hits and web_hits[0].get("snippet"):
+                hit = web_hits[0]
+                return f"{hit['snippet']}\n\nSource: {hit['url']}"
+        except Exception:
+            pass
         return _honest_unknown(topic or message)
 
     kb_seed = (
@@ -2173,10 +2198,9 @@ def _handle_intent_message_impl(
             print(f"[CURRENT INFO WARNING]: {ci_err}")
             resp_text = None
         if not (resp_text and resp_text.strip()):
-            resp_text = (
-                "I can't reliably verify this right now because live search is "
-                "unavailable, and I won't substitute background or guess."
-            )
+            topic = extract_topic(message)
+            history_ctx = _conversation_context(sid, client_history=conversation_history)
+            resp_text = _general_answer(message, topic, history_ctx, on_token=token_callback)
         store.update_session(sid, {"last_assistant_message": resp_text})
         return {
             "intent": "CURRENT_INFORMATION",

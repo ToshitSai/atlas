@@ -1,0 +1,36 @@
+========================================
+PROMPT: give me sample research paper on fake news detectoon
+ROUTE: normal | reason: A direct answer is sufficient for this request.
+INTENT: DEEP_RESEARCH
+CURRENT INFO REQ: None
+SEARCH_WEB COUNT: 0
+========================================
+PROMPT: weather status today
+ROUTE: web_search | reason: This asks for a current fact or quick live lookup.
+INTENT: WEB_SEARCH
+CURRENT INFO REQ: None
+SEARCH_WEB COUNT: 0
+========================================
+PROMPT: trees
+ROUTE: normal | reason: A direct answer is sufficient for this request.
+INTENT: EXPLANATION
+CURRENT INFO REQ: None
+SEARCH_WEB COUNT: 0
+========================================
+PROMPT: papaya
+ROUTE: normal | reason: A direct answer is sufficient for this request.
+INTENT: EXPLANATION
+CURRENT INFO REQ: None
+SEARCH_WEB COUNT: 2
+  [0] title: Papaya, url: https://en.wikipedia.org/wiki/Papaya
+       snippet: The papaya is the plant species Carica papaya, one of the 3 accepted species in the genus Carica of 
+       source: DuckDuckGo
+  [1] title: Papaya Category, url: https://duckduckgo.com/c/Papaya
+       snippet: Papaya Category
+       source: DuckDuckGo
+========================================
+PROMPT: give me colleges list there in hyderabad
+ROUTE: normal | reason: A direct answer is sufficient for this request.
+INTENT: CURRENT_INFORMATION
+CURRENT INFO REQ: None
+SEARCH_WEB COUNT: 0

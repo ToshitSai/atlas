@@ -39,11 +39,13 @@ def clean_snippet(value: str, limit: int = 400) -> str:
 
 def result_matches_query(query: str, result: Dict[str, str]) -> bool:
     """Reject obvious title/snippet mismatches before presenting a hit."""
-    ignored = {"a", "an", "and", "for", "from", "give", "get", "in", "link", "me", "of", "on", "open", "please", "site", "the", "to", "url", "website", "with"}
+    ignored = {"a", "an", "and", "for", "from", "give", "get", "in", "link", "me", "of", "on", "open", "please", "site", "the", "to", "url", "website", "with", "status", "today", "tonight", "yesterday", "current", "latest", "list", "there"}
     terms = [word for word in re.findall(r"[a-z0-9]{3,}", (query or "").lower()) if word not in ignored]
     if not terms:
         return True
     haystack = " ".join(str(result.get(key) or "") for key in ("title", "url", "snippet")).lower()
+    if "weather" in terms and "weather" not in haystack and "forecast" not in haystack and "climate" not in haystack and "temperature" not in haystack:
+        return False
     return any(re.search(rf"\b{re.escape(term)}\b", haystack) for term in terms)
 
 
