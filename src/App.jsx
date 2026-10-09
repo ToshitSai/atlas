@@ -502,6 +502,7 @@ function WorkspaceApp({ onSignOut }) {
 
   const handleEditMessage = (index, text) => {
     requestControllerRef.current?.abort();
+    sendingRef.current = false;
     const retained = conversationTurns.slice(0, index);
     setConversationTurns(retained);
     setUserQuestion(text);
