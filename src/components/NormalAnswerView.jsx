@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ProgressiveMarkdown from './ProgressiveMarkdown';
 
 /** Focused direct-answer thread, without document-style Question/Answer cards. */
-export default function NormalAnswerView({ userQuestion = '', answer = '', sources = [], confidence = null, isLoading = false, turns = [] }) {
+export default function NormalAnswerView({ userQuestion = '', answer = '', sources = [], confidence = null, isLoading = false, turns = [], onRetry }) {
   const scrollRef = useRef(null);
   const previousAnswerLength = useRef(0);
   const [showJump, setShowJump] = useState(false);
@@ -36,6 +36,8 @@ export default function NormalAnswerView({ userQuestion = '', answer = '', sourc
               </div>
               {loading && !turn.answer ? <AnswerSkeleton /> : <ProgressiveMarkdown content={turn.answer || ''} streaming={loading} instant={Boolean(turn.loadedFromHistory)} deliveryPath={turn.loadedFromHistory ? 'loaded from history' : 'new answer'} />}
               {turn.stopped && <p className="mt-2 text-sm text-[var(--text-secondary)]" role="status">Stopped</p>}
+              {!loading && turn.answer && <div className="mt-2 text-[11px] text-[var(--text-muted)]">{turn.sources?.length ? `Live web search - ${turn.sources.length} source${turn.sources.length === 1 ? '' : 's'}` : 'From general knowledge'}</div>}
+              {turn.error && <div className="mt-2 flex items-center gap-2 text-sm text-[var(--text-secondary)]"><span>Unable to finish this answer: {turn.error}</span>{onRetry && <button type="button" onClick={() => onRetry(turn.question)} className="rounded-md border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-hover)]">Retry</button>}</div>}
               {turn.sources?.length > 0 && !loading && (
               <section className="mt-5 pt-4 border-t border-[var(--border-subtle)] space-y-2">
               <div className="text-[11px] font-sans uppercase tracking-wide text-[var(--text-secondary)]">Sources</div>

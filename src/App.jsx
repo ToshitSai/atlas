@@ -739,6 +739,7 @@ function WorkspaceApp({ onSignOut }) {
                         confidenceChecking={confidenceChecking}
                         isLoading={isPending && !normalAnswer}
                         turns={conversationTurns}
+                        onRetry={(question) => handleSendQuestion(question, { deepResearch: false })}
                       />
                     ) : (
                       // Deep Research Workspace View
