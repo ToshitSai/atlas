@@ -1616,7 +1616,7 @@ def handle_intent_message(
             result = _handle_intent_message_impl(message, active_project_id, session_id,
                                                  payload_pending_action, payload_last_topic,
                                                  conversation_history, activity_callback,
-                                                 token_callback, cancel_check)
+                                                 token_callback, cancel_check, variation_instruction)
         # The API preserves its existing response shape and adds an optional,
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
@@ -1637,6 +1637,7 @@ def _handle_intent_message_impl(
     activity_callback=None,
     token_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
+    variation_instruction: str = "",
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
