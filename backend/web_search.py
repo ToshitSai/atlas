@@ -3,9 +3,10 @@
 Multi-provider with graceful degradation:
   1. Tavily   (TAVILY_API_KEY)
   2. Serper   (SERPER_API_KEY — Google results)
-  3. Brave    (BRAVE_API_KEY)
-  4. Scrape.do (SCRAPE_DO_API_KEY; search-results HTML fallback)
-  5. DuckDuckGo Instant Answers (keyless; limited but real)
+  3. SerpAPI  (SERPAPI_API_KEY — Google results)
+  4. Brave    (BRAVE_API_KEY)
+  5. Scrape.do (SCRAPE_DO_API_KEY; search-results HTML fallback)
+  6. DuckDuckGo Instant Answers (keyless; limited but real)
 
 Returns a normalised list of {title, url, snippet, source}. It never
 fabricates: if every provider fails, ``search_web`` returns [] and callers
@@ -83,6 +84,22 @@ def _search_serper(query: str, limit: int) -> List[Dict[str, str]]:
         "snippet": clean_snippet(r.get("snippet") or ""),
         "source": "Google (Serper)",
     } for r in data.get("organic", [])]
+
+
+def _search_serpapi(query: str, limit: int) -> List[Dict[str, str]]:
+    key = os.environ.get("SERPAPI_API_KEY")
+    if not key:
+        return []
+    url = "https://serpapi.com/search.json?" + urllib.parse.urlencode({
+        "engine": "google", "q": query, "api_key": key, "num": limit,
+    })
+    data = _http_json(url)
+    return [{
+        "title": r.get("title") or "",
+        "url": r.get("link") or "",
+        "snippet": clean_snippet(r.get("snippet") or ""),
+        "source": "Google (SerpAPI)",
+    } for r in data.get("organic_results", [])]
 
 
 def _search_brave(query: str, limit: int) -> List[Dict[str, str]]:
@@ -243,7 +260,7 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
 
 # Preference order: keyed, higher-quality providers first; keyless fallback last.
 # Looked up by name at call time so tests (and future overrides) can patch them.
-_PROVIDER_NAMES = ("tavily", "serper", "brave", "scrape_do", "duckduckgo")
+_PROVIDER_NAMES = ("tavily", "serper", "serpapi", "brave", "scrape_do", "duckduckgo")
 
 
 def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
