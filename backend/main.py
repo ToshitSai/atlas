@@ -464,6 +464,11 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # the dataset-approval flow for direct ML build requests.
     from backend.intent_router import classify_research_route
     routing_decision = classify_research_route(message)
+    # Live web-search requests use SerpAPI for retrieval and Gemini for the
+    # answer synthesis when a Gemini key is configured. Other routes retain
+    # the user's selected/default model routing.
+    if routing_decision.get("mode") == "web_search" and os.environ.get("GEMINI_API_KEY"):
+        llm_mod.set_selected_provider("gemini")
     execution_mode = classify_mode(message, routing_decision)
     # Persist the selected mode once per user request. Streamed/project updates
     # read this state; they never reclassify partial assistant output.
