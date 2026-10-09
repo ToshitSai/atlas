@@ -260,7 +260,8 @@ pre, code {
 
 /* Message actions stay space-reserved to prevent bubble reflow. */
 .message-actions { min-height: 32px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; opacity: 0; transition: opacity 120ms ease; }
-.atlas-message-actions { opacity: 1; }
+.atlas-message-actions { opacity: 0; }
+.atlas-user-message-wrap:hover .atlas-message-actions, .atlas-user-message-wrap:focus-within .atlas-message-actions { opacity: 1; }
 .user-message-row:hover .message-actions, .user-message-row:focus-within .message-actions { opacity: 1; }
 .message-action-button { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--text-secondary); background: transparent; border: 1px solid transparent; cursor: pointer; }
 .message-action-button:hover { background: var(--surface-hover); color: var(--text-main); }
@@ -271,6 +272,7 @@ pre, code {
 .message-edit-primary:disabled { opacity: .45; cursor: not-allowed; }
 @media (pointer: coarse) {
   .message-actions { opacity: .7; }
+  .atlas-message-actions { opacity: .7; }
   .message-action-button { width: 44px; height: 44px; }
 }
 
