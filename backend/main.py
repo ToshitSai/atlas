@@ -118,6 +118,9 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
                 print(f"[PROJECT OWNER CHECK WARNING] {exc!r}")
 
         response = await call_next(request)
+        if path in ("/api/chat", "/api/chat/stream"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
         if new_cookie:
             response.set_cookie(
                 SESSION_COOKIE, sid,
@@ -533,6 +536,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         activity_callback=activity_callback,
         token_callback=token_callback,
         cancel_check=cancel_check,
+        variation_instruction=("Write a fresh formulation. Do not repeat the previous answer's wording or structure:\n" + str(payload.get("previousAnswer") or "")) if payload.get("variation") else "",
         )
     # The research router is authoritative for live lookups.  The legacy
     # intent handler can classify conversational phrasing such as "do you know

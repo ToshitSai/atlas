@@ -193,9 +193,9 @@ export async function sendDeepResearchStream(message, projectId = null, conversa
 
 // Normal-answer path over SSE so answer text renders token-by-token. The final
 // frame still carries the authoritative, post-processed response for reconcile.
-export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {}, signal } = {}) {
+export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {}, signal, variation = false, previousAnswer = '' } = {}) {
   return streamChat(
-    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, ...correlation },
+    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, variation, previousAnswer, ...correlation },
     { onActivity, onToken, signal }
   );
 }

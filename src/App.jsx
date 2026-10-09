@@ -451,6 +451,8 @@ function WorkspaceApp({ onSignOut }) {
           conversationHistory: priorHistory,
           correlation: { requestId, messageId },
           signal: requestController.signal,
+          variation: Boolean(options.variation),
+          previousAnswer: options.previousAnswer || '',
         });
 
         setSessionState('COMPLETE');
@@ -507,6 +509,9 @@ function WorkspaceApp({ onSignOut }) {
     setConversationTurns(retained);
     setUserQuestion(text);
     handleSendQuestion(text, undefined, { deepResearch: false, historyOverride: retained });
+  };
+  const handleRegenerate = (question, previousAnswer) => {
+    handleSendQuestion(question, undefined, { deepResearch: false, variation: true, previousAnswer });
   };
 
   const handleSelectConversation = async (item, updateUrl = true) => {
@@ -753,6 +758,7 @@ function WorkspaceApp({ onSignOut }) {
                         turns={conversationTurns}
                         onRetry={(question) => handleSendQuestion(question, { deepResearch: false })}
                         onEdit={handleEditMessage}
+                        onRegenerate={handleRegenerate}
                       />
                     ) : (
                       // Deep Research Workspace View

@@ -1468,7 +1468,7 @@ def _starter_code_example(message: str, history: Optional[List[Dict[str, Any]]])
     return None
 
 
-def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", on_token: Optional[Callable[[str], None]] = None) -> str:
+def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", on_token: Optional[Callable[[str], None]] = None, variation_instruction: str = "") -> str:
     """Answer a general question: built-in knowledge -> LLM -> honest fallback.
 
     No research/dataset/training language is injected (owner directive §2/§3).
@@ -1480,7 +1480,10 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
     """
     qtype = detect_question_type(message)
     known = lookup_known_answer(message, topic)
-    if known and qtype in ("definition", "factual"):
+    # With a configured provider, let the writer produce a fresh formulation
+    # on every request. The local KB remains grounding context, not a canned
+    # final response. Offline mode still uses it as a deterministic fallback.
+    if known and qtype in ("definition", "factual") and not any_provider_configured():
         return known
 
     # Do not enqueue a 60-second model race when this deployment has no
@@ -1522,7 +1525,7 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
         "Answer it directly and completely in natural English. If it asks 'why' "
         "or 'how', give the actual reasoning — not just a definition. Resolve "
         "pronouns using prior turns only when the current message has no explicit subject.\n"
-        f"CURRENT USER MESSAGE: {message}"
+        f"CURRENT USER MESSAGE: {message}\n{variation_instruction}"
     )
     # Real token streaming: when the caller supplied an on_token sink (the SSE
     # chat-stream path), stream the answer from a single provider so the client
@@ -1578,6 +1581,7 @@ def handle_intent_message(
     activity_callback=None,
     token_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
+    variation_instruction: str = "",
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1960,7 +1964,7 @@ def _handle_intent_message_impl(
             }
 
         history_ctx = _conversation_context(sid, client_history=conversation_history)
-        answer = _general_answer(message, topic, history_ctx, on_token=token_callback)
+        answer = _general_answer(message, topic, history_ctx, on_token=token_callback, variation_instruction=variation_instruction)
         # Pronoun follow-up ("why is it useful?") where the canned definition
         # would just be re-pasted: prefer a context-aware LLM answer about the
         # recent topic. Skipped when a real knowledge answer already fits.
