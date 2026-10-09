@@ -267,6 +267,12 @@ def health_check():
         "database": store.database_health(),
         "llm": llm_configured,
         "docker": docker_ready,
+        "search": {
+            "provider": os.environ.get("SEARCH_PROVIDER", "auto"),
+            "serpApiConfigured": bool(os.environ.get("SERPAPI_API_KEY")),
+            "tavilyConfigured": bool(os.environ.get("TAVILY_API_KEY")),
+            "scrapeDoConfigured": bool(os.environ.get("SCRAPE_DO_API_KEY")),
+        },
         "build": {"commit": BUILD_COMMIT, "builtAt": BUILD_TIME},
         "llmExecution": get_llm_telemetry(),
         "modelRouting": model_router.snapshot(),
@@ -517,7 +523,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
                 res["response"] = "\n".join(lines)
                 res["sources"] = web_results
                 res["verification"] = {"available": True, "failed": False}
-            elif not res.get("response"):
+            else:
                 res["response"] = (f"I couldn't find a reliable result for \"{web_query}\" right now. "
                                     "Try a more specific name or URL.")
                 res["sources"] = []
