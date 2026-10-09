@@ -23,6 +23,7 @@ import backend.config  # auto-loads .env into os.environ
 
 _TIMEOUT = 10
 _USER_AGENT = "AI-Scientist-Assistant/1.0 (web research tool)"
+_LAST_SEARCH_STATUS: Dict[str, Any] = {"provider": None, "status": "idle", "query": None, "error": None, "results": 0}
 
 
 def clean_snippet(value: str, limit: int = 400) -> str:
@@ -282,16 +283,25 @@ def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
     else:
         print(f"[WEB SEARCH WARNING] unknown SEARCH_PROVIDER '{requested}'")
         return []
+    # One focused retry with progressively broader terms prevents a transient
+    # zero-result response from becoming an unrelated answer.
+    variants = [query]
+    broad = re.sub(r"\b(?:official|announcement|announcements|please|name|all|cite|sources?)\b", " ", query, flags=re.I)
+    broad = re.sub(r"\s+", " ", broad).strip()
+    if broad and broad.lower() != query.lower(): variants.append(broad)
     for name in provider_names:
+      for active_query in variants:
         provider = globals().get(f"_search_{name}")
         if provider is None:
             continue
         try:
-            results = provider(query, limit) or []
+            results = provider(active_query, limit) or []
+            _LAST_SEARCH_STATUS.update({"provider": name, "status": "ok" if results else "empty", "query": active_query, "error": None, "results": len(results)})
         except Exception as exc:
-            print(f"[WEB SEARCH WARNING] {name}: {exc}")
+            _LAST_SEARCH_STATUS.update({"provider": name, "status": "error", "query": active_query, "error": type(exc).__name__, "results": 0})
+            print(f"[WEB SEARCH WARNING] {name}: {type(exc).__name__}")
             results = []
-        results = [r for r in results if (r.get("url") or r.get("snippet")) and result_matches_query(query, r)]
+        results = [r for r in results if (r.get("url") or r.get("snippet")) and result_matches_query(active_query, r)]
         if results:
             return results[:limit]
     return []
