@@ -298,6 +298,8 @@ def config_status():
         "search": {
             "provider": os.environ.get("SEARCH_PROVIDER", "auto"),
             "academicProvider": "Semantic Scholar + OpenAlex fallback",
+            "synthesisProvider": "Gemini" if os.environ.get("GEMINI_API_KEY") else "not configured",
+            "geminiConfigured": bool(os.environ.get("GEMINI_API_KEY")),
             "semanticScholarConfigured": bool(os.environ.get("SEMANTIC_SCHOLAR_API_KEY")),
             "openAlexConfigured": bool(os.environ.get("OPENALEX_API_KEY")),
             "scrapeDoConfigured": bool(os.environ.get("SCRAPE_DO_API_KEY")),
