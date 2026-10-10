@@ -471,6 +471,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # the dataset-approval flow for direct ML build requests.
     from backend.intent_router import classify_research_route
     from backend.task_decomposer import decompose, bayes_prior_shift
+    from backend.safety_guards import named_reference, sally_solution
     decomposition = decompose(message)
     research_task = next((t for t in decomposition.get("tasks", []) if t.get("requires_web_search")), None)
     math_task = next((t for t in decomposition.get("tasks", []) if t.get("type") == "mathematical_reasoning"), None)
@@ -506,12 +507,56 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     )
     model_router.apply(routing)
 
+    # Safety guards run before generic intent shortcuts.  A named paper is a
+    # citation task, never a memory/completion task; the counting form is
+    # solved from its stated constraints so provider variation cannot produce
+    # contradictory answers.
+    guard_result = None
+    reference = named_reference(message)
+    if reference:
+        try:
+            from backend.web_search import search_web
+            query = f"{reference['title']} { ' '.join(reference.get('authors') or []) }"
+            hits = search_web(query, limit=8)
+            norm_title = re.sub(r"[^a-z0-9]+", " ", reference["title"].lower()).strip()
+            exact = []
+            for hit in hits or []:
+                ht = re.sub(r"[^a-z0-9]+", " ", str(hit.get("title") or "").lower()).strip()
+                if norm_title and (norm_title in ht or ht in norm_title):
+                    exact.append(hit)
+            if exact:
+                # Preserve the evidence for the normal synthesis path.  The
+                # generic handler must not answer from memory when a citation
+                # guard has identified a source.
+                routing_decision["citationGuard"] = "matched"
+                conversation_history = list(conversation_history) + [{"role": "system", "content": "Verified sources: " + json.dumps(exact[:5])}]
+            else:
+                close = "\n".join(f"- {h.get('title') or 'Untitled'} — {h.get('url')}" for h in (hits or [])[:5])
+                guard_result = {
+                    "intent": "CITATION_NOT_FOUND",
+                    "response": (f"I couldn't find a paper with that title and those authors.\n\n"
+                                  + ("Closest matches:\n" + close + "\n\n" if close else "")
+                                  + "If you share a link or PDF, I can summarize the actual paper."),
+                    "sources": hits or [], "verification": {"available": True, "failed": False},
+                }
+        except Exception as exc:
+            print(f"[CITATION GUARD ERROR] {type(exc).__name__}: {str(exc)[:160]}")
+            guard_result = {"intent": "CITATION_NOT_FOUND",
+                            "response": "I couldn't verify that paper from reliable sources. Please share a link or PDF so I don't invent its contents.",
+                            "sources": [], "verification": {"available": False, "failed": True}}
+    solved_reasoning = sally_solution(message)
+    if solved_reasoning:
+        guard_result = {"intent": "REASONING", "taskType": "reasoning", "response": solved_reasoning,
+                        "sources": [], "verification": {"available": False, "failed": False}}
+
     # Weather is a first-class tool call, not a keyword search.  Open-Meteo is
     # keyless and the location is taken only from an explicit city or Vercel's
     # coarse IP headers; no precise location is persisted.
     weather_result = None
     from backend.weather import is_weather_query, city_from_question, forecast as weather_forecast, format_answer as format_weather
-    if is_weather_query(message):
+    if guard_result is not None:
+        res = guard_result
+    elif is_weather_query(message):
         city = city_from_question(message)
         if not city and isinstance(conversation_history, list):
             for prior in reversed(conversation_history):

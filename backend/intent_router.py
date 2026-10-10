@@ -2350,25 +2350,30 @@ def _handle_intent_message_impl(
             "lastTopic": sess.get("last_topic")
         }
 
-    # 4e. WRITING — summarization works offline (extractive); other writing needs
-    #     an LLM and stays honest when none is reachable.
+    # 4e. WRITING. Do not let the word "summarize" bypass the model: an
+    # extractive fallback is safe only when the user supplied substantial text
+    # (or an attachment) and every provider is unavailable.
     elif intent == "WRITING":
         store.clear_pending_action(sid)
         if "summar" in msg_clean:
             chunk = re.split(r"summar[i][sz]e\b[^:]*:?", message, maxsplit=1, flags=re.IGNORECASE)[-1].strip()
-            if len(chunk) >= 400:
+            supplied_words = len(chunk.split())
+            answer = query_llm(
+                f"Summarize the user's request accurately and concisely:\n{message}",
+                GENERAL_ASSISTANT_SYSTEM_PROMPT,
+                on_token=token_callback,
+            )
+            if answer and answer.strip():
+                resp_text = answer.strip()
+            elif supplied_words >= 150:
                 from backend.summarizer import summarize_text
                 summary = summarize_text(chunk)
                 resp_text = (
-                    "**Summary (extractive):**\n\n" + summary
-                    + "\n\n_Key sentences extracted from your text locally — no external model needed._"
+                    "The AI service is unavailable, so this is a basic extractive summary.\n\n"
+                    + summary
                 )
             else:
-                resp_text = (
-                    "Paste the full text you'd like summarized (a few paragraphs or more) "
-                    "and I'll extract a summary locally. For short snippets, an abstractive "
-                    "summary needs a connected LLM provider, which isn't reachable right now."
-                )
+                resp_text = "I couldn't reach the AI service just now. Please try again."
         else:
             answer = query_llm(
                 f"Writing request: {message}",
