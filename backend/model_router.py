@@ -23,7 +23,7 @@ Design rules honoured here:
 """
 from __future__ import annotations
 
-import os
+import os, json
 import re
 import threading
 import time
@@ -132,7 +132,7 @@ _TASK_CAPABILITY_LABEL: Dict[str, str] = {
 #  latency_tier[1=fastest], cost_tier[1=cheapest], reasoning_tier[3=strongest],
 #  coding_tier, capabilities, strengths)
 _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str], List[str]]] = [
-    ("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929", 200000, 2, 3, 3, 3,
+    ("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-5-5-20250929", 200000, 2, 3, 3, 3,
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_TOOLS],
      ["strongest coding & reasoning", "long-form writing", "200k context"]),
@@ -144,7 +144,7 @@ _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str]
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_MULTIMODAL, CAP_TOOLS],
      ["very long context (1M)", "multimodal", "fast & low cost"]),
-    ("mistral", "MISTRAL_MODEL", "mistral-tiny-2312", 32000, 1, 1, 1, 1,
+    ("mistral", "MISTRAL_MODEL", "mistral-small-latest", 32000, 1, 2, 2, 2,
      [CAP_GENERAL, CAP_SUMMARIZATION, CAP_WRITING],
      ["cheapest & fastest", "simple general queries"]),
 ]
@@ -158,9 +158,15 @@ def build_registry() -> List[Dict[str, Any]]:
     material is ever read into the returned structure beyond a boolean.
     """
     entries: List[Dict[str, Any]] = []
+    overrides = {}
+    try:
+        overrides = json.loads(os.environ.get("MODEL_REGISTRY", "{}"))
+    except Exception:
+        overrides = {}
     for (provider, model_env, default_model, ctx, latency, cost,
          reasoning, coding, caps, strengths) in _PROVIDER_PROFILES:
-        model = os.environ.get(model_env) or default_model
+        cfg = overrides.get(provider) if isinstance(overrides, dict) else {}
+        model = (cfg.get("model") if isinstance(cfg, dict) else None) or os.environ.get(model_env) or default_model
         configured = bool(os.environ.get(llm_mod._PROVIDER_KEY_ENV.get(provider, "")))
         entries.append({
             "provider": provider,

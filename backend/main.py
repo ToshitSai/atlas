@@ -259,13 +259,13 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 @app.get("/api/health")
-def health_check():
+def health_check(request: Request, deep: int = 0):
     """Health check endpoint for API dependencies."""
     from backend.llm import get_llm_telemetry
     from backend import model_router
     llm_configured = bool(os.environ.get("OPENAI_API_KEY"))
     docker_ready = safe_docker_check()
-    return {
+    result = {
         "status": "healthy",
         "api": True,
         "database": store.database_health(),
@@ -282,6 +282,40 @@ def health_check():
         "llmExecution": get_llm_telemetry(),
         "modelRouting": model_router.snapshot(),
     }
+    if deep:
+        token = os.environ.get("HEALTH_TOKEN")
+        supplied = request.headers.get("x-health-token") if request else None
+        if not token or not supplied or not secrets.compare_digest(token, supplied):
+            raise HTTPException(status_code=403, detail="Deep health check is not authorized")
+        result["deepProviderHealth"] = _deep_provider_health()
+    return result
+
+_DEEP_HEALTH_CACHE = {"expires": 0.0, "value": None}
+def _deep_provider_health():
+    now = time.time()
+    if _DEEP_HEALTH_CACHE["value"] is not None and now < _DEEP_HEALTH_CACHE["expires"]:
+        return _DEEP_HEALTH_CACHE["value"]
+    from backend import llm as llm_mod, model_router
+    funcs = {"openai": llm_mod.call_openai_api, "gemini": llm_mod.call_gemini_api,
+             "anthropic": llm_mod.call_anthropic_api, "mistral": llm_mod.call_mistral_api}
+    out = {}
+    for entry in model_router.build_registry():
+        p = entry["provider"]
+        if not entry["configured"]:
+            out[p] = {"model": entry["model"], "status": "missing_key", "latencyMs": None, "errorClass": "missing_key"}
+            continue
+        started = time.monotonic()
+        try:
+            value = funcs[p]("Reply with OK.", "Health probe. Reply with one token only.", timeout=5, max_tokens=1)
+            out[p] = {"model": entry["model"], "status": "ok" if value else "failed",
+                       "latencyMs": round((time.monotonic()-started)*1000, 1),
+                       "errorClass": None if value else "empty_response"}
+        except Exception as exc:
+            out[p] = {"model": entry["model"], "status": "failed",
+                       "latencyMs": round((time.monotonic()-started)*1000, 1),
+                       "errorClass": type(exc).__name__}
+    _DEEP_HEALTH_CACHE.update({"expires": now + 60, "value": out})
+    return out
 
 @app.get("/api/config")
 def config_status():
