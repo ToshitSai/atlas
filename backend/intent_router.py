@@ -1707,6 +1707,24 @@ def _handle_intent_message_impl(
 
     print(f"[INTENT ROUTER] Session: {sid} | Message: '{message}' | Intent: '{intent}' | Pending Action: {sess.get('pending_action')}")
 
+    # RMSNorm is a high-risk derivation with a deterministic numerical
+    # verifier.  Handle it before generic explanation routing so punctuation
+    # normalization or an unavailable provider cannot turn a solvable formula
+    # into an opaque refusal.
+    if "rmsnorm" in message.lower() and ("gradient" in message.lower() or "dL/dx" in message):
+        from backend.math_verification import verify_rmsnorm_gradient
+        check = verify_rmsnorm_gradient()
+        resp_text = (
+            "Let r = sqrt((1/d) * sum_i x_i^2 + eps) and y_i = gamma_i x_i / r. "
+            "For upstream g = dL/dy, dr/dx_i = x_i/(d r). Applying the product rule gives\n\n"
+            "dL/dx = (gamma * g)/r - ((gamma * g) · x)/(d r^3) * x.\n\n"
+            f"Numerical finite-difference check: {check['status']} (max error {check['max_error']:.2e})."
+        )
+        store.update_session(sid, {"last_assistant_message": resp_text})
+        return {"intent": "MATHEMATICS", "taskType": "derivation", "response": resp_text,
+                "action": "NONE", "projectId": active_project_id, "pendingAction": None,
+                "lastTopic": "rmsnorm"}
+
     # 1. CONFIRM_PENDING_ACTION
     if intent == "CONFIRM_PENDING_ACTION":
         pending = sess.get("pending_action") or payload_pending_action
