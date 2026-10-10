@@ -461,6 +461,11 @@ def classify_task(message: str,
 
     # --- Capability flags ------------------------------------------------- #
     flags = decision.flags
+    # The tiny model is reserved for greetings/very short casual chat.  It is
+    # never an acceptable default for reasoning, constraints, citations or
+    # research, even when those requests have a low lexical complexity score.
+    flags["cheapest_ok"] = bool(len(text.split()) <= 8 and re.fullmatch(
+        r"(?:hi|hello|hey|thanks|thank you|ok|okay|good morning|good evening)[!. ]*", low))
     flags["needs_web"] = bool(route.get("requires_web"))
     flags["needs_deep_research"] = bool(route.get("requires_deep_research"))
     if len(text) > 4000 or is_multi_part or low.count("\n") >= 12:
@@ -665,7 +670,8 @@ def select_providers(decision: RoutingDecision) -> Tuple[List[str], Optional[Dic
     Healthier providers are preferred, but a cooling provider is never removed
     (it recovers on its own), so a single capable provider still gets used.
     """
-    entries = [e for e in build_registry() if e["configured"] and e["enabled"] and not (e["provider"] == "mistral" and decision.complexity != COMPLEXITY_LOW)]
+    entries = [e for e in build_registry() if e["configured"] and e["enabled"] and not (
+        e["provider"] == "mistral" and not decision.flags.get("cheapest_ok", False))]
     if not entries:
         return [], None
     scored = [(_score(e, decision, health.is_available(e["provider"])), e) for e in entries]
