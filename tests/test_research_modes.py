@@ -39,7 +39,9 @@ def test_resolve_mode_aliases_and_garbage():
 def test_mode_switch_phrasing_detected_but_goals_not():
     assert rm.parse_mode_from_message("switch to autonomous mode") == "AUTONOMOUS"
     assert rm.parse_mode_from_message("use guided mode from now on") == "GUIDED"
-    assert rm.parse_mode_from_message("run it step by step please") == "MANUAL"
+    # Natural-language instructions must not silently change the persisted
+    # research mode; only an explicit mode command does that.
+    assert rm.parse_mode_from_message("run it step by step please") is None
     # A research goal that merely contains domain words must NOT flip modes.
     assert rm.parse_mode_from_message("Improve fraud detection") is None
     assert rm.parse_mode_from_message("improve autonomous vehicle detection") is None

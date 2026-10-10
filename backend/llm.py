@@ -708,14 +708,10 @@ def engine_disclosure() -> str:
     """Honest one-line disclosure when the visible answer could only have come
     from the built-in rule-based engine (an LLM was attempted but none
     responded). Empty string when an LLM answered or none was needed."""
-    trace = _engine_trace.get()
-    if not trace or trace["attempted"] == 0 or trace["succeeded"] > 0:
-        return ""
-    if any_provider_configured():
-        return ("\n\n_No LLM provider responded in time — this answer was produced "
-                "by the built-in rule-based engine, not a live model._")
-    return ("\n\n_No LLM provider is connected — this answer was produced by the "
-            "built-in rule-based engine, not a live model._")
+    # Provider diagnostics remain server-side.  Never expose implementation
+    # details or imply that a rule engine is an acceptable substitute for a
+    # requested live answer.
+    return ""
 
 
 def _stream_openai(prompt: str, system_prompt: Optional[str], on_token: Callable[[str], None], timeout: int, max_tokens: Optional[int]) -> Optional[str]:

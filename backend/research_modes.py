@@ -73,7 +73,7 @@ _NEAR_TIE_ABS = 3.0
 _MODE_PATTERNS = (
     (re.compile(r"\bautonomous\s+(?:mode|research)?\b|\bmode\s*(?:to)?\s*autonomous\b|\bfull[ -]auto\b", re.I), AUTONOMOUS),
     (re.compile(r"\bguided\s+(?:mode|research)?\b|\bmode\s*(?:to)?\s*guided\b|\bask\s+me\s+(?:first|before)\b", re.I), GUIDED),
-    (re.compile(r"\bmanual\s+(?:mode|research)?\b|\bmode\s*(?:to)?\s*manual\b|\bstep\s+by\s+step\b", re.I), MANUAL),
+    (re.compile(r"\b(?:switch|change|set)\s+(?:the\s+)?(?:research\s+)?mode\s+(?:to\s+)?manual\b|\bmanual\s+mode\b", re.I), MANUAL),
 )
 
 
@@ -102,7 +102,7 @@ def parse_mode_from_message(message: str) -> Optional[str]:
     """
     text = (message or "").strip()
     lowered = text.lower()
-    if not re.search(r"\bmode\b|\bfull[ -]auto\b|\bask me\b|\bstep by step\b", lowered):
+    if not re.search(r"\bmode\b|\bfull[ -]auto\b|\bask me\b", lowered):
         return None
     for pattern, mode in _MODE_PATTERNS:
         if pattern.search(lowered):

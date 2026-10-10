@@ -973,6 +973,16 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # Canonical response contract.  Never fall back to an older answer when a
     # model/provider fails: return an explicit error response instead.
     try:
+        from backend.constraints import detect as detect_constraints, json_only
+        constraints = detect_constraints(message)
+        if constraints.get("json_only"):
+            parsed, canonical = json_only(res.get("response") or "")
+            if canonical is not None:
+                res["response"] = canonical
+                res["constraintValidation"] = {"json": True}
+            else:
+                res["response"] = "I couldn't produce valid JSON for that request. Please try again."
+                res["constraintValidation"] = {"json": False}
         res = structured_response(
             res,
             question=message,

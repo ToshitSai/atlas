@@ -1545,10 +1545,7 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
     llm_answer = res_dict.get("text") if isinstance(res_dict, dict) else res_dict
     if llm_answer and llm_answer.strip():
         return llm_answer.strip()
-    # No provider reachable: a KB definition is better than nothing, else be honest.
-    if known:
-        return known
-    return _honest_unknown(topic or message)
+    return "I couldn't reach the AI service just now. Please try again."
 
 
 # Deterministic clock queries (fixes F8): "what is today's date", "what time is
@@ -2115,14 +2112,9 @@ def _handle_intent_message_impl(
                 }]
             print(f"[DEEP RESEARCH PROVIDER FAILURE] {dr_error or 'no sources returned'}")
             from backend.hf_datasets import ml_runtime_missing
-            runtime_offer = ("I can still help search and inspect dataset metadata here; full model training "
-                             "requires running the app locally." if ml_runtime_missing()
-                             else "I can also help plan a dataset and model workflow.")
             resp_text = (
                 f"Researching: {goal}.\n\n"
-                "I couldn't reach a web search provider right now, so I can't pull live sources for this and won't pretend otherwise. "
-                "Please try again shortly, or ask directly and I'll answer from what I know without citations. "
-                + runtime_offer
+                "I couldn't reach a web search provider right now. Please try again."
             )
         store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": goal.lower()[:80]})
         return {
