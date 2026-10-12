@@ -265,7 +265,8 @@ def health_check(request: Request, deep: int = 0):
     from backend.llm import get_llm_telemetry
     from backend import model_router
     from backend import model_router
-    llm_configured = model_router.any_provider_configured()
+    from backend import llm as llm_mod
+    llm_configured = llm_mod.any_provider_configured()
     docker_ready = safe_docker_check()
     database_ready = store.database_health()
     dependencies_ready = bool(database_ready and docker_ready and llm_configured)
