@@ -263,6 +263,7 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]],
             except Exception:
                 pass
 
+    has_sources = any(by_query.get(q) for q in subqueries)
     lines = [
         f"# Deep Research Report: {goal}",
         "",
@@ -271,9 +272,9 @@ def _synthesize(goal: str, subqueries: List[str], sources: List[Dict[str, Any]],
         "sources actually support from ideas that would need more evidence, so you can understand "
         "the main takeaway before the technical detail.",
         "",
-        f"Researched on {datetime.datetime.now().strftime('%Y-%m-%d %H:%M UTC')}."
-        "Every statement below is traceable to a cited source; evidence is snippet-level "
-        "(pages were not fully read).",
+        f"Researched on {datetime.datetime.now().strftime('%Y-%m-%d %H:%M UTC')}. "
+        + ("Every statement below is traceable to a cited source; evidence is snippet-level (pages were not fully read)."
+           if has_sources else "No reliable sources were found for the requested topics."),
         "",
         "## Research Plan",
     ]

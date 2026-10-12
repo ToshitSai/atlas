@@ -14,7 +14,6 @@
 # For local development (real dataset loading + training), install the full
 # stack from requirements-local.txt instead.
 fastapi==0.110.0
-uvicorn==0.28.0
 python-multipart==0.0.9
 # Postgres driver for the persistent (Neon) store backend. Only used when
 # DATABASE_URL is set; the [binary] wheel is ~3MB, well within the bundle limit.

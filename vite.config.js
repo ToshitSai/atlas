@@ -2,7 +2,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-const buildTimestamp = Date.now();
 const buildCommit = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || 'local';
 
 export default defineConfig({
@@ -16,9 +15,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        entryFileNames: `assets/[name]-v${buildTimestamp}-[hash].js`,
-        chunkFileNames: `assets/[name]-v${buildTimestamp}-[hash].js`,
-        assetFileNames: `assets/[name]-v${buildTimestamp}-[hash].[ext]`
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
       }
     }
   },

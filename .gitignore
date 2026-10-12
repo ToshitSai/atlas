@@ -18,6 +18,7 @@ __pycache__/
 .freebuff/
 artifacts/
 training_env/
+requirements-training.txt
 training_artifacts/
 models/
 hf_cache/

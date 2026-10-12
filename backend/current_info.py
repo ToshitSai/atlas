@@ -100,6 +100,9 @@ _CURRENT_FACT_RE = re.compile(
     r"forecast)\b",
     re.IGNORECASE,
 )
+# Natural phrasing such as "weather status today" should use the same current
+# fact path as "today's weather".
+_WEATHER_STATUS_RE = re.compile(r"\bweather\s+(?:status|conditions?)\s+(?:today|now|currently)\b", re.IGNORECASE)
 
 _NEWS_RE = re.compile(r"\bnews\b|\bwhat\s+happened\b|\bdevelopments\b|\bthis\s+week\b",
                       re.IGNORECASE)
@@ -126,7 +129,7 @@ def extract_current_fact_request(message: str) -> Optional[CurrentInfoRequest]:
         return None                      # news listings are WEB_SEARCH's job
     # Trailing punctuation must not break end-anchored patterns
     # ("What is the latest NVIDIA GPU?").
-    m = _CURRENT_FACT_RE.search(text.rstrip("?!. \t"))
+    m = _CURRENT_FACT_RE.search(text.rstrip("?!. \t")) or _WEATHER_STATUS_RE.search(text)
     if not m:
         return None
 

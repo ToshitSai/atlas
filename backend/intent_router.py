@@ -625,6 +625,12 @@ def classify_research_route(message: str) -> Dict[str, Any]:
         return {"mode": "web_search", "confidence": 0.9,
                 "reason": "Entity lookup requires live source verification.",
                 "requires_web": True, "requires_deep_research": False, **assessment}
+    # Local directories and institutions are time-sensitive: route these to
+    # the web even when the question does not contain an explicit "latest".
+    if re.search(r"\b(?:colleges?|universit(?:y|ies)|schools?)\s+in\s+", text):
+        return {"mode": "web_search", "confidence": 0.9,
+                "reason": "Location-specific listings require live verification.",
+                "requires_web": True, "requires_deep_research": False, **assessment}
     explicit_override = bool(re.search(r"\b(?:do deep research|research this .thoroughly|conduct a full .*research)\b", text))
     # A quick current lookup is web search unless it also asks for a synthesis
     # or comparative study.

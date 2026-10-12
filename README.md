@@ -292,9 +292,10 @@ docs/           Architecture, environment and attribution notes
 
 ## Known limitations
 
-- **Persistence is a local JSON file**, not a database. `DATABASE_URL` /
-  `REDIS_URL` are accepted but not connected; concurrent multi-process writes are
-  guarded by an in-process lock only.
+- **Persistence uses Postgres when `DATABASE_URL` is configured** (with the
+  pgvector schema and migrations). A local JSON store remains available only as
+  an explicit development fallback (`STORE_DB_DISABLED=1`); it is not the
+  production source of truth.
 - **MLflow tracking is best-effort** and silently skipped when unavailable.
 - **LLM diversity depends on valid API keys.** Without them, hypothesis
   generation falls back to deterministic templates (real execution, but less

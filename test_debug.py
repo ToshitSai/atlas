@@ -28,7 +28,7 @@ with open('test_output.txt', 'w', encoding='utf-8') as f:
         f.write(f'SEARCH_WEB COUNT: {len(web_res)}\n')
         for idx, r in enumerate(web_res):
             f.write(f'  [{idx}] title: {r.get("title")}, url: {r.get("url")}\n')
-            f.write(f'       snippet: {r.get("snippet")[:100]}\n')
+            f.write(f'       snippet: {(r.get("snippet") or "")[:100]}\n')
             f.write(f'       source: {r.get("source")}\n')
 
 print('DONE WROTE FILE')

@@ -4,7 +4,7 @@ import urllib.error
 url = "https://atlas-scientist.vercel.app/api/health"
 print("Checking:", url)
 try:
-    res = urllib.request.urlopen(url)
+    res = urllib.request.urlopen(url, timeout=15)
     print("SUCCESS STATUS:", res.status)
     print("BODY:", res.read().decode('utf-8'))
 except urllib.error.HTTPError as e:

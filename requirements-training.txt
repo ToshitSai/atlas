@@ -26,3 +26,4 @@ evaluate
 scipy
 pandas
 numpy>=2.1
+# Fine-tuning imports use the same unified stack; install this file once.
