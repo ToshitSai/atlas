@@ -1,9 +1,8 @@
 """Web search tool for current-information questions and deep research.
 
 Multi-provider with graceful degradation:
-  1. Tavily   (TAVILY_API_KEY)
-  2. Serper   (SERPER_API_KEY — Google results)
-  3. SerpAPI  (SERPAPI_API_KEY — Google results)
+  1. SerpAPI  (SERPAPI_API_KEY — Google results)
+  2. Tavily   (TAVILY_API_KEY)
   4. Brave    (BRAVE_API_KEY)
   5. Scrape.do (SCRAPE_DO_API_KEY; search-results HTML fallback)
   6. DuckDuckGo Instant Answers (keyless; limited but real)
@@ -17,6 +16,7 @@ import os
 import re
 import urllib.parse
 import urllib.request
+import time
 from typing import Any, Dict, List
 
 import backend.config  # auto-loads .env into os.environ
@@ -24,6 +24,9 @@ import backend.config  # auto-loads .env into os.environ
 _TIMEOUT = 10
 _USER_AGENT = "AI-Scientist-Assistant/1.0 (web research tool)"
 _LAST_SEARCH_STATUS: Dict[str, Any] = {"provider": None, "status": "idle", "query": None, "error": None, "results": 0}
+_SEARCH_CACHE: Dict[str, Any] = {}
+_PROVIDER_COOLDOWN: Dict[str, float] = {}
+_SEARCH_CALLS: Dict[str, list] = {}
 
 
 def clean_snippet(value: str, limit: int = 400) -> str:
@@ -92,7 +95,7 @@ def _search_serpapi(query: str, limit: int) -> List[Dict[str, str]]:
     if not key:
         return []
     url = "https://serpapi.com/search.json?" + urllib.parse.urlencode({
-        "engine": "google", "q": query, "api_key": key, "num": limit,
+        "engine": "google", "q": query, "api_key": key, "num": limit, "hl": "en", "gl": "us",
     })
     data = _http_json(url)
     return [{
@@ -261,7 +264,12 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
 
 # Preference order: keyed, higher-quality providers first; keyless fallback last.
 # Looked up by name at call time so tests (and future overrides) can patch them.
-_PROVIDER_NAMES = ("tavily", "serper", "serpapi", "brave", "scrape_do", "duckduckgo")
+_PROVIDER_NAMES = ("serpapi", "tavily", "scrape_do", "openalex", "duckduckgo")
+
+def _search_openalex(query: str, limit: int) -> List[Dict[str, str]]:
+    url = "https://api.openalex.org/works?" + urllib.parse.urlencode({"search": query, "per-page": limit})
+    data = _http_json(url)
+    return [{"title": x.get("title") or "", "url": (x.get("primary_location") or {}).get("landing_page_url") or x.get("id") or "", "snippet": "", "source": "OpenAlex"} for x in data.get("results", [])]
 
 
 def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
@@ -275,14 +283,12 @@ def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
     query = (query or "").strip()
     if not query:
         return []
-    requested = os.environ.get("SEARCH_PROVIDER", "auto").strip().lower() or "auto"
-    if requested == "auto":
-        provider_names = _PROVIDER_NAMES
-    elif requested in _PROVIDER_NAMES:
-        provider_names = (requested,)
-    else:
-        print(f"[WEB SEARCH WARNING] unknown SEARCH_PROVIDER '{requested}'")
-        return []
+    now = time.time()
+    cache_key = re.sub(r"\s+", " ", query.lower()).strip()
+    cached = _SEARCH_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return list(cached[1])[:limit]
+    provider_names = _PROVIDER_NAMES
     # One focused retry with progressively broader terms prevents a transient
     # zero-result response from becoming an unrelated answer.
     variants = [query]
@@ -290,6 +296,8 @@ def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
     broad = re.sub(r"\s+", " ", broad).strip()
     if broad and broad.lower() != query.lower(): variants.append(broad)
     for name in provider_names:
+      if _PROVIDER_COOLDOWN.get(name, 0) > now:
+          continue
       for active_query in variants:
         provider = globals().get(f"_search_{name}")
         if provider is None:
@@ -300,8 +308,11 @@ def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
         except Exception as exc:
             _LAST_SEARCH_STATUS.update({"provider": name, "status": "error", "query": active_query, "error": type(exc).__name__, "results": 0})
             print(f"[WEB SEARCH WARNING] {name}: {type(exc).__name__}")
+            if name == "serpapi" and any(token in str(exc).lower() for token in ("invalid", "quota", "exhaust", "401", "403", "429")):
+                _PROVIDER_COOLDOWN[name] = time.time() + 600
             results = []
         results = [r for r in results if (r.get("url") or r.get("snippet")) and result_matches_query(active_query, r)]
         if results:
+            _SEARCH_CACHE[cache_key] = (time.time() + 600, results[:limit])
             return results[:limit]
     return []

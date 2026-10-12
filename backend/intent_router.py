@@ -2131,7 +2131,6 @@ def _handle_intent_message_impl(
             print(f"[DEEP RESEARCH PROVIDER FAILURE] {dr_error or 'no sources returned'}")
             from backend.hf_datasets import ml_runtime_missing
             resp_text = (
-                f"Researching: {goal}.\n\n"
                 "I couldn't reach a web search provider right now. Please try again."
             )
         store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": goal.lower()[:80]})

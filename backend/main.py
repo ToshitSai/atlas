@@ -315,6 +315,20 @@ def _deep_provider_health():
                        "latencyMs": round((time.monotonic()-started)*1000, 1),
                        "errorClass": type(exc).__name__}
     _DEEP_HEALTH_CACHE.update({"expires": now + 60, "value": out})
+    try:
+        from backend import web_search
+        search_out = {}
+        for name in ("serpapi", "tavily", "scrape_do", "openalex"):
+            fn = getattr(web_search, f"_search_{name}")
+            started = time.monotonic()
+            try:
+                rows = fn("RMSNorm", 1)
+                search_out[name] = {"status": "ok" if rows else "empty", "results": len(rows or []), "latencyMs": round((time.monotonic()-started)*1000, 1), "errorClass": None}
+            except Exception as exc:
+                search_out[name] = {"status": "failed", "results": 0, "latencyMs": round((time.monotonic()-started)*1000, 1), "errorClass": type(exc).__name__}
+        out["searchProviders"] = search_out
+    except Exception as exc:
+        out["searchProviders"] = {"errorClass": type(exc).__name__}
     return out
 
 @app.get("/api/config")
