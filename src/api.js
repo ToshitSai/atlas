@@ -157,14 +157,14 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {}, sig
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = ''; let finalResult = null;
+  let buffer = ''; let finalResult = null; let reconstructed = '';
   const consumeFrame = (frame) => {
     const kind = (frame.match(/^event:\s*(.+)$/m) || [])[1];
     const raw = (frame.match(/^data:\s*([\s\S]+)$/m) || [])[1];
     if (!raw) return;
     const data = JSON.parse(raw);
     if (kind === 'activity' || ['plan','search_start','search_result','read_source','source_checked','synthesizing','verifying','progress'].includes(kind)) onActivity(data);
-    else if (kind === 'token' || kind === 'answer_delta') { if (data.text) onToken(data.text); }
+    else if (kind === 'token' || kind === 'answer_delta') { if (data.text) { reconstructed += data.text; onToken(data.text); } }
     else if (kind === 'sources') onActivity({ ...data, stage: 'sources', status: 'completed', eventType: kind });
     else if (kind === 'final') finalResult = data;
     else if (kind === 'error') throw new Error(data.error || 'Stream failed');
@@ -181,6 +181,17 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {}, sig
   buffer += decoder.decode();
   if (buffer.trim()) consumeFrame(buffer);
   if (!finalResult) throw new Error('Stream ended without a final response.');
+  // Permanent transport safety check. The server hash covers the exact saved
+  // response; compare it to the text reconstructed from every delta.
+  if (finalResult.contentHash && typeof crypto !== 'undefined' && crypto.subtle) {
+    const bytes = new TextEncoder().encode(finalResult.response || '');
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const hash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    const reconstructedHashBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(reconstructed));
+    const reconstructedHash = Array.from(new Uint8Array(reconstructedHashBytes)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    finalResult.streamIntegrity = { matched: hash === reconstructedHash && hash === finalResult.contentHash, displayedHash: reconstructedHash, savedHash: hash };
+    if (!finalResult.streamIntegrity.matched) console.error('[Atlas stream integrity mismatch]', finalResult.streamIntegrity);
+  }
   return finalResult;
 }
 

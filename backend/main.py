@@ -15,6 +15,7 @@ import time
 import secrets
 import collections
 import re
+import hashlib
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -1196,7 +1197,12 @@ async def chat_stream_endpoint(payload: dict, request: Request):
                     yield f"event: answer_delta\ndata: {json.dumps({'text': answer_text[offset:offset + 240], 'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: sources\ndata: {json.dumps({'sources': result.get('sources') or [], 'timestamp': int(time.time() * 1000)})}\n\n"
             yield f"event: done\ndata: {json.dumps({'timestamp': int(time.time() * 1000)})}\n\n"
-            yield f"event: final\ndata: {json.dumps(result)}\n\n"
+            # Integrity metadata lets the client detect a dropped/duplicated
+            # delta without exposing prompts or provider details.
+            if isinstance(result, dict):
+                result = dict(result)
+                result["contentHash"] = hashlib.sha256(str(result.get("response") or "").encode("utf-8")).hexdigest()
+            yield f"event: final\ndata: {json.dumps(result, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
