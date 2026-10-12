@@ -791,6 +791,20 @@ def finalize(request_id: str, decision: RoutingDecision) -> Dict[str, Any]:
 def snapshot() -> Dict[str, Any]:
     """Secret-free ops/debug view: registry capabilities + provider health."""
     debug = os.environ.get("MODEL_ROUTER_DEBUG", "").strip().lower() in ("1", "true", "yes")
+    health_snapshot = health.snapshot()
+    # Keep health useful before the first user request: configured providers
+    # are reported explicitly rather than leaving the public object empty.
+    for entry in build_registry():
+        provider = entry["provider"]
+        health_snapshot.setdefault(provider, {
+            "status": "configured" if entry["configured"] else "missing_key",
+            "available": bool(entry["configured"]),
+            "consecutive_failures": 0,
+            "cooldown_remaining_s": 0.0,
+            "last_success": None,
+            "last_error": None,
+            "rolling_error_rate": 0.0,
+        })
     out: Dict[str, Any] = {
         "enabled": True,
         "anyProviderConfigured": llm_mod.any_provider_configured(),
@@ -801,7 +815,7 @@ def snapshot() -> Dict[str, Any]:
                 "contextLimit": e["context_limit"], "enabled": e["enabled"],
             } for e in build_registry()
         ],
-        "providerHealth": health.snapshot(),
+        "providerHealth": health_snapshot,
     }
     if debug:
         out["recentRouting"] = recent_routing_logs(20)

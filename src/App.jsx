@@ -126,7 +126,7 @@ function WorkspaceApp({ onSignOut }) {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
-      if (typeof window !== 'undefined' && window.innerWidth < 768) return true;
+      if (typeof window !== 'undefined' && window.innerWidth < 768) return false;
       return localStorage.getItem('atlas-sidebar-open') !== '0';
     } catch { return true; }
   });

@@ -72,6 +72,10 @@
 .atlas-suggestion-card strong { font-size: 12.5px; }
 .atlas-suggestion-card small { font-size: 11px; color: #A8A29E; line-height: 1.3; }
 .atlas-empty-composer { width: 100%; margin-top: 32px; margin-bottom: 24px; }
+.atlas-onboarding-prompts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 760px; }
+.atlas-onboarding-prompts button { border: 1px solid var(--border-subtle); background: var(--surface); color: var(--text-secondary); border-radius: 999px; padding: 8px 12px; font-size: 12px; cursor: pointer; }
+.atlas-onboarding-prompts button:hover { background: var(--surface-hover); color: var(--text-main); }
+.atlas-hero-heading { text-shadow: none; }
 @media (max-width: 900px) { .atlas-suggestion-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .atlas-empty-state { padding: 16px; } .atlas-suggestion-grid { grid-template-columns: 1fr; gap: 12px; } .atlas-suggestion-card { min-height: 96px; } }
 

@@ -91,7 +91,7 @@ export default function Sidebar({
   ];
 
   const content = (
-    <div style={{ width: 'var(--sidebar-w, 328px)', minWidth: 'var(--sidebar-w, 328px)', flex: '0 0 var(--sidebar-w, 328px)' }} className="sidebar-inner relative flex min-w-0 flex-col h-full select-none bg-[#F4F4F2] box-border whitespace-nowrap">
+    <div style={{ width: 'var(--sidebar-w, 328px)', minWidth: 'var(--sidebar-w, 328px)', flex: '0 0 var(--sidebar-w, 328px)' }} className="sidebar-inner relative flex min-w-0 flex-col h-full select-none bg-[var(--bg-left-nav)] box-border whitespace-nowrap">
       {/* Top Header & New Chat Action */}
       <div className="w-full box-border px-[19px] pt-[20px] pb-0 shrink-0">
         {/* Brand Mark & Title */}
@@ -102,7 +102,7 @@ export default function Sidebar({
               <i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#FFD800]" /><i className="rounded-[1px] bg-[#FFD800]" />
             </span>
             <div className="min-w-0">
-              <span className="font-bold text-[19px] tracking-normal text-[#0D0C0A] block leading-none truncate font-sans">
+              <span className="font-bold text-[19px] tracking-normal text-[var(--text-main)] block leading-none truncate font-sans">
                 Atlas
               </span>
             </div>
@@ -136,7 +136,7 @@ export default function Sidebar({
             onNewQuestion();
             onMobileClose?.();
           }}
-          className="mt-[20px] w-full h-[51px] py-2.5 px-3 rounded-2xl bg-white hover:bg-[var(--surface-hover)] border border-[var(--border-subtle)] text-[#0D0C0A] text-[16px] font-semibold flex items-center justify-center gap-2.5 btn-transition cursor-pointer shadow-sm font-sans"
+          className="mt-[20px] w-full h-[51px] py-2.5 px-3 rounded-2xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border-subtle)] text-[var(--text-main)] text-[16px] font-semibold flex items-center justify-center gap-2.5 btn-transition cursor-pointer shadow-sm font-sans"
           aria-label="New chat"
         >
           <svg className="w-4 h-4 text-[var(--text-main)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -147,7 +147,7 @@ export default function Sidebar({
         </button>
       </div>
 
-      {(!historyItems || historyItems.length === 0) && <div className="mt-4 h-4 shrink-0 bg-[#FAFAF9] border-b border-[#E9E7E1]" aria-hidden="true" />}
+      {(!historyItems || historyItems.length === 0) && <div className="mt-4 h-4 shrink-0 bg-[var(--surface-alt)] border-b border-[var(--border-subtle)]" aria-hidden="true" />}
 
       {/* Navigation & History List */}
       <nav className="sidebar-scroll-area hidden" aria-hidden="true" aria-label="Primary navigation">
@@ -224,7 +224,7 @@ export default function Sidebar({
       </nav>
 
       <div className="flex-1 min-h-0" aria-hidden="true" />
-      <div className="h-px w-full shrink-0 bg-[#E9E7E1]" aria-hidden="true" />
+      <div className="h-px w-full shrink-0 bg-[var(--border-subtle)]" aria-hidden="true" />
 
       {/* Theme switch button */}
       {onThemeChange && (

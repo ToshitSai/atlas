@@ -267,9 +267,15 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   const [step, setStep] = useState(0);
   const [inputText, setInputText] = useState('');
   const [userQuestion, setUserQuestion] = useState('');
-  const [isDeepResearch, setIsDeepResearch] = useState(false);
+  const [isDeepResearch, setIsDeepResearch] = useState(() => {
+    try { return localStorage.getItem('atlas-deep-research') === '1'; } catch { return false; }
+  });
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('Atlas Large');
+  const [selectedModel, setSelectedModel] = useState(() => {
+    try { return localStorage.getItem('atlas-model') || 'Atlas Large'; } catch { return 'Atlas Large'; }
+  });
+  useEffect(() => { try { localStorage.setItem('atlas-model', selectedModel); } catch {} }, [selectedModel]);
+  useEffect(() => { try { localStorage.setItem('atlas-deep-research', isDeepResearch ? '1' : '0'); } catch {} }, [isDeepResearch]);
   
   // Thinking state
   const [thinkingIndex, setThinkingIndex] = useState(0);
@@ -472,11 +478,12 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   }}
                 >
                   <h1
+                    className="atlas-hero-heading"
                     style={{
                       fontSize: 'clamp(24px, 5.5vw, 42px)',
                       fontWeight: 400,
                       letterSpacing: '-0.02em',
-                      color: TOKENS.colors.ink,
+                      color: 'var(--text-main)',
                       margin: 0,
                       padding: '0 16px',
                       lineHeight: '1.25'
@@ -484,6 +491,16 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   >
                     How can Atlas help you today?
                   </h1>
+                  <div className="atlas-onboarding-prompts" aria-label="Example prompts">
+                    {[
+                      'Explain a research paper clearly',
+                      'Search for the latest ML developments',
+                      'Help me design an experiment',
+                      'Solve a math problem step by step',
+                    ].map((prompt) => (
+                      <button key={prompt} type="button" onClick={() => setInputText(prompt)}>{prompt}</button>
+                    ))}
+                  </div>
 
                 </motion.div>
               </AnimatePresence>
@@ -976,14 +993,15 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     style={{
                       position: 'absolute',
                       left: 0,
-                      bottom: '38px',
+                      top: '38px',
                       width: '150px',
                       backgroundColor: TOKENS.colors.card,
                       border: `1px solid ${TOKENS.colors.line}`,
                       borderRadius: '12px',
                       boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
                       padding: '4px 0',
-                      zIndex: 50
+                      zIndex: 100,
+                      transform: 'translateZ(0)'
                     }}
                   >
                     {['Atlas Large', 'Atlas Fast', 'Atlas Reasoning'].map((m) => (

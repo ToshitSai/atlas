@@ -264,12 +264,15 @@ def health_check(request: Request, deep: int = 0):
     """Health check endpoint for API dependencies."""
     from backend.llm import get_llm_telemetry
     from backend import model_router
-    llm_configured = bool(os.environ.get("OPENAI_API_KEY"))
+    from backend import model_router
+    llm_configured = model_router.any_provider_configured()
     docker_ready = safe_docker_check()
+    database_ready = store.database_health()
+    dependencies_ready = bool(database_ready and docker_ready and llm_configured)
     result = {
-        "status": "healthy",
+        "status": "healthy" if dependencies_ready else "degraded",
         "api": True,
-        "database": store.database_health(),
+        "database": database_ready,
         "llm": llm_configured,
         "docker": docker_ready,
         "search": {
@@ -542,7 +545,6 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # the existing streaming/answer path is unaffected and the UI is unchanged.
     # A short, truncated conversation context is enough for routing; the full
     # conversation is never sent. No secrets or message text leave the server.
-    from backend import model_router
     chat_files = payload.get("files") if isinstance(payload.get("files"), list) else None
     router_context = ""
     if conversation_history:
