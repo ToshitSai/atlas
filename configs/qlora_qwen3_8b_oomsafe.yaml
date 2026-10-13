@@ -1,0 +1,17 @@
+{
+  "model_name": "Qwen/Qwen3-8B-Instruct",
+  "fallback_model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+  "output_dir": "training_artifacts/qwen3-8b-qlora-oomsafe",
+  "max_seq_length": 1024,
+  "per_device_train_batch_size": 1,
+  "per_device_eval_batch_size": 1,
+  "gradient_accumulation_steps": 32,
+  "num_train_epochs": 1,
+  "learning_rate": 0.0002,
+  "warmup_ratio": 0.03,
+  "lora_r": 8,
+  "lora_alpha": 16,
+  "lora_dropout": 0.05,
+  "seed": 42,
+  "smoke_test": {"max_steps": 30, "log_every_steps": 10, "min_free_vram_gib": 6.0, "max_reserved_vram_gib": 7.2}
+}
