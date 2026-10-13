@@ -10,13 +10,16 @@ SAMPLE = [
     {"instruction": "Explain a confidence interval.", "input": "", "output": "It describes a procedure that captures the parameter at a stated long-run rate."},
 ]
 
-def row_to_messages(row: dict) -> dict:
+def row_to_messages(row: dict, include_reasoning: bool = True) -> dict:
     instruction = row.get("instruction", row.get("prompt", "")).strip()
     context = row.get("input", "").strip()
     response = row.get("output", row.get("response", "")).strip()
     if not instruction or not response:
         raise ValueError("each row needs instruction/prompt and output/response")
     user = instruction + ("\n\n" + context if context else "")
+    reasoning = str(row.get("reasoning", "")).strip()
+    if include_reasoning and reasoning:
+        response = f"<think>\n{reasoning}\n</think>\n{response}"
     return {"messages": [{"role": "user", "content": user}, {"role": "assistant", "content": response}]}
 
 def main() -> None:
@@ -24,9 +27,10 @@ def main() -> None:
     ap.add_argument("input", nargs="?", help="source JSONL; omitted uses built-in sample")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--eval-ratio", type=float, default=.1)
+    ap.add_argument("--no-reasoning", action="store_true", help="Do not embed distilled reasoning fields")
     args = ap.parse_args()
     rows = SAMPLE if not args.input else [json.loads(x) for x in Path(args.input).read_text(encoding="utf-8").splitlines() if x.strip()]
-    data = [row_to_messages(r) for r in rows]
+    data = [row_to_messages(r, include_reasoning=not args.no_reasoning) for r in rows]
     random.Random(args.seed).shuffle(data)
     cut = max(1, int(len(data) * (1 - args.eval_ratio))) if len(data) > 1 else len(data)
     out = Path("data/processed"); out.mkdir(parents=True, exist_ok=True)

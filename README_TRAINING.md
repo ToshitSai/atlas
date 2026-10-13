@@ -50,3 +50,27 @@ training_env/Scripts/python.exe -c "import torch, transformers, peft, trl, bitsa
 If memory is insufficient, reduce `max_seq_length` to 1024 and keep batch size 1; increase accumulation to preserve the effective batch. Disable merge on an 8 GB card unless you have enough CPU RAM and disk. Gradient checkpointing is enabled by default. Blackwell/CUDA compatibility depends on the installed bitsandbytes build; use the verification script before starting.
 
 The CUDA `torch==2.10.0+cu128` wheel is installed separately from the PyTorch index as shown above. No API keys or tokens are required by these scripts.
+
+## Distillation dataset
+
+Set `DEEPSEEK_API_KEY` in the environment (never commit it), optionally create
+`data/distill_prompts.txt` with one prompt per line, then run:
+
+```powershell
+training_env\Scripts\python.exe scripts\distill.py --dry-run
+training_env\Scripts\python.exe scripts\distill.py
+training_env\Scripts\python.exe scripts\prepare_dataset.py data\raw\distilled_YYYYMMDD.jsonl
+```
+
+The distiller resumes an existing dated JSONL, retries with backoff, deduplicates
+prompts, rate-limits calls, and stops at token or dollar caps. Reasoning is stored
+separately and `prepare_dataset.py` embeds it as Qwen `<think>...</think>` blocks
+by default; use `--no-reasoning` to omit it. Prompt expansion is optional:
+`training_env\Scripts\python.exe scripts\expand_prompts.py --dry-run`, then run
+it without `--dry-run` when the key is configured.
+
+Using the supplied estimate of 1,800 output tokens per prompt and peak v4-pro
+output pricing of $3.96 per million tokens: 2,000 × 1,800 = 3,600,000 output
+tokens; 3.6 × $3.96 = **$14.26** output cost. Input tokens are additional and
+depend on prompt length; off-peak pricing would be lower. The script's default
+run cap is $25 and 8M output tokens.
