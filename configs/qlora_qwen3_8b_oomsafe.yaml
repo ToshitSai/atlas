@@ -1,5 +1,5 @@
 {
-  "model_name": "Qwen/Qwen3-8B-Instruct",
+  "model_name": "Qwen/Qwen3-8B",
   "fallback_model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
   "output_dir": "training_artifacts/qwen3-8b-qlora-oomsafe",
   "max_seq_length": 1024,

@@ -1,6 +1,6 @@
 # QLoRA training on Windows
 
-This pipeline is designed for an 8 GB RTX 5050. It defaults to Qwen3-8B-Instruct; if that model does not fit, pass `--model deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` and record that fallback in your experiment notes.
+This pipeline is designed for an 8 GB RTX 5050. It defaults to the Hugging Face `Qwen/Qwen3-8B` checkpoint (Qwen3 8B instruct/chat behavior is provided by its chat template); if that model does not fit, pass `--model deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` and record that fallback in your experiment notes.
 
 ```powershell
 uv venv training_env --python 3.12
