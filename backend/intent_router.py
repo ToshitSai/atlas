@@ -13,6 +13,15 @@ from database.store import store
 import backend.config
 from backend.project_identity import identity_system_instruction
 
+
+def _best_effort_store(label: str, fn, *args, **kwargs):
+    """Chat persistence is optional; never abort answer generation on store errors."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        print(f"[CHAT STORE WARNING] {label}: {type(exc).__name__}: {exc}")
+        return None
+
 INTENT_CATEGORIES = [
     "CONFIRM_PENDING_ACTION",
     "PROJECT_IDENTITY",
@@ -1644,16 +1653,16 @@ def _handle_intent_message_impl(
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
-    sess = get_session(sid)
+    sess = _best_effort_store("get_session", get_session, sid) or {}
     history_topic = _history_last_topic(conversation_history)
     if history_topic and not (payload_last_topic or sess.get("last_topic")):
-        store.update_session(sid, {"last_topic": history_topic})
-        sess = get_session(sid)
-    store.update_session(sid, {"last_user_message": message})
+        _best_effort_store("update_last_topic", store.update_session, sid, {"last_topic": history_topic})
+        sess = _best_effort_store("get_session", get_session, sid) or sess
+    _best_effort_store("update_last_user_message", store.update_session, sid, {"last_user_message": message})
 
     if payload_pending_action is not None:
         if payload_pending_action:
-            store.set_pending_action(
+            _best_effort_store("set_pending_action", store.set_pending_action,
                 sid,
                 action_type=payload_pending_action.get("type"),
                 topic=payload_pending_action.get("topic"),
@@ -1661,13 +1670,13 @@ def _handle_intent_message_impl(
                 project_id=payload_pending_action.get("projectId")
             )
         else:
-            store.clear_pending_action(sid)
+            _best_effort_store("clear_pending_action", store.clear_pending_action, sid)
 
     if payload_last_topic:
-        store.update_session(sid, {"last_topic": payload_last_topic})
+        _best_effort_store("update_last_topic", store.update_session, sid, {"last_topic": payload_last_topic})
 
     if active_project_id:
-        store.update_session(sid, {"active_project_id": active_project_id})
+        _best_effort_store("update_active_project", store.update_session, sid, {"active_project_id": active_project_id})
 
     # Re-fetch session after updating state
     sess = get_session(sid)
