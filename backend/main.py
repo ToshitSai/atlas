@@ -16,6 +16,9 @@ import secrets
 import collections
 import re
 import hashlib
+import urllib.request
+import urllib.error
+import urllib.parse
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -178,6 +181,19 @@ def reconcile_interrupted_runs():
     except Exception as exc:
         print(f"[STARTUP RECONCILIATION WARNING]: {exc}")
 
+@app.on_event("startup")
+def validate_model_registry_startup():
+    """Validate configured IDs asynchronously; never block or crash startup."""
+    def run():
+        try:
+            audit = _model_audit()
+            for item in audit.get("models", []):
+                if item.get("valid") is False and item.get("list", {}).get("status") == "ok":
+                    print(f"[MODEL REGISTRY ERROR] invalid model id provider={item['provider']} model={item['registryModel']}")
+        except Exception as exc:
+            print(f"[MODEL REGISTRY WARNING] validation failed: {type(exc).__name__}: {exc}")
+    threading.Thread(target=run, daemon=True).start()
+
 def get_datasets_dir():
     local_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploaded_datasets")
     try:
@@ -260,7 +276,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 @app.get("/api/health")
-def health_check(request: Request, deep: int = 0):
+def health_check(request: Request, deep: int = 0, models: int = 0):
     """Health check endpoint for API dependencies."""
     from backend.llm import get_llm_telemetry
     from backend import model_router
@@ -287,15 +303,60 @@ def health_check(request: Request, deep: int = 0):
         "llmExecution": get_llm_telemetry(),
         "modelRouting": model_router.snapshot(),
     }
-    if deep:
+    if deep or models:
         token = os.environ.get("HEALTH_TOKEN")
         supplied = request.headers.get("x-health-token") if request else None
         if not token or not supplied or not secrets.compare_digest(token, supplied):
             raise HTTPException(status_code=403, detail="Deep health check is not authorized")
         result["deepProviderHealth"] = _deep_provider_health()
+        if models:
+            result["modelAudit"] = _model_audit()
     return result
 
 _DEEP_HEALTH_CACHE = {"expires": 0.0, "value": None}
+_MODEL_AUDIT_CACHE = {"expires": 0.0, "value": None}
+
+def _provider_model_list(provider: str, key: str):
+    """Return provider model IDs and safe error metadata; never returns secrets."""
+    urls = {
+        "anthropic": "https://api.anthropic.com/v1/models?limit=100",
+        "openai": "https://api.openai.com/v1/models",
+        "gemini": "https://generativelanguage.googleapis.com/v1beta/models?key=" + urllib.parse.quote(key),
+        "mistral": "https://api.mistral.ai/v1/models",
+    }
+    headers = {"Authorization": f"Bearer {key}"} if provider != "gemini" else {}
+    if provider == "anthropic":
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    req = urllib.request.Request(urls[provider], headers=headers)
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        rows = body.get("data") or body.get("models") or []
+        ids = [str(row.get("id") or row.get("name", "")).removeprefix("models/") for row in rows if isinstance(row, dict)]
+        return ids, {"status": "ok", "latencyMs": round((time.monotonic()-started)*1000, 1), "errorClass": None}
+    except Exception as exc:
+        return [], {"status": "failed", "latencyMs": round((time.monotonic()-started)*1000, 1), "errorClass": type(exc).__name__}
+
+def _model_audit():
+    now = time.time()
+    if _MODEL_AUDIT_CACHE["value"] is not None and now < _MODEL_AUDIT_CACHE["expires"]:
+        return _MODEL_AUDIT_CACHE["value"]
+    from backend import model_router
+    suggestions = {}
+    out = []
+    for entry in model_router.build_registry():
+        provider, model = entry["provider"], entry["model"]
+        key = os.environ.get(model_router.llm_mod._PROVIDER_KEY_ENV.get(provider, ""))
+        ids, list_meta = _provider_model_list(provider, key) if key else ([], {"status": "missing_key", "latencyMs": None, "errorClass": "missing_key"})
+        valid = model in ids
+        candidates = [i for i in ids if i and ("chat" in i.lower() or "sonnet" in i.lower() or "flash" in i.lower() or "gpt" in i.lower())][:5]
+        suggestions[provider] = candidates
+        out.append({"provider": provider, "registryModel": model, "valid": valid, "list": list_meta,
+                    "suggestedModels": candidates})
+    result = {"models": out, "generatedAt": datetime.now(timezone.utc).isoformat()}
+    _MODEL_AUDIT_CACHE.update({"expires": now + 60, "value": result})
+    return result
 def _deep_provider_health():
     now = time.time()
     if _DEEP_HEALTH_CACHE["value"] is not None and now < _DEEP_HEALTH_CACHE["expires"]:
