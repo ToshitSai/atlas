@@ -451,7 +451,17 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         mode_requested_in_message, selection_decision,
     )
     from backend import step_trace
-    llm_mod.set_selected_provider(store.get_settings().get("llmProvider", ""))
+    # Settings persistence is optional for chat.  In deployments where the
+    # database is unavailable, a direct get_settings() exception used to abort
+    # the worker before provider routing and surface only the generic stream
+    # error.  Continue with the registry default instead; the provider layer
+    # will report its real failure if no configured model is reachable.
+    try:
+        saved_settings = store.get_settings() or {}
+    except Exception as settings_err:
+        print(f"[CHAT SETTINGS WARNING] get_settings failed; using defaults: {type(settings_err).__name__}: {settings_err}")
+        saved_settings = {}
+    llm_mod.set_selected_provider(saved_settings.get("llmProvider", ""))
     llm_mod.begin_engine_trace()
 
     # Open the live step trace for this request. Real flows (deep research,
@@ -481,7 +491,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     effective_mode = resolve_mode(
         requested_mode,
         sess_for_mode,
-        store.get_settings(),
+        saved_settings,
     )
     if mode_msg_mode:
         effective_mode = mode_msg_mode
