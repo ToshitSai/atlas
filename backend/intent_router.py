@@ -1633,7 +1633,11 @@ def handle_intent_message(
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
         result["intelligence"] = execution_metadata(message, result)
-        update_memory_summary(store, session_id or "default-session", message, result)
+        _best_effort_store(
+            "update_memory_summary",
+            update_memory_summary,
+            store, session_id or "default-session", message, result,
+        )
         return result
     finally:
         clear_llm_budget()
