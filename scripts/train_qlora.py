@@ -43,7 +43,11 @@ def main() -> int:
             def on_save(self, *_args, **_kwargs): telemetry["checkpoint"] = True
         output = cfg["output_dir"]
         train_args = TrainingArguments(output_dir=output, per_device_train_batch_size=cfg["per_device_train_batch_size"], per_device_eval_batch_size=cfg["per_device_eval_batch_size"], gradient_accumulation_steps=cfg["gradient_accumulation_steps"], num_train_epochs=cfg["num_train_epochs"], learning_rate=cfg["learning_rate"], warmup_ratio=cfg["warmup_ratio"], lr_scheduler_type="cosine", optim="paged_adamw_8bit", gradient_checkpointing=True, fp16=compute == torch.float16, bf16=compute == torch.bfloat16, eval_strategy="no" if smoke else "steps", save_strategy="steps", save_steps=interval, save_total_limit=2, max_steps=int(cfg.get("smoke_test", {}).get("max_steps", 30)) if smoke else -1, logging_steps=1 if smoke else 5, report_to="none", seed=cfg["seed"])
-        trainer = SFTTrainer(model=model, processing_class=tok, train_dataset=ds["train"], eval_dataset=ds["eval"], peft_config=lora, args=train_args, dataset_text_field="text", max_seq_length=cfg["max_seq_length"], callbacks=[Telemetry()])
+        # TRL 0.29 moved dataset_text_field/max_seq_length into SFTConfig and
+        # removed them from SFTTrainer.__init__.  The mapped dataset already
+        # exposes a `text` field, so omit the old constructor-only arguments;
+        # this keeps the smoke test compatible with current TRL releases.
+        trainer = SFTTrainer(model=model, processing_class=tok, train_dataset=ds["train"], eval_dataset=ds["eval"], peft_config=lora, args=train_args, callbacks=[Telemetry()])
         trainer.train(); trainer.save_model(output); tok.save_pretrained(output); telemetry["checkpoint"] = telemetry["checkpoint"] or any(Path(output).glob("checkpoint-*"))
         if smoke:
             checks = {"loss decreased": telemetry["first_loss"] is not None and telemetry["last_loss"] < telemetry["first_loss"], "checkpoint written": telemetry["checkpoint"], "peak reserved under limit": telemetry["peak_reserved"] < float(cfg["smoke_test"].get("max_reserved_vram_gib", 7.2))}; failed = [k for k, v in checks.items() if not v]
