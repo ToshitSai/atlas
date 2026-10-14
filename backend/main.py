@@ -348,7 +348,10 @@ def _model_audit():
     for entry in model_router.build_registry():
         provider, model = entry["provider"], entry["model"]
         key = os.environ.get(model_router.llm_mod._PROVIDER_KEY_ENV.get(provider, ""))
-        ids, list_meta = _provider_model_list(provider, key) if key else ([], {"status": "missing_key", "latencyMs": None, "errorClass": "missing_key"})
+        if provider == "local":
+            ids, list_meta = ([model], {"status": "local_custom", "latencyMs": None, "errorClass": None}) if key else ([], {"status": "unset", "latencyMs": None, "errorClass": "missing_base_url"})
+        else:
+            ids, list_meta = _provider_model_list(provider, key) if key else ([], {"status": "missing_key", "latencyMs": None, "errorClass": "missing_key"})
         valid = model in ids
         candidates = [i for i in ids if i and ("chat" in i.lower() or "sonnet" in i.lower() or "flash" in i.lower() or "gpt" in i.lower())][:5]
         suggestions[provider] = candidates
@@ -363,7 +366,8 @@ def _deep_provider_health():
         return _DEEP_HEALTH_CACHE["value"]
     from backend import llm as llm_mod, model_router
     funcs = {"openai": llm_mod.call_openai_api, "gemini": llm_mod.call_gemini_api,
-             "anthropic": llm_mod.call_anthropic_api, "mistral": llm_mod.call_mistral_api}
+             "anthropic": llm_mod.call_anthropic_api, "mistral": llm_mod.call_mistral_api,
+             "local": llm_mod.call_local_api}
     out = {}
     for entry in model_router.build_registry():
         p = entry["provider"]

@@ -285,6 +285,30 @@ def call_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: 
     if not api_key:
         return None
 
+def call_local_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
+    """Call the optional loopback/tunnelled OpenAI-compatible Qwen server."""
+    base = os.environ.get("LOCAL_LLM_BASE_URL", "").rstrip("/")
+    if not base:
+        return None
+    model = os.environ.get("LOCAL_LLM_MODEL", "local-qwen3-8b")
+    messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [{"role": "user", "content": prompt}]
+    payload = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens or 4096}
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("LOCAL_LLM_API_KEY"):
+        headers["Authorization"] = f"Bearer {os.environ['LOCAL_LLM_API_KEY']}"
+    started = time.monotonic()
+    try:
+        req = urllib.request.Request(f"{base}/v1/chat/completions", data=json.dumps(payload).encode(), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            body = json.loads(response.read().decode())
+        text = body["choices"][0]["message"]["content"]
+        if return_details:
+            return {"text": text, "finish_reason": body["choices"][0].get("finish_reason", "stop"), "provider": "local", "model": model, "generation_time": round(time.monotonic()-started, 2)}
+        return text
+    except Exception as exc:
+        print(f"[LLM Client Warning] local model unreachable ({type(exc).__name__}) after {time.monotonic()-started:.2f}s")
+        return None
+
     start = time.monotonic()
     try:
         url = "https://api.mistral.ai/v1/chat/completions"
@@ -342,6 +366,7 @@ _PROVIDER_KEY_ENV = {
     "gemini": "GEMINI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "mistral": "MISTRAL_API_KEY",
+    "local": "LOCAL_LLM_BASE_URL",
 }
 
 _selected_provider: contextvars.ContextVar = contextvars.ContextVar("selected_llm_provider", default="auto")
@@ -593,6 +618,7 @@ _PROVIDER_FUNCS = {
     "gemini": call_gemini_api,
     "anthropic": call_anthropic_api,
     "mistral": call_mistral_api,
+    "local": call_local_api,
 }
 
 # Router capability preference (ordered provider names). Purely additive: when a

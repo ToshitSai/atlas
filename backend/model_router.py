@@ -147,6 +147,9 @@ _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str]
     ("mistral", "MISTRAL_MODEL", "mistral-small-latest", 32000, 1, 2, 2, 2,
      [CAP_GENERAL, CAP_SUMMARIZATION, CAP_WRITING],
      ["cheapest & fastest", "simple general queries"]),
+    ("local", "LOCAL_LLM_MODEL", "local-qwen3-8b", 32768, 3, 1, 3, 3,
+     [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION, CAP_TOOLS],
+     ["local Qwen3-8B (local)", "optional tunnel provider"]),
 ]
 
 
