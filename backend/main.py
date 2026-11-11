@@ -78,7 +78,7 @@ def _client_ip(request: Request) -> str:
 
 
 def _valid_sid(sid: str) -> bool:
-    return bool(sid) and len(sid) <= 64 and all(c in "0123456789abcdef" for c in sid.lower())
+    return bool(sid) and len(sid) <= 64 and all(c.isalnum() or c in "-_" for c in sid)
 
 
 class AnonymousSessionMiddleware(BaseHTTPMiddleware):
