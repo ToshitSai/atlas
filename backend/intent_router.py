@@ -1387,11 +1387,13 @@ def _honest_unknown(subject: str) -> str:
 
 
 def _conversation_context(session_id: Optional[str], limit: int = 6,
-                          client_history: Optional[List[Dict[str, Any]]] = None) -> str:
+                          client_history: Optional[List[Dict[str, Any]]] = None,
+                          owner_session: Optional[str] = None) -> str:
     """Layered memory block for prompt assembly (repair task §10):
 
-        recent conversation window (last `limit` messages, near-verbatim)
-        + extractive summary of the older turns (when the history is longer)
+        user long-term memory (Layer 2)
+        + recent conversation window (last `limit` messages, near-verbatim)
+        + extractive summary of older turns (when history is longer)
 
     Uses the per-message history the store already records. Returns "" when
     there is no history (e.g. a cold serverless instance where the file store
@@ -1421,9 +1423,26 @@ def _conversation_context(session_id: Optional[str], limit: int = 6,
         content = (m.get("content") or "").strip().replace("\n", " ")
         if content:
             lines.append(f"{role}: {content[:280]}")
+
+    # Layer 2: Long-term User Memories (isolated by owner_session)
+    user_mem_block = ""
+    try:
+        from backend.rag_service import service as rag_svc
+        eff_owner = owner_session or (session_id.split(":")[0] if ":" in session_id else session_id)
+        memories = rag_svc.list_user_memories(owner_session=eff_owner, limit=5)
+        if memories:
+            mem_lines = [f"- [{m.get('category', 'preference')}] {m.get('content', '')}" for m in memories]
+            user_mem_block = (
+                "<user_profile_context>\nUser preferences and long-term memories:\n"
+                + "\n".join(mem_lines) + "\n</user_profile_context>\n\n"
+            )
+    except Exception:
+        pass
+
     if not lines:
-        return ""
-    block = "Recent conversation (context only — answer the LATEST user message):\n"\
+        return user_mem_block
+
+    block = user_mem_block + "Recent conversation (context only — answer the LATEST user message):\n"\
         + "\n".join(lines) + "\n"
     # Long-history synthesis (§10): when there are older turns beyond the
     # window, prepend a short extractive summary so distant facts (e.g. what
@@ -1618,6 +1637,7 @@ def handle_intent_message(
     cancel_check: Optional[Callable[[], bool]] = None,
     variation_instruction: str = "",
     owner_session: Optional[str] = None,
+    conversation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1628,7 +1648,7 @@ def handle_intent_message(
     (~10s): classification + answering combined. When the budget runs out the
     request degrades to the honest fallback instead of hanging.
     """
-    sid = session_id or "default-session"
+    sid = session_id or conversation_id or "default-session"
     # Overall LLM budget for classification + answering on this request.
     # Configurable (LLM_BUDGET env): long-form answers (multi-requirement
     # decomposition, architecture design) legitimately need more than 10s on
@@ -1870,7 +1890,7 @@ def _handle_intent_message_impl(
         from backend.web_search import search_web
 
         entity = extract_entity_candidate(message) or message.strip()
-        history_ctx = _conversation_context(sid, client_history=conversation_history)
+        history_ctx = _conversation_context(sid, client_history=conversation_history, owner_session=owner)
         search_results = []
         try:
             search_results = search_web(f"{entity} biography", limit=5)
@@ -2048,7 +2068,7 @@ def _handle_intent_message_impl(
                 "lastTopic": sess.get("last_topic")
             }
 
-        history_ctx = _conversation_context(sid, client_history=conversation_history)
+        history_ctx = _conversation_context(sid, client_history=conversation_history, owner_session=owner)
         answer = _general_answer(message, topic, history_ctx, on_token=token_callback, variation_instruction=variation_instruction)
         # Pronoun follow-up ("why is it useful?") where the canned definition
         # would just be re-pasted: prefer a context-aware LLM answer about the
@@ -2127,7 +2147,7 @@ def _handle_intent_message_impl(
         if last_topic and _is_example_request(msg_clean, re.sub(r'[^\w\s]', '', msg_clean).strip()):
             ctx_line = f"The user is asking for an example about {last_topic}.\n"
         prompt = (
-            f"{_conversation_context(sid, client_history=conversation_history)}"
+            f"{_conversation_context(sid, client_history=conversation_history, owner_session=owner)}"
             f"Solve the following programming request with correct, runnable code "
             f"and a brief explanation.\n{ctx_line}Request: \"{message}\""
         )
@@ -2282,7 +2302,7 @@ def _handle_intent_message_impl(
             resp_text = None
         if not (resp_text and resp_text.strip()):
             topic = extract_topic(message)
-            history_ctx = _conversation_context(sid, client_history=conversation_history)
+            history_ctx = _conversation_context(sid, client_history=conversation_history, owner_session=owner)
             resp_text = _general_answer(message, topic, history_ctx, on_token=token_callback)
         store.update_session(sid, {"last_assistant_message": resp_text})
         return {
@@ -2382,7 +2402,7 @@ def _handle_intent_message_impl(
                 subjects = [t for t in sess["recent_topics"][-2:] if t in KNOWLEDGE]
         # Pronoun comparisons must carry their resolved subjects into the prompt,
         # or the model just sees "compare the two" and asks what 'the two' is.
-        reasoning_history = _conversation_context(sid, client_history=conversation_history)
+        reasoning_history = _conversation_context(sid, client_history=conversation_history, owner_session=owner)
         cmp_prompt = (
             f"{reasoning_history}"
             f"Treat the history above as context for the CURRENT USER MESSAGE. "

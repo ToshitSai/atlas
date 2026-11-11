@@ -139,6 +139,25 @@ class RAGStorageBackend(Protocol):
         limit: int = 10,
     ) -> List[Dict[str, Any]]: ...
     def get_kg_edges(self, owner_session: str, node: Optional[str] = None) -> List[Dict[str, Any]]: ...
+    def save_user_memory(
+        self,
+        memory_id: str,
+        owner_session: str,
+        category: str,
+        content: str,
+        confidence: float = 1.0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]: ...
+    def list_user_memories(
+        self,
+        owner_session: str,
+        category: Optional[str] = None,
+    ) -> List[Dict[str, Any]]: ...
+    def delete_user_memory(
+        self,
+        memory_id: str,
+        owner_session: str,
+    ) -> bool: ...
 
 
 class SQLiteRAGStorage:
@@ -231,6 +250,21 @@ class SQLiteRAGStorage:
                 )
             """)
 
+            # 5. User Memories (Layer 2)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_memories (
+                    memory_id TEXT PRIMARY KEY,
+                    owner_session TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    metadata TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memories_owner ON user_memories(owner_session, updated_at DESC);")
+
             # Ensure columns exist if table was created in previous version
             cur.execute("PRAGMA table_info(documents);")
             doc_cols = {row[1] for row in cur.fetchall()}
@@ -273,6 +307,15 @@ class SQLiteRAGStorage:
             kg_cols = {row[1] for row in cur.fetchall()}
             if "source_doc_id" not in kg_cols:
                 cur.execute("ALTER TABLE knowledge_graph ADD COLUMN source_doc_id TEXT;")
+
+            cur.execute("PRAGMA table_info(research_memory);")
+            rmem_cols = {row[1] for row in cur.fetchall()}
+            if "source_url" not in rmem_cols:
+                cur.execute("ALTER TABLE research_memory ADD COLUMN source_url TEXT;")
+            if "confidence" not in rmem_cols:
+                cur.execute("ALTER TABLE research_memory ADD COLUMN confidence REAL NOT NULL DEFAULT 0.8;")
+            if "metadata" not in rmem_cols:
+                cur.execute("ALTER TABLE research_memory ADD COLUMN metadata TEXT;")
 
             cur.execute("CREATE INDEX IF NOT EXISTS idx_docs_owner ON documents(owner_session);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);")
@@ -388,6 +431,9 @@ class SQLiteRAGStorage:
                         ))
 
                 conn.commit()
+                is_serverless = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+                storage_tier = "ephemeral_serverless" if is_serverless else "sqlite_local"
+                durability = "ephemeral" if is_serverless else "durable"
                 return {
                     "id": document_id,
                     "title": filename,
@@ -395,7 +441,10 @@ class SQLiteRAGStorage:
                     "chunks_count": len(chunks),
                     "doc_type": doc_type,
                     "byte_size": byte_size,
-                    "status": "ready"
+                    "status": "ready",
+                    "storage": storage_tier,
+                    "durability": durability,
+                    "persistent": durability == "durable",
                 }
             except Exception as exc:
                 conn.rollback()
@@ -708,6 +757,105 @@ class SQLiteRAGStorage:
             finally:
                 conn.close()
 
+    def save_user_memory(
+        self,
+        memory_id: str,
+        owner_session: str,
+        category: str,
+        content: str,
+        confidence: float = 1.0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                now = time.time()
+                cur = conn.cursor()
+                meta_json = json.dumps(metadata or {})
+                cur.execute("""
+                    INSERT INTO user_memories (
+                        memory_id, owner_session, category, content, confidence, metadata, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(memory_id) DO UPDATE SET
+                        content = excluded.content,
+                        category = excluded.category,
+                        confidence = excluded.confidence,
+                        metadata = excluded.metadata,
+                        updated_at = excluded.updated_at
+                """, (memory_id, owner_session, category, content, confidence, meta_json, now, now))
+                conn.commit()
+                return {
+                    "id": memory_id,
+                    "memory_id": memory_id,
+                    "owner_session": owner_session,
+                    "category": category,
+                    "content": content,
+                    "confidence": confidence,
+                    "metadata": metadata or {},
+                    "updated_at": now,
+                }
+            finally:
+                conn.close()
+
+    def list_user_memories(
+        self,
+        owner_session: str,
+        category: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cur = conn.cursor()
+                if category:
+                    cur.execute("""
+                        SELECT memory_id, category, content, confidence, metadata, created_at, updated_at
+                        FROM user_memories
+                        WHERE owner_session = ? AND category = ?
+                        ORDER BY updated_at DESC
+                    """, (owner_session, category))
+                else:
+                    cur.execute("""
+                        SELECT memory_id, category, content, confidence, metadata, created_at, updated_at
+                        FROM user_memories
+                        WHERE owner_session = ?
+                        ORDER BY updated_at DESC
+                    """, (owner_session,))
+                rows = cur.fetchall()
+                out = []
+                for r in rows:
+                    meta = {}
+                    if r["metadata"]:
+                        try: meta = json.loads(r["metadata"])
+                        except Exception: pass
+                    out.append({
+                        "id": r["memory_id"],
+                        "memory_id": r["memory_id"],
+                        "category": r["category"],
+                        "content": r["content"],
+                        "confidence": float(r["confidence"]),
+                        "metadata": meta,
+                        "created_at": r["created_at"],
+                        "updated_at": r["updated_at"],
+                    })
+                return out
+            finally:
+                conn.close()
+
+    def delete_user_memory(
+        self,
+        memory_id: str,
+        owner_session: str,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM user_memories WHERE memory_id = ? AND owner_session = ?", (memory_id, owner_session))
+                conn.commit()
+                return cur.rowcount > 0
+            finally:
+                conn.close()
+
 
 class PostgresRAGStorage:
     """PostgreSQL with pgvector persistent storage (Primary Production Backend).
@@ -812,7 +960,10 @@ class PostgresRAGStorage:
                 "chunks_count": len(chunks),
                 "doc_type": doc_type,
                 "byte_size": byte_size,
-                "status": "ready"
+                "status": "ready",
+                "storage": "postgres_pgvector",
+                "durability": "durable",
+                "persistent": True,
             }
         except Exception as exc:
             # Atomic rollback happens automatically via with conn.transaction()
@@ -1019,6 +1170,80 @@ class PostgresRAGStorage:
         except Exception:
             pass
         return self._fallback_sqlite.get_kg_edges(owner_session, node)
+
+    def save_user_memory(
+        self,
+        memory_id: str,
+        owner_session: str,
+        category: str,
+        content: str,
+        confidence: float = 1.0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            from psycopg.types.json import Json
+            conn = self.repo._conn()
+            conn.execute("""
+                INSERT INTO user_memories (memory_id, owner_session, category, content, confidence, metadata, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, now(), now())
+                ON CONFLICT (memory_id) DO UPDATE SET
+                    content = EXCLUDED.content,
+                    category = EXCLUDED.category,
+                    confidence = EXCLUDED.confidence,
+                    metadata = EXCLUDED.metadata,
+                    updated_at = now()
+            """, (memory_id, owner_session, category, content, confidence, Json(metadata or {})))
+            conn.commit()
+        except Exception:
+            pass
+        return self._fallback_sqlite.save_user_memory(memory_id, owner_session, category, content, confidence, metadata)
+
+    def list_user_memories(
+        self,
+        owner_session: str,
+        category: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        try:
+            conn = self.repo._conn()
+            if category:
+                cur = conn.execute(
+                    "SELECT memory_id, category, content, confidence, metadata, created_at, updated_at "
+                    "FROM user_memories WHERE owner_session = %s AND category = %s ORDER BY updated_at DESC",
+                    (owner_session, category)
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT memory_id, category, content, confidence, metadata, created_at, updated_at "
+                    "FROM user_memories WHERE owner_session = %s ORDER BY updated_at DESC",
+                    (owner_session,)
+                )
+            rows = cur.fetchall()
+            if rows:
+                return [{
+                    "id": r[0], "memory_id": r[0], "category": r[1], "content": r[2], "confidence": float(r[3]),
+                    "metadata": r[4] if isinstance(r[4], dict) else {},
+                    "created_at": r[5].timestamp() if hasattr(r[5], "timestamp") else time.time(),
+                    "updated_at": r[6].timestamp() if hasattr(r[6], "timestamp") else time.time(),
+                } for r in rows]
+        except Exception:
+            pass
+        return self._fallback_sqlite.list_user_memories(owner_session, category)
+
+    def delete_user_memory(
+        self,
+        memory_id: str,
+        owner_session: str,
+    ) -> bool:
+        try:
+            conn = self.repo._conn()
+            cur = conn.execute("DELETE FROM user_memories WHERE memory_id = %s AND owner_session = %s", (memory_id, owner_session))
+            conn.commit()
+            if cur.rowcount > 0:
+                self._fallback_sqlite.delete_user_memory(memory_id, owner_session)
+                return True
+        except Exception:
+            pass
+        return self._fallback_sqlite.delete_user_memory(memory_id, owner_session)
 
 
 _RAG_STORAGE_INSTANCE: Optional[RAGStorageBackend] = None

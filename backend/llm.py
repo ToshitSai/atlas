@@ -521,7 +521,7 @@ def stream_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeo
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-5-20250929"
+    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-3-5-sonnet-latest"
     chunks: List[str] = []
     try:
         url = "https://api.anthropic.com/v1/messages"

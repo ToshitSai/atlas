@@ -29,10 +29,9 @@ from typing import Any, Dict, List, Optional
 DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000000"
 DEFAULT_USER_EXTERNAL_ID = "system"
 
-# Per-connection TCP connect timeout (repair task §23: the original backend had
-# a hard-coded 10s socket hang before failing over to JSON). Configurable so
-# local fail-fast (1-2s) and cloud deployments (5-10s) both work.
-CONNECT_TIMEOUT = max(1, int(os.environ.get("DB_CONNECT_TIMEOUT", "2")))
+# Per-connection TCP connect timeout. Configurable so local fail-fast (1-2s)
+# and cloud/serverless deployments (5-10s) both work reliably.
+CONNECT_TIMEOUT = max(1, int(os.environ.get("DB_CONNECT_TIMEOUT", "5")))
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +58,7 @@ class Repository:
                     or "").strip()
         self._local = threading.local()
         self._pgvector_cache: Optional[bool] = None
+        self._last_error: Optional[str] = None
 
     def _has_pgvector(self) -> bool:
         """True when the `vector` extension is installed on the connected
@@ -108,11 +108,38 @@ class Repository:
         """Run a real, read-only connectivity probe."""
         try:
             row = self._query_one("SELECT 1")
-            return bool(row and int(row[0]) == 1)
+            is_ok = bool(row and int(row[0]) == 1)
+            if is_ok:
+                self._last_error = None
+            return is_ok
         except Exception as exc:
             code = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None) or "n/a"
-            print(f"[POSTGRES HEALTH ERROR] type={type(exc).__name__} code={code} reason={str(exc).splitlines()[0][:240]}")
+            reason = str(exc).splitlines()[0][:240]
+            self._last_error = f"{type(exc).__name__}: {reason}"
+            print(f"[POSTGRES HEALTH ERROR] type={type(exc).__name__} code={code} reason={reason}")
             return False
+
+    def diagnostics(self) -> Dict[str, Any]:
+        """Return safe, credential-free connection diagnostics."""
+        import urllib.parse
+        hostname = "unknown"
+        port = 5432
+        if self.url:
+            try:
+                p = urllib.parse.urlparse(self.url)
+                hostname = p.hostname or "unknown"
+                port = p.port or 5432
+            except Exception:
+                pass
+        healthy = self.health_check()
+        return {
+            "configured": bool(self.url),
+            "connected": healthy,
+            "host": hostname,
+            "port": port,
+            "pgvector": self._has_pgvector() if healthy else False,
+            "last_error": self._last_error if not healthy else None,
+        }
 
     def close(self):
         conn = getattr(self._local, "conn", None)

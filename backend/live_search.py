@@ -111,6 +111,12 @@ def is_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return False
 
 
+def is_safe_external_url(url: str) -> bool:
+    """Validate whether an external URL is safe against SSRF attacks."""
+    is_safe, _, _, _ = validate_and_resolve_url(url)
+    return is_safe
+
+
 def validate_and_resolve_url(url: str) -> Tuple[bool, str, str, int]:
     """Strictly validates a URL against SSRF, resolving and vetting its destination IP.
     

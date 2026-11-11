@@ -428,7 +428,7 @@ class RAGService:
         for h in hits:
             content_lower = h["content"].lower()
             overlap = any(w in content_lower for w in q_words)
-            if overlap or h.get("dense_score", 0.0) > 0.45:
+            if overlap or h.get("dense_score", 0.0) > 0.30:
                 filtered_hits.append(h)
 
         if not filtered_hits and rag_mode == "auto":
@@ -501,6 +501,39 @@ class RAGService:
             metadata=metadata
         )
         return memory_id
+
+    def save_user_memory(
+        self,
+        owner_session: str,
+        category: str,
+        content: str,
+        confidence: float = 1.0,
+        metadata: Optional[Dict[str, Any]] = None,
+        memory_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        mem_id = memory_id or str(uuid.uuid4())
+        return self.storage.save_user_memory(
+            memory_id=mem_id,
+            owner_session=owner_session,
+            category=category,
+            content=content,
+            confidence=confidence,
+            metadata=metadata or {},
+        )
+
+    def list_user_memories(
+        self,
+        owner_session: str,
+        category: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        return self.storage.list_user_memories(owner_session=owner_session, category=category)
+
+    def delete_user_memory(
+        self,
+        memory_id: str,
+        owner_session: str,
+    ) -> bool:
+        return self.storage.delete_user_memory(memory_id=memory_id, owner_session=owner_session)
 
 
 service = RAGService()

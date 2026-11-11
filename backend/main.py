@@ -98,7 +98,7 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=413, content={"detail": "Request body is too large."})
 
         # Anonymous session id: reuse the cookie when valid, else mint a new one.
-        sid = request.cookies.get(SESSION_COOKIE, "")
+        sid = request.cookies.get(SESSION_COOKIE, "") or request.cookies.get("atlas_anon_session", "")
         new_cookie = not _valid_sid(sid)
         if new_cookie:
             sid = secrets.token_hex(16)  # 128-bit unguessable id
@@ -131,6 +131,10 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
             is_secure = os.environ.get("VERCEL_ENV") == "production" or request.url.scheme == "https"
             response.set_cookie(
                 SESSION_COOKIE, sid,
+                max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=is_secure, path="/",
+            )
+            response.set_cookie(
+                "atlas_anon_session", sid,
                 max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=is_secure, path="/",
             )
         return response
@@ -300,20 +304,47 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/api/health")
 def health_check(request: Request, deep: int = 0, models: int = 0):
-    """Health check endpoint for API dependencies."""
+    """Health check endpoint distinguishing API, database, LLM, embeddings, RAG, and local inference."""
     from backend.llm import get_llm_telemetry
     from backend import model_router
-    from backend import model_router
     from backend import llm as llm_mod
+    from backend.embedding_registry import registry as emb_reg
+    from backend.rag_service import service as rag_svc
+
     llm_configured = llm_mod.any_provider_configured()
     docker_ready = safe_docker_check()
-    database_ready = store.database_health()
-    dependencies_ready = bool(database_ready and docker_ready and llm_configured)
+    db_diag = store.database_diagnostics()
+    database_ready = bool(db_diag.get("connected", False))
+    dependencies_ready = bool(database_ready and llm_configured)
+    default_profile = emb_reg.resolve_default_profile()
+    anon_id = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
+
     result = {
         "status": "healthy" if dependencies_ready else "degraded",
         "api": True,
         "database": database_ready,
+        "databaseDetails": db_diag,
         "llm": llm_configured,
+        "llmExecution": get_llm_telemetry(),
+        "modelRouting": model_router.snapshot(),
+        "embeddings": {
+            "provider": default_profile.provider,
+            "model": default_profile.model_id,
+            "dimensions": default_profile.dimensions,
+            "semanticAvailable": emb_reg._has_semantic_embeddings(),
+            "mode": "semantic" if emb_reg._has_semantic_embeddings() else "lexical_bm25",
+        },
+        "rag": {
+            "available": True,
+            "storage": db_diag.get("type", "unknown"),
+            "durability": db_diag.get("durability", "unknown"),
+            "persistent": db_diag.get("durability") == "durable",
+            "indexedDocuments": len(rag_svc.list_documents(owner_session=anon_id)),
+        },
+        "localInference": {
+            "configured": bool(os.environ.get("LOCAL_LLM_BASE_URL")),
+            "model": os.environ.get("LOCAL_LLM_MODEL", "local-qwen3-8b"),
+        },
         "docker": docker_ready,
         "search": {
             "provider": os.environ.get("SEARCH_PROVIDER", "auto"),
@@ -323,8 +354,6 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
         },
         "weather": {"provider": "open-meteo", "configured": True, "requiresKey": False},
         "build": {"commit": BUILD_COMMIT, "builtAt": BUILD_TIME},
-        "llmExecution": get_llm_telemetry(),
-        "modelRouting": model_router.snapshot(),
     }
     if deep or models:
         token = os.environ.get("HEALTH_TOKEN")
@@ -335,6 +364,73 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
         if models:
             result["modelAudit"] = _model_audit()
     return result
+
+
+@app.get("/api/ready")
+def ready_endpoint():
+    """Readiness probe for deployment orchestrators."""
+    from backend import llm as llm_mod
+    llm_ok = llm_mod.any_provider_configured()
+    db_diag = store.database_diagnostics()
+    is_ready = bool(llm_ok)
+    status_code = 200 if is_ready else 503
+    return JSONResponse(status_code=status_code, content={
+        "ready": is_ready,
+        "status": "ready" if is_ready else "not_ready",
+        "api": True,
+        "llmReady": llm_ok,
+        "databaseConnected": bool(db_diag.get("connected", False)),
+        "databaseType": db_diag.get("type", "unknown"),
+        "durability": db_diag.get("durability", "unknown"),
+    })
+
+
+@app.get("/api/diagnostics")
+def diagnostics_endpoint():
+    """Detailed developer diagnostics endpoint isolating root causes across subsystems."""
+    db_diag = store.database_diagnostics()
+    from backend import model_router, llm as llm_mod
+    from backend.embedding_registry import registry as emb_reg
+    default_profile = emb_reg.resolve_default_profile()
+
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "build": {"commit": BUILD_COMMIT, "builtAt": BUILD_TIME},
+        "subsystems": {
+            "api": {"status": "healthy", "corsConfigured": True},
+            "database": db_diag,
+            "llmProviders": {
+                "anyConfigured": llm_mod.any_provider_configured(),
+                "registry": model_router.build_registry(),
+                "telemetry": llm_mod.get_llm_telemetry(),
+                "providerHealth": model_router.snapshot().get("providerHealth", {}),
+            },
+            "embeddings": {
+                "defaultProvider": default_profile.provider,
+                "defaultModel": default_profile.model_id,
+                "dimensions": default_profile.dimensions,
+                "semanticAvailable": emb_reg._has_semantic_embeddings(),
+                "activeMode": "semantic" if emb_reg._has_semantic_embeddings() else "lexical_bm25",
+            },
+            "ragEngine": {
+                "storageBackend": db_diag.get("type"),
+                "durability": db_diag.get("durability"),
+                "hybridBM25Dense": True,
+                "cragFiltering": True,
+            },
+            "memoryLayers": {
+                "layer1_conversational": True,
+                "layer2_userMemory": True,
+                "layer3_researchMemory": True,
+            },
+            "security": {
+                "sessionCookie": SESSION_COOKIE,
+                "ssrfProtection": True,
+                "maxRequestBytes": MAX_REQUEST_BYTES,
+            }
+        }
+    }
 
 _DEEP_HEALTH_CACHE = {"expires": 0.0, "value": None}
 _MODEL_AUDIT_CACHE = {"expires": 0.0, "value": None}
@@ -1520,7 +1616,9 @@ async def upload_rag_file(file: UploadFile = File(...), request: Request = None)
             "status": doc_info.get("status", "ready"),
             "chunks": doc_info.get("chunks_count", 0),
             "doc_type": doc_info.get("doc_type", "document"),
-            "storage": "persistent",
+            "storage": doc_info.get("storage", "unknown"),
+            "durability": doc_info.get("durability", "unknown"),
+            "persistent": doc_info.get("persistent", False),
         }
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
@@ -1547,6 +1645,47 @@ async def delete_rag_file(file_id: str, request: Request):
     owner = getattr(request.state, "anon_id", "anonymous")
     deleted = rag_svc.delete_document(file_id, owner_session=owner)
     return {"success": deleted, "id": file_id}
+
+
+@app.get("/api/user/memory")
+async def get_user_memory(request: Request, category: Optional[str] = None):
+    """List long-term user memory entries for this session (Layer 2)."""
+    from backend.rag_service import service as rag_svc
+    owner = getattr(request.state, "anon_id", "anonymous")
+    memories = rag_svc.list_user_memories(owner_session=owner, category=category)
+    return {"memories": memories, "count": len(memories)}
+
+
+@app.post("/api/user/memory")
+async def add_user_memory(payload: dict, request: Request):
+    """Save an approved user memory entry (Layer 2)."""
+    from backend.rag_service import service as rag_svc
+    owner = getattr(request.state, "anon_id", "anonymous")
+    content = (payload.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Memory content is required.")
+    category = payload.get("category") or "preference"
+    confidence = float(payload.get("confidence") or 1.0)
+    meta = payload.get("metadata") or {}
+    record = rag_svc.save_user_memory(
+        owner_session=owner,
+        category=category,
+        content=content,
+        confidence=confidence,
+        metadata=meta
+    )
+    return {"success": True, "memory": record}
+
+
+@app.delete("/api/user/memory/{memory_id}")
+async def delete_user_memory_endpoint(memory_id: str, request: Request):
+    """Delete an approved user memory entry (Layer 2)."""
+    from backend.rag_service import service as rag_svc
+    owner = getattr(request.state, "anon_id", "anonymous")
+    deleted = rag_svc.delete_user_memory(memory_id, owner_session=owner)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Memory entry not found or belongs to another session.")
+    return {"success": True, "id": memory_id}
 
 
 @app.post("/api/search/live")

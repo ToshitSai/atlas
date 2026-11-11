@@ -101,6 +101,19 @@ class EmbeddingRegistry:
             return PROFILE_OPENAI_SMALL_1536
         return PROFILE_LOCAL_MINILM_384
 
+    def _has_semantic_embeddings(self) -> bool:
+        """Check if any semantic embedding generation provider is actually functional."""
+        openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        use_openai = os.environ.get("USE_OPENAI_EMBEDDINGS", "").strip().lower() in ("1", "true", "yes")
+        if openai_key and use_openai:
+            return True
+        try:
+            import torch
+            import transformers
+            return True
+        except Exception:
+            return False
+
     def validate_vector_compatibility(
         self,
         vector: List[float],

@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import threading
 import tempfile
@@ -62,13 +63,14 @@ class ResearchStore:
         # RLock: public mutators hold the lock while mutating AND saving; save()
         # re-acquires it (reentrant) instead of deadlocking.
         self.lock = threading.RLock()
+        self._init_db_error = None
+        self._last_db_retry = 0.0
         self.repo = self._make_repo()
         self.backend = self.repo  # legacy attribute: tests may disable this
         self._db_healthy = self.repo is not None
         self._load()
 
-    @staticmethod
-    def _make_repo():
+    def _make_repo(self):
         if DB_DISABLED:
             return None
         url = (os.environ.get("DATABASE_URL") or "").strip()
@@ -82,7 +84,9 @@ class ResearchStore:
             return repo
         except Exception as e:
             code = getattr(e, "sqlstate", None) or getattr(e, "pgcode", None) or "n/a"
-            print(f"[STORE DB INIT WARNING] type={type(e).__name__} code={code} reason={str(e).splitlines()[0][:240]}")
+            reason = str(e).splitlines()[0][:240]
+            self._init_db_error = f"{type(e).__name__}: {reason}"
+            print(f"[STORE DB INIT WARNING] type={type(e).__name__} code={code} reason={reason}")
             return None
 
     # --------------------------------------------------------------- loading
@@ -753,15 +757,57 @@ class ResearchStore:
         return self.repo is not None and self._db_healthy
 
     def database_health(self) -> bool:
-        """Run a real SELECT 1 against the configured repository."""
-        if self.repo is None or not self._db_healthy:
-            return False
-        if not hasattr(self.repo, "health_check"):
-            return self._db_healthy
+        """Run a real SELECT 1 against the configured repository with automatic recovery."""
+        if self.repo is None:
+            if not DB_DISABLED and os.environ.get("DATABASE_URL", "").strip():
+                now = time.monotonic()
+                if now - getattr(self, "_last_db_retry", 0.0) > 30.0:
+                    self._last_db_retry = now
+                    self.repo = self._make_repo()
+                    self.backend = self.repo
+            if self.repo is None:
+                return False
         try:
             self._db_healthy = bool(self.repo.health_check())
         except Exception:
             self._db_healthy = False
         return self._db_healthy
+
+    def database_diagnostics(self) -> Dict[str, Any]:
+        """Return safe, credential-free database diagnostics."""
+        url = (os.environ.get("DATABASE_URL") or "").strip()
+        is_serverless = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+        if DB_DISABLED or not url:
+            return {
+                "configured": False,
+                "connected": False,
+                "type": "ephemeral_serverless" if is_serverless else "sqlite_local",
+                "durability": "ephemeral" if is_serverless else "durable_local",
+                "pgvector": False,
+                "reason": "DATABASE_URL is not configured" if not url else "Database disabled by STORE_DB_DISABLED",
+            }
+        
+        healthy = self.database_health()
+        if healthy and self.repo:
+            diag = self.repo.diagnostics() if hasattr(self.repo, "diagnostics") else {"connected": True}
+            diag["connected"] = True
+            diag["type"] = "postgresql"
+            diag["durability"] = "durable"
+            return diag
+        
+        err = getattr(self.repo, "_last_error", None) if self.repo else getattr(self, "_init_db_error", "Connection failed")
+        import urllib.parse
+        p = urllib.parse.urlparse(url)
+        return {
+            "configured": True,
+            "connected": False,
+            "type": "ephemeral_serverless" if is_serverless else "sqlite_local",
+            "durability": "ephemeral" if is_serverless else "durable_local",
+            "host": p.hostname or "unknown",
+            "port": p.port or 5432,
+            "pgvector": False,
+            "error": err,
+            "warning": "PostgreSQL is unavailable. Data will NOT persist across serverless instances." if is_serverless else "PostgreSQL is unavailable. Using local SQLite."
+        }
 
 store = ResearchStore()
