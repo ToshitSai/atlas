@@ -115,8 +115,8 @@ def remaining_llm_budget() -> Optional[float]:
 
 def call_openai_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
     api_key = os.environ.get("OPENAI_API_KEY")
-    api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    api_base = (os.environ.get("OPENAI_API_BASE") or "").strip() or "https://api.openai.com/v1"
+    model = (os.environ.get("OPENAI_MODEL") or "").strip() or "gpt-4o-mini"
 
     if not api_key:
         return None
@@ -240,7 +240,7 @@ def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout
             "anthropic-version": "2023-06-01"
         }
 
-        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+        model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-5-20250929"
         effective_max_tokens = max_tokens or int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096"))
 
         payload = {
@@ -285,30 +285,6 @@ def call_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout: 
     if not api_key:
         return None
 
-def call_local_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
-    """Call the optional loopback/tunnelled OpenAI-compatible Qwen server."""
-    base = os.environ.get("LOCAL_LLM_BASE_URL", "").rstrip("/")
-    if not base:
-        return None
-    model = os.environ.get("LOCAL_LLM_MODEL", "local-qwen3-8b")
-    messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [{"role": "user", "content": prompt}]
-    payload = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens or 4096}
-    headers = {"Content-Type": "application/json"}
-    if os.environ.get("LOCAL_LLM_API_KEY"):
-        headers["Authorization"] = f"Bearer {os.environ['LOCAL_LLM_API_KEY']}"
-    started = time.monotonic()
-    try:
-        req = urllib.request.Request(f"{base}/v1/chat/completions", data=json.dumps(payload).encode(), headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            body = json.loads(response.read().decode())
-        text = body["choices"][0]["message"]["content"]
-        if return_details:
-            return {"text": text, "finish_reason": body["choices"][0].get("finish_reason", "stop"), "provider": "local", "model": model, "generation_time": round(time.monotonic()-started, 2)}
-        return text
-    except Exception as exc:
-        print(f"[LLM Client Warning] local model unreachable ({type(exc).__name__}) after {time.monotonic()-started:.2f}s")
-        return None
-
     start = time.monotonic()
     try:
         url = "https://api.mistral.ai/v1/chat/completions"
@@ -322,7 +298,7 @@ def call_local_api(prompt: str, system_prompt: Optional[str] = None, timeout: in
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        model = os.environ.get("MISTRAL_MODEL", "mistral-tiny-2312")
+        model = (os.environ.get("MISTRAL_MODEL") or "").strip() or "mistral-small-latest"
         effective_max_tokens = max_tokens or int(os.environ.get("MISTRAL_MAX_TOKENS", "4096"))
 
         payload = {
@@ -359,6 +335,30 @@ def call_local_api(prompt: str, system_prompt: Optional[str] = None, timeout: in
             return content
     except Exception as e:
         print(f"[LLM Client Warning] Mistral call failed after {time.monotonic() - start:.2f}s: {e}")
+        return None
+
+def call_local_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
+    """Call the optional loopback/tunnelled OpenAI-compatible Qwen server."""
+    base = os.environ.get("LOCAL_LLM_BASE_URL", "").rstrip("/")
+    if not base:
+        return None
+    model = os.environ.get("LOCAL_LLM_MODEL", "local-qwen3-8b")
+    messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [{"role": "user", "content": prompt}]
+    payload = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens or 4096}
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("LOCAL_LLM_API_KEY"):
+        headers["Authorization"] = f"Bearer {os.environ['LOCAL_LLM_API_KEY']}"
+    started = time.monotonic()
+    try:
+        req = urllib.request.Request(f"{base}/v1/chat/completions", data=json.dumps(payload).encode(), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            body = json.loads(response.read().decode())
+        text = body["choices"][0]["message"]["content"]
+        if return_details:
+            return {"text": text, "finish_reason": body["choices"][0].get("finish_reason", "stop"), "provider": "local", "model": model, "generation_time": round(time.monotonic()-started, 2)}
+        return text
+    except Exception as exc:
+        print(f"[LLM Client Warning] local model unreachable ({type(exc).__name__}) after {time.monotonic()-started:.2f}s")
         return None
 
 _PROVIDER_KEY_ENV = {
@@ -416,8 +416,8 @@ def stream_openai_api(prompt: str, system_prompt: Optional[str] = None, timeout:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return None
-    api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    api_base = (os.environ.get("OPENAI_API_BASE") or "").strip() or "https://api.openai.com/v1"
+    model = (os.environ.get("OPENAI_MODEL") or "").strip() or "gpt-4o-mini"
     chunks: List[str] = []
     try:
         url = f"{api_base}/chat/completions"
@@ -455,7 +455,7 @@ def stream_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout
     api_key = os.environ.get("MISTRAL_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("MISTRAL_MODEL", "mistral-tiny-2312")
+    model = (os.environ.get("MISTRAL_MODEL") or "").strip() or "mistral-small-latest"
     chunks: List[str] = []
     try:
         url = "https://api.mistral.ai/v1/chat/completions"
@@ -531,7 +531,7 @@ def stream_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeo
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-5-20250929"
     chunks: List[str] = []
     try:
         url = "https://api.anthropic.com/v1/messages"
@@ -744,8 +744,8 @@ def _stream_openai(prompt: str, system_prompt: Optional[str], on_token: Callable
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return None
-    api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    api_base = (os.environ.get("OPENAI_API_BASE") or "").strip() or "https://api.openai.com/v1"
+    model = (os.environ.get("OPENAI_MODEL") or "").strip() or "gpt-4o-mini"
     url = f"{api_base}/chat/completions"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     messages = []
@@ -826,7 +826,7 @@ def _stream_anthropic(prompt: str, system_prompt: Optional[str], on_token: Calla
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-5-20250929"
     url = "https://api.anthropic.com/v1/messages"
     headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
     payload = {"model": model, "max_tokens": max_tokens or 4096, "messages": [{"role": "user", "content": prompt}], "stream": True}

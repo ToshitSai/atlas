@@ -132,7 +132,7 @@ _TASK_CAPABILITY_LABEL: Dict[str, str] = {
 #  latency_tier[1=fastest], cost_tier[1=cheapest], reasoning_tier[3=strongest],
 #  coding_tier, capabilities, strengths)
 _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str], List[str]]] = [
-    ("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-5-5-20250929", 200000, 2, 3, 3, 3,
+    ("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929", 200000, 2, 3, 3, 3,
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_TOOLS],
      ["strongest coding & reasoning", "long-form writing", "200k context"]),
@@ -344,6 +344,8 @@ class RoutingDecision:
         self.started_at: float = time.monotonic()
         self.request_id: str = ""
         self.classifier: str = "deterministic"
+        self.requested_model: Optional[str] = None
+        self.fallback_used: bool = False
 
     def to_safe_dict(self) -> Dict[str, Any]:
         """Internal/debug summary. Contains NO secrets and NO message text."""
@@ -353,6 +355,8 @@ class RoutingDecision:
             "recommendedCapability": self.recommended_capability,
             "provider": self.provider,
             "model": self.model,
+            "requestedModel": self.requested_model,
+            "fallbackUsed": self.fallback_used,
             "providerOrder": list(self.provider_order),
             "needsWeb": self.flags["needs_web"],
             "needsDeepResearch": self.flags["needs_deep_research"],
@@ -698,7 +702,8 @@ def select_providers(decision: RoutingDecision) -> Tuple[List[str], Optional[Dic
 def route(request_id: str, message: str,
           files: Optional[List[Dict[str, Any]]] = None,
           conversation_context: Optional[str] = None,
-          active_mode: Optional[str] = None) -> RoutingDecision:
+          active_mode: Optional[str] = None,
+          preferred_model: Optional[str] = None) -> RoutingDecision:
     """Classify + select. Records a secret-free routing log. Never raises."""
     started = time.monotonic()
     decision = RoutingDecision()
@@ -707,9 +712,34 @@ def route(request_id: str, message: str,
         decision = classify_task(message, files, conversation_context, active_mode)
         decision.request_id = request_id or ""
         order, top = select_providers(decision)
+        norm = (preferred_model or "").strip().lower()
+        if norm:
+            decision.requested_model = preferred_model.strip()
+            if norm in ("atlas large", "atlas-large", "atlas_large"):
+                # Atlas Large: flagship high-capacity model (gemini-2.5-flash / anthropic)
+                large_order = [p for p in ["gemini", "anthropic", "openai", "mistral"] if p in order]
+                if large_order:
+                    order = large_order + [p for p in order if p not in large_order]
+            elif norm in ("atlas fast", "atlas-fast", "atlas_fast"):
+                # Atlas Fast: low-latency fast model
+                fast_order = [p for p in ["gemini", "mistral", "openai", "anthropic"] if p in order]
+                if fast_order:
+                    order = fast_order + [p for p in order if p not in fast_order]
+            elif norm in ("atlas reasoning", "atlas-reasoning", "atlas_reasoning"):
+                # Atlas Reasoning: advanced multi-step reasoning
+                decision.complexity = COMPLEXITY_HIGH
+                reasoning_order = [p for p in ["gemini", "anthropic", "openai", "mistral"] if p in order]
+                if reasoning_order:
+                    order = reasoning_order + [p for p in order if p not in reasoning_order]
+            else:
+                matched_p = next((p for p in order if p == norm or norm in p or norm in str(model_id_for(p) or "").lower()), None)
+                if matched_p:
+                    order = [matched_p] + [p for p in order if p != matched_p]
+
         decision.provider_order = order
-        decision.provider = top["provider"] if top else None
-        decision.model = top["model"] if top else None
+        top_provider = order[0] if order else (top["provider"] if top else None)
+        decision.provider = top_provider
+        decision.model = model_id_for(top_provider) if top_provider else (top["model"] if top else None)
     except Exception as exc:  # router failure must never block the chatbot
         decision = RoutingDecision()
         decision.request_id = request_id or ""

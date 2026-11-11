@@ -39,6 +39,10 @@ def no_llm(monkeypatch):
     """Force every LLM call to return None (simulates unavailable/invalid keys)."""
     monkeypatch.setattr(llm_mod, "query_llm", lambda *a, **k: None)
     monkeypatch.setattr(intent_mod, "query_llm", lambda *a, **k: None)
+    monkeypatch.setattr(llm_mod, "query_llm_stream", lambda *a, **k: None)
+    monkeypatch.setattr(intent_mod, "query_llm_stream", lambda *a, **k: None)
+    monkeypatch.setattr(llm_mod, "any_provider_configured", lambda: False)
+    monkeypatch.setattr(intent_mod, "any_provider_configured", lambda: False)
 
 
 @pytest.fixture(autouse=True)

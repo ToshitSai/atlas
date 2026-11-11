@@ -1501,6 +1501,20 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
     if known and qtype in ("definition", "factual") and not any_provider_configured():
         return known
 
+    kb_seed = (
+        f"Background you may draw on (do NOT paste verbatim unless it directly "
+        f"answers the question):\n{known}\n\n"
+    ) if known else ""
+    prompt = (
+        f"{history_ctx}{kb_seed}"
+        "Treat the history above as context only. The CURRENT USER MESSAGE below "
+        "is authoritative and must be answered; do not answer an earlier question. "
+        "Answer it directly and completely in natural English. If it asks 'why' "
+        "or 'how', give the actual reasoning — not just a definition. Resolve "
+        "pronouns using prior turns only when the current message has no explicit subject.\n"
+        f"CURRENT USER MESSAGE: {message}\n{variation_instruction}"
+    )
+
     # Do not enqueue a 60-second model race when this deployment has no
     # provider credentials.  Apart from being needless work, it left ordinary
     # non-English questions visibly stuck in "Sending" until the serverless
@@ -1509,6 +1523,12 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
     if not any_provider_configured():
         if known:
             return known
+        try:
+            patched_answer = query_llm(prompt, GENERAL_ASSISTANT_SYSTEM_PROMPT)
+            if patched_answer and str(patched_answer).strip():
+                return str(patched_answer).strip()
+        except Exception:
+            pass
         normalized = (message or "").lower()
         if re.search(r"[\u0900-\u097f]", message or "") and any(
             word in normalized for word in ("पाइथन", "पायथन", "python")
@@ -1529,19 +1549,6 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
             pass
         return _honest_unknown(topic or message)
 
-    kb_seed = (
-        f"Background you may draw on (do NOT paste verbatim unless it directly "
-        f"answers the question):\n{known}\n\n"
-    ) if known else ""
-    prompt = (
-        f"{history_ctx}{kb_seed}"
-        "Treat the history above as context only. The CURRENT USER MESSAGE below "
-        "is authoritative and must be answered; do not answer an earlier question. "
-        "Answer it directly and completely in natural English. If it asks 'why' "
-        "or 'how', give the actual reasoning — not just a definition. Resolve "
-        "pronouns using prior turns only when the current message has no explicit subject.\n"
-        f"CURRENT USER MESSAGE: {message}\n{variation_instruction}"
-    )
     # Real token streaming: when the caller supplied an on_token sink (the SSE
     # chat-stream path), stream the answer from a single provider so the client
     # renders it incrementally instead of waiting for the full response. Falls
@@ -1560,6 +1567,8 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
     llm_answer = res_dict.get("text") if isinstance(res_dict, dict) else res_dict
     if llm_answer and llm_answer.strip():
         return llm_answer.strip()
+    if known:
+        return known
     return "I couldn't reach the AI service just now. Please try again."
 
 
@@ -2150,7 +2159,7 @@ def _handle_intent_message_impl(
             print(f"[DEEP RESEARCH PROVIDER FAILURE] {dr_error or 'no sources returned'}")
             from backend.hf_datasets import ml_runtime_missing
             resp_text = (
-                "I couldn't reach a web search provider right now. Please try again."
+                "I couldn't reach a web search provider right now, and won't pretend to have browsed sources. Please try again."
             )
         store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": goal.lower()[:80]})
         return {
@@ -2713,13 +2722,24 @@ def _handle_intent_message_impl(
             "- Run autonomous ML research pipelines and execute real experiments\n\n"
             "Ask me a question or describe a research task to begin."
         )
-    elif "hello" in msg_clean:
-        content = "Hello! I'm Atlas. I can answer questions, explain technical topics, write code, or help with a research task."
     else:
-        # This is a real conversational fallback, never the landing/empty
-        # state copy.  The landing component owns its welcome text; assistant
-        # turns must always contain content specific to the current request.
-        content = "I’m Atlas. Tell me what you’d like to understand, build, or investigate."
+        greeting_system = (
+            "You are Atlas, a friendly, intelligent AI assistant and research scientist. "
+            "Respond warmly, naturally, and concisely to greetings (e.g. 'Hi! 👋 I\\'m Atlas. How can I help you today?'). "
+            "Do not offer deep research or ML experiments unless the user asks for them."
+        )
+        llm_greeting = None
+        if any_provider_configured():
+            try:
+                llm_greeting = query_llm(message, greeting_system, on_token=token_callback, timeout=12)
+            except Exception:
+                llm_greeting = None
+        if llm_greeting and str(llm_greeting).strip():
+            content = str(llm_greeting).strip()
+        elif "hello" in msg_clean:
+            content = "Hello! 👋 I'm Atlas. How can I help you today?"
+        else:
+            content = "Hi! 👋 I'm Atlas. How can I help you today?"
 
     store.update_session(sid, {"last_assistant_message": content})
 

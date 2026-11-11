@@ -38,6 +38,11 @@ function mergeConversationHistory(items) {
   return [...byId.values()].sort((a, b) => String(b.updatedAt || b.timestamp || '').localeCompare(String(a.updatedAt || a.timestamp || '')));
 }
 
+function isCasualGreeting(text) {
+  const t = String(text || '').trim().toLowerCase();
+  return /^(hi|hello|hey|howdy|greetings|good\s+(morning|afternoon|evening|day)|how are you|who are you|what is atlas|what can you do)[\s!.,?]*$/i.test(t);
+}
+
 function isLikelyDeepResearch(text) {
   const value = String(text || '').toLowerCase();
   return (
@@ -284,10 +289,15 @@ function WorkspaceApp({ onSignOut }) {
     requestControllerRef.current = requestController;
     setErrorFeedback(null);
     setActiveNav('research');
-    const deepCheck = typeof options.deepResearch === 'boolean' ? options.deepResearch : isLikelyDeepResearch(queryText);
+    const isCasual = isCasualGreeting(queryText);
+    const deepCheck = !isCasual && (typeof options.deepResearch === 'boolean' ? options.deepResearch : isLikelyDeepResearch(queryText));
     const turnId = `${conversationId}:${Date.now()}`;
     const requestId = createConversationId();
     const messageId = turnId;
+    let selectedModelName = options.model;
+    if (!selectedModelName) {
+      try { selectedModelName = localStorage.getItem('atlas-model') || 'Atlas Large'; } catch { selectedModelName = 'Atlas Large'; }
+    }
     const sourceTurns = Array.isArray(options.historyOverride) ? options.historyOverride : conversationTurns;
     const priorHistory = sourceTurns.flatMap((turn) => [
       { role: 'user', content: turn.question },
@@ -394,7 +404,7 @@ function WorkspaceApp({ onSignOut }) {
           conversationId,
           null,
           null,
-          { requestId, messageId },
+          { requestId, messageId, ...(selectedModelName ? { model: selectedModelName } : {}) },
           priorHistory,
           onActivity,
           onResearchToken,
@@ -410,7 +420,7 @@ function WorkspaceApp({ onSignOut }) {
             setLatestInsight(reportText.slice(0, 300) + '…');
           }
           setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
-            ? { ...turn, answer: reportText, sources: res.sources || [], confidence: res.confidence || null, isLoading: false }
+            ? { ...turn, answer: reportText, sources: res.sources || [], confidence: res.confidence || null, fallbackNotice: res.fallbackNotice || null, isLoading: false }
             : turn));
           if (res.sources && Array.isArray(res.sources)) {
             setValidatedSources(res.sources);
@@ -449,7 +459,7 @@ function WorkspaceApp({ onSignOut }) {
             setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, answer: `${turn.answer || ''}${delta}` } : turn));
           },
           conversationHistory: priorHistory,
-          correlation: { requestId, messageId },
+          correlation: { requestId, messageId, ...(selectedModelName ? { model: selectedModelName } : {}) },
           signal: requestController.signal,
           variation: Boolean(options.variation),
           previousAnswer: options.previousAnswer || '',
@@ -472,7 +482,7 @@ function WorkspaceApp({ onSignOut }) {
           { role: 'assistant', content: res.response || streamed || '', sources: res.sources || [], confidence: res.confidence || null, created_at: new Date().toISOString() },
         ] }).catch(() => {});
         setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
-          ? { ...turn, answer: res.response || streamed || 'No response returned.', sources: res.sources || [], confidence: res.confidence || null, isLoading: false }
+          ? { ...turn, answer: res.response || streamed || 'No response returned.', sources: res.sources || [], confidence: res.confidence || null, fallbackNotice: res.fallbackNotice || null, isLoading: false }
           : turn));
         setIsBuiltInExplanation(res.action === 'NONE' || !sysSettings.apiKeySet);
 
@@ -676,6 +686,7 @@ function WorkspaceApp({ onSignOut }) {
             activeConversationId={conversationId}
             confidenceChecking={confidenceChecking}
             onEditMessage={handleEditMessage}
+            onRetry={(q) => handleSendQuestion(q, undefined, { deepResearch: false })}
           />
         </main>
       </div>
@@ -734,6 +745,7 @@ function WorkspaceApp({ onSignOut }) {
                       onOpenSettings={() => setIsSettingsOpen(true)}
                       historyItems={historyItems}
                       onSelectHistoryItem={handleSelectConversation}
+                      onRetry={(q) => handleSendQuestion(q, undefined, { deepResearch: false })}
                     />
                   </motion.div>
                 ) : (

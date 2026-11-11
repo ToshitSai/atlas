@@ -262,7 +262,7 @@ const RAW_ANSWER_CONTENT = {
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
-export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, historyItems = [], onSelectHistoryItem, theme = 'system', onThemeChange, sidebarOpen = true, onToggleSidebar, historyLoadState = 'ready', activeConversationId, confidenceChecking = false, onEditMessage }) {
+export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings, conversationTurns = [], isPending = false, onNewChat, historyItems = [], onSelectHistoryItem, theme = 'system', onThemeChange, sidebarOpen = true, onToggleSidebar, historyLoadState = 'ready', activeConversationId, confidenceChecking = false, onEditMessage, onRetry }) {
   // Step state: 0 (idle) -> 1 (thinking) -> 2 (streaming) -> 3 (done)
   const [step, setStep] = useState(0);
   const [inputText, setInputText] = useState('');
@@ -448,7 +448,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           {/* SECTION 5: IDLE HERO */}
           {/* =================================================================== */}
           {conversationTurns.length > 0 ? (
-            <ConversationThread turns={conversationTurns} isPending={isPending} confidenceChecking={confidenceChecking} onEditMessage={onEditMessage} />
+            <ConversationThread turns={conversationTurns} isPending={isPending} confidenceChecking={confidenceChecking} onEditMessage={onEditMessage} onRetry={onRetry} />
           ) : step === 0 && (
             <div
               style={{
@@ -1118,7 +1118,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   );
 }
 
-function ConversationThread({ turns, isPending, confidenceChecking = false, onEditMessage }) {
+function ConversationThread({ turns, isPending, confidenceChecking = false, onEditMessage, onRetry }) {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '42px 24px calc(176px + 24px)', width: '100%', maxWidth: '900px', margin: '0 auto' }}>
       {turns.map((turn) => (
@@ -1139,7 +1139,36 @@ function ConversationThread({ turns, isPending, confidenceChecking = false, onEd
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, color: TOKENS.colors.body, fontSize: '16px', lineHeight: 1.7, minWidth: 0 }}>
               {turn.isLoading && !turn.answer ? <div style={{ color: TOKENS.colors.muted }}>Preparing a verified answer…</div> : <ProgressiveMarkdown content={turn.answer || ''} streaming={Boolean(turn.isLoading)} instant={Boolean(turn.loadedFromHistory)} deliveryPath={turn.loadedFromHistory ? 'loaded from history' : 'new answer'} />}
-              {turn.error ? <div role="alert" style={{ color: '#B42318', marginTop: '8px' }}>{turn.error}</div> : null}
+              {turn.fallbackNotice && (
+                <div style={{ fontSize: '12px', color: TOKENS.colors.muted, marginTop: '4px', fontStyle: 'italic' }}>
+                  {turn.fallbackNotice}
+                </div>
+              )}
+              {turn.error ? (
+                <div role="alert" style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <div style={{ color: '#B42318', fontSize: '14px', background: 'rgba(180, 35, 24, 0.08)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(180, 35, 24, 0.2)' }}>
+                    {turn.error}
+                  </div>
+                  {onRetry && (
+                    <button
+                      type="button"
+                      onClick={() => onRetry(turn.question)}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        border: `1px solid ${TOKENS.colors.border}`,
+                        background: TOKENS.colors.surface,
+                        color: TOKENS.colors.ink,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         </motion.div>
