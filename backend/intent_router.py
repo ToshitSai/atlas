@@ -2562,9 +2562,9 @@ def _handle_intent_message_impl(
                 "Cite the document source and page/section where applicable.\n"
                 "CRITICAL GROUNDING RULES:\n"
                 "1. Base your answer strictly on the facts provided in the document evidence below.\n"
-                "2. If the document evidence does NOT contain the answer or does not mention the requested information, "
-                "you must explicitly state that the document does not contain that information.\n"
-                "3. Do NOT invent, assume, or extrapolate facts that are not present in the evidence.\n\n"
+                "2. When asked to compare, summarize, or synthesize across documents, compare and contrast the specific documented attributes, entities, codes, and locations present in the evidence.\n"
+                "3. If a specific factual detail (such as a budget, revenue, date, or metric) is not mentioned anywhere in the document evidence, explicitly state that the document does not contain that information.\n"
+                "4. Do NOT invent, assume, or extrapolate facts that are not present in the evidence.\n\n"
                 + context_text
             )
             resp_text = None
