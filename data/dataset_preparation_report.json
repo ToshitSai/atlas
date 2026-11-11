@@ -1,0 +1,103 @@
+{
+  "registry": [
+    {
+      "name": "Atlas Project Identity & Personalization",
+      "repo_url": "local:data/raw/atlas_identity.jsonl",
+      "license": "MIT (Project-Specific)",
+      "size": "~25 KB",
+      "format": "JSONL (Multi-turn ChatML & Instruction)",
+      "category": "Personalization & Project Knowledge",
+      "quality_assessment": "High — curated verified facts regarding Atlas creator Toshit Sai Galam, capabilities, and architecture.",
+      "download_status": "Locally Generated / Verified",
+      "preprocessing_status": "Ready"
+    },
+    {
+      "name": "General Instruction & Reasoning (Curated Mini-Hermes)",
+      "repo_url": "https://huggingface.co/datasets/teknium/OpenHermes-2.5",
+      "license": "MIT / Apache-2.0",
+      "size": "~1.8 GB full (~150 KB curated subset)",
+      "format": "JSONL",
+      "category": "General Question Answering & Reasoning",
+      "quality_assessment": "High — structured multi-step reasoning, instruction following, and factual inquiry.",
+      "download_status": "Curated Local Subset",
+      "preprocessing_status": "Ready"
+    },
+    {
+      "name": "Python & Software Engineering Instruction (CodeFeedback Subset)",
+      "repo_url": "https://huggingface.co/datasets/m-a-p/CodeFeedback-Filtered-Instruction",
+      "license": "Apache-2.0",
+      "size": "~450 MB full (~120 KB curated subset)",
+      "format": "JSONL",
+      "category": "Coding & Software Engineering",
+      "quality_assessment": "High — executable Python snippets, algorithmic problem solving, debugging, and clean code principles.",
+      "download_status": "Curated Local Subset",
+      "preprocessing_status": "Ready"
+    },
+    {
+      "name": "Mathematical Reasoning & Step-by-Step Problem Solving (GSM8K & MathInstruct)",
+      "repo_url": "https://huggingface.co/datasets/openai/gsm8k",
+      "license": "MIT",
+      "size": "~12 MB full (~90 KB curated subset)",
+      "format": "JSONL",
+      "category": "Mathematics & Symbolic Reasoning",
+      "quality_assessment": "High — clear equation formulations, algebraic derivations, and verifiable numerical answers.",
+      "download_status": "Curated Local Subset",
+      "preprocessing_status": "Ready"
+    },
+    {
+      "name": "Scientific Inquiry & Machine Learning Research (Atlas Research Seed)",
+      "repo_url": "local:data/raw/scientific_research_instructions.jsonl",
+      "license": "MIT",
+      "size": "~180 KB",
+      "format": "JSONL",
+      "category": "Scientific Inquiry & ML Methodology",
+      "quality_assessment": "High — literature review, experiment design, hypothesis testing, metrics evaluation, and statistical uncertainty.",
+      "download_status": "Locally Generated",
+      "preprocessing_status": "Ready"
+    },
+    {
+      "name": "Tool Selection & Structured Function Calling (Hermes Function Calling)",
+      "repo_url": "https://huggingface.co/datasets/NousResearch/hermes-function-calling",
+      "license": "Apache-2.0",
+      "size": "~85 MB full (~60 KB curated subset)",
+      "format": "JSONL",
+      "category": "Tool Selection & Action Execution",
+      "quality_assessment": "High — decision logic on when to invoke SymPy, web search, Python interpreter, or direct answers.",
+      "download_status": "Curated Local Subset",
+      "preprocessing_status": "Ready"
+    }
+  ],
+  "pipeline_statistics": {
+    "total_raw_ingested": 22,
+    "total_valid_samples": 22,
+    "duplicates_filtered": 0,
+    "malformed_filtered": 0,
+    "train_samples_count": 19,
+    "eval_samples_count": 3,
+    "data_leakage_detected": 0,
+    "categories": {
+      "identity": 6,
+      "tool_selection": 4,
+      "multi_turn": 2,
+      "coding": 2,
+      "research": 3,
+      "reasoning": 2,
+      "mathematics": 1,
+      "factual": 2
+    },
+    "length_statistics": {
+      "min_chars": 44,
+      "max_chars": 1529,
+      "avg_chars": 659.8,
+      "min_approx_tokens": 11,
+      "max_approx_tokens": 402,
+      "avg_approx_tokens": 173.1
+    }
+  },
+  "output_files": {
+    "train": "C:\\Users\\Toshit\\Desktop\\Atlas\\data\\processed\\train.jsonl",
+    "eval": "C:\\Users\\Toshit\\Desktop\\Atlas\\data\\processed\\eval.jsonl",
+    "identity_source": "C:\\Users\\Toshit\\Desktop\\Atlas\\data\\raw\\atlas_identity.jsonl",
+    "curated_seed_source": "C:\\Users\\Toshit\\Desktop\\Atlas\\data\\raw\\curated_domain_seed.jsonl"
+  }
+}

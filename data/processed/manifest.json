@@ -1,0 +1,19 @@
+{
+  "total_samples": 88,
+  "train_samples": 79,
+  "eval_samples": 9,
+  "sources": {
+    "atlas_identity": 14,
+    "curated_domain_seed": 8,
+    "indian_knowledge": 3,
+    "general_knowledge": 1,
+    "tool_adherence": 1,
+    "machine_learning": 1,
+    "openai/gsm8k": 20,
+    "sahil2801/CodeAlpaca-20k": 20,
+    "HuggingFaceTB/smoltalk": 20
+  },
+  "permissive_licensing_verified": true,
+  "chatml_normalized": true,
+  "seed": 42
+}
