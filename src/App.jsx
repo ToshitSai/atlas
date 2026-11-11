@@ -9,6 +9,7 @@ import SourcesView from './components/SourcesView';
 import HypothesesView from './components/HypothesesView';
 import ReportsView from './components/ReportsView';
 import HistoryView from './components/HistoryView';
+import TrainingDashboardView from './components/TrainingDashboardView';
 import SettingsModal from './components/SettingsModal';
 import AtlasLanding from './components/AtlasLanding';
 import { getDynamicGreeting, ROTATING_PLACEHOLDERS } from './utils/greeting';
@@ -602,7 +603,7 @@ function WorkspaceApp({ onSignOut }) {
       const p = window.location.pathname;
       if (p.startsWith('/atlas')) {
         const sub = p.replace(/^\/atlas\/?/, '');
-        if (['research', 'experiments', 'sources', 'hypotheses', 'reports', 'history'].includes(sub)) {
+        if (['research', 'experiments', 'sources', 'hypotheses', 'reports', 'history', 'training'].includes(sub)) {
           setActiveNav(sub);
           return;
         }
@@ -831,6 +832,10 @@ function WorkspaceApp({ onSignOut }) {
                 historyItems={historyItems}
                 onSelectHistoryItem={handleSelectConversation}
               />
+            )}
+
+            {activeNav === 'training' && (
+              <TrainingDashboardView />
             )}
 
             {/* Anchored Bottom Command Composer (shown only when in active conversation view) */}

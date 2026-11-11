@@ -306,3 +306,11 @@ export async function fetchResearchState(id) {
     return null;
   }
 }
+
+export async function fetchFinetuningStatus() {
+  try {
+    return await safeFetchJson(`${API_BASE}/finetuning/status`);
+  } catch (err) {
+    return null;
+  }
+}
