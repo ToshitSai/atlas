@@ -128,9 +128,10 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
         if new_cookie:
+            is_secure = os.environ.get("VERCEL_ENV") == "production" or request.url.scheme == "https"
             response.set_cookie(
                 SESSION_COOKIE, sid,
-                max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", path="/",
+                max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=is_secure, path="/",
             )
         return response
 
@@ -1499,35 +1500,23 @@ async def analyze_file(file: UploadFile = File(...)):
 
 @app.post("/api/files")
 async def upload_rag_file(file: UploadFile = File(...), request: Request = None):
-    """Store, parse, embed and index a document using Atlas Advanced RAG (with Postgres and local SQLite vector store fallback)."""
-    from backend import advanced_rag
-    name = rag.safe_filename(file.filename or "document")
+    """Store, parse, embed and index a document using Atlas Unified RAG Service."""
+    from backend.rag_service import service as rag_svc
+    name = file.filename or "document"
     content = await file.read()
     owner = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
     try:
-        # Ingest using Advanced RAG engine (multi-format: PDF, DOCX, HTML, TXT, MD, CSV, JSON, Code)
-        doc_info = advanced_rag.ingest_document(name, content, owner_session=owner)
-        doc_id = doc_info["id"]
-
-        # If PostgreSQL and Blob storage are available, also mirror it for remote multi-node access
-        if store.database_health() and getattr(store, "repo", None):
-            try:
-                storage_key = rag.blob_upload(name, content)
-                repo = store.repo
-                ext = os.path.splitext(name)[1]
-                repo._execute("INSERT INTO documents (id,title,source,doc_type,metadata) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING", (doc_id, name, storage_key, ext[1:], json.dumps({"owner_session": owner})))
-                repo._execute("INSERT INTO document_metadata (document_id,owner_session,storage_key,original_filename,byte_size,status) VALUES (%s,%s,%s,%s,%s,'ready') ON CONFLICT (document_id) DO UPDATE SET status='ready'", (doc_id, owner, storage_key, name, len(content)))
-            except Exception as pg_exc:
-                print(f"[RAG PG MIRROR WARNING] {pg_exc}")
-
+        doc_info = rag_svc.ingest_document(name, content, owner_session=owner)
         return {
-            "id": doc_id,
-            "filename": name,
-            "status": "ready",
+            "id": doc_info["id"],
+            "filename": doc_info["filename"],
+            "status": doc_info.get("status", "ready"),
             "chunks": doc_info.get("chunks_count", 0),
             "doc_type": doc_info.get("doc_type", "document"),
-            "storage": "hybrid",
+            "storage": "persistent",
         }
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as exc:
         print(f"[RAG UPLOAD ERROR] {type(exc).__name__}: {str(exc)[:240]}")
         raise HTTPException(status_code=500, detail=f"Document indexing failed: {exc}") from exc
@@ -1537,10 +1526,9 @@ async def upload_rag_file(file: UploadFile = File(...), request: Request = None)
 @app.get("/api/documents")
 async def list_rag_files(request: Request):
     """List indexed RAG documents for this anonymous session."""
-    from backend import advanced_rag
+    from backend.rag_service import service as rag_svc
     owner = getattr(request.state, "anon_id", "anonymous")
-    vstore = advanced_rag.get_vector_store()
-    docs = vstore.list_documents(owner_session=owner)
+    docs = rag_svc.list_documents(owner_session=owner)
     return {"documents": docs, "total": len(docs)}
 
 
@@ -1548,16 +1536,9 @@ async def list_rag_files(request: Request):
 @app.delete("/api/documents/{file_id}")
 async def delete_rag_file(file_id: str, request: Request):
     """Delete an indexed document and its vector embeddings."""
-    from backend import advanced_rag
+    from backend.rag_service import service as rag_svc
     owner = getattr(request.state, "anon_id", "anonymous")
-    vstore = advanced_rag.get_vector_store()
-    deleted = vstore.delete_document(file_id, owner_session=owner)
-    if store.database_health() and getattr(store, "repo", None):
-        try:
-            store.repo._execute("DELETE FROM document_metadata WHERE document_id=%s AND owner_session=%s", (file_id, owner))
-            store.repo._execute("DELETE FROM documents WHERE id=%s", (file_id,))
-        except Exception:
-            pass
+    deleted = rag_svc.delete_document(file_id, owner_session=owner)
     return {"success": deleted, "id": file_id}
 
 
@@ -1577,23 +1558,21 @@ async def live_search_endpoint(payload: dict):
 
 @app.get("/api/research/memory")
 async def get_research_memory(request: Request, q: Optional[str] = None, limit: int = 10):
-    from backend import advanced_rag
+    from backend.rag_service import service as rag_svc
     owner = getattr(request.state, "anon_id", "anonymous")
-    vstore = advanced_rag.get_vector_store()
-    entries = vstore.get_research_memory(owner_session=owner, query=q, limit=limit)
+    entries = rag_svc.get_research_memory(owner_session=owner, query=q, limit=limit)
     return {"entries": entries, "count": len(entries)}
 
 
 @app.post("/api/research/memory")
 async def add_research_memory(payload: dict, request: Request):
-    from backend import advanced_rag
+    from backend.rag_service import service as rag_svc
     owner = getattr(request.state, "anon_id", "anonymous")
     topic = payload.get("topic") or "General"
     finding = payload.get("finding") or ""
     if not finding:
         raise HTTPException(status_code=400, detail="Finding text is required.")
-    vstore = advanced_rag.get_vector_store()
-    vstore.add_research_memory(
+    mem_id = rag_svc.add_research_memory(
         owner_session=owner,
         topic=topic,
         finding=finding,
@@ -1601,22 +1580,25 @@ async def add_research_memory(payload: dict, request: Request):
         confidence=float(payload.get("confidence") or 0.8),
         metadata=payload.get("metadata")
     )
-    return {"success": True}
+    return {"success": True, "id": mem_id}
 
 
 @app.get("/api/files/{file_id}")
 async def rag_file_status(file_id: str, request: Request):
-    from backend import advanced_rag
+    from backend.rag_service import service as rag_svc
     owner = getattr(request.state, "anon_id", "anonymous")
-    vstore = advanced_rag.get_vector_store()
-    doc = vstore.get_document(file_id, owner_session=owner)
+    doc = rag_svc.get_document(file_id, owner_session=owner)
     if doc:
-        return {"id": doc["id"], "filename": doc["title"], "status": "ready", "chunks": doc.get("chunk_count", 0), "bytes": doc.get("byte_size", 0), "docType": doc.get("doc_type")}
-    if store.database_health() and getattr(store, "repo", None):
-        row = store.repo._query_one("SELECT document_id,original_filename,status,failure_reason,byte_size,updated_at FROM document_metadata WHERE document_id=%s AND owner_session=%s", (file_id, owner))
-        if row:
-            return {"id": str(row[0]), "filename": row[1], "status": row[2], "error": row[3], "bytes": row[4], "updatedAt": row[5].isoformat() if row[5] else None}
+        return {
+            "id": doc["id"],
+            "filename": doc.get("filename") or doc.get("title"),
+            "status": doc.get("status", "ready"),
+            "chunks": doc.get("chunk_count", 0),
+            "bytes": doc.get("byte_size", 0),
+            "docType": doc.get("doc_type")
+        }
     raise HTTPException(status_code=404, detail="File not found.")
+
 
 
 @app.get("/api/projects")
@@ -2045,148 +2027,6 @@ def download_report(project_id: str, fmt: str = Query("md")):
 @app.get("/api/finetuning/status")
 def get_finetuning_status():
     """Return comprehensive live status of the Qwen fine-tuning pipeline, artifacts, and local inference server."""
-    from pathlib import Path
-    
-    candidates = [
-        Path(__file__).resolve().parents[1],
-        Path(os.getcwd()),
-        Path(__file__).resolve().parent.parent,
-    ]
-    repo_root = candidates[0]
-    for c in candidates:
-        if (c / "training_artifacts").exists():
-            repo_root = c
-            break
-    
-    gen3_dir = repo_root / "training_artifacts" / "qwen3-17b-gen3-qlora"
-    gen2_dir = repo_root / "training_artifacts" / "qwen3-17b-qlora"
-    gen1_dir = repo_root / "training_artifacts" / "qwen3-06b-qlora"
-    
-    summary_gen3_file = gen3_dir / "training_summary.json"
-    summary_gen2_file = gen2_dir / "training_summary.json"
-    summary_gen1_file = gen1_dir / "training_summary.json"
-    
-    eval_gen3_file = repo_root / "training_artifacts" / "evaluation_report_gen3.json"
-    eval_gen2_file = repo_root / "training_artifacts" / "evaluation_report_gen2.json"
-    eval_gen1_file = repo_root / "training_artifacts" / "evaluation_report.json"
-    manifest_gen3_file = repo_root / "data" / "processed" / "manifest_gen3.json"
-    manifest_file = repo_root / "data" / "processed" / "manifest.json"
+    from backend import experiment_metadata
+    return experiment_metadata.get_versioned_telemetry()
 
-    def _read_json(p: Path):
-        if p.exists():
-            try:
-                return json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
-                return None
-        return None
-
-    summary_gen3 = _read_json(summary_gen3_file)
-    summary_gen2 = _read_json(summary_gen2_file)
-    summary_gen1 = _read_json(summary_gen1_file)
-
-    eval_report = _read_json(eval_gen3_file) or _read_json(eval_gen2_file) or _read_json(eval_gen1_file)
-    manifest = _read_json(manifest_gen3_file) or _read_json(manifest_file)
-
-    # Serverless fallback for Gen-3 telemetry when local filesystem artifacts are packaged in Lambda
-    if not summary_gen3 and (manifest and manifest.get("generation") == 3):
-        summary_gen3 = {
-            "model": "Qwen/Qwen3-1.7B",
-            "train_samples": 315,
-            "eval_samples": 35,
-            "parameters": {
-                "max_seq_length": 1024,
-                "batch_size": 1,
-                "gradient_accumulation_steps": 4,
-                "effective_batch_size": 4,
-                "learning_rate": 0.00018,
-                "lora_r": 16,
-                "lora_alpha": 32,
-                "quantization": "4-bit NF4 double quant"
-            },
-            "telemetry": {
-                "initial_loss": 2.2223,
-                "final_loss": 0.9024,
-                "steps_completed": 237,
-                "peak_vram_allocated_gib": 3.23,
-                "peak_vram_reserved_gib": 5.58,
-                "training_time_seconds": 662.65
-            }
-        }
-        if not eval_report:
-            eval_report = {
-                "base_metrics": {"eval_perplexity": 14.649, "average_benchmark_score": 80.6},
-                "finetuned_metrics": {"eval_perplexity": 3.848, "average_benchmark_score": 83.3}
-            }
-
-    # Check local inference server health
-    local_health = None
-    local_url = os.environ.get("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8001")
-    try:
-        req = urllib.request.Request(f"{local_url}/health", headers={"User-Agent": "Atlas-Backend"})
-        with urllib.request.urlopen(req, timeout=1.0) as resp:
-            if resp.status == 200:
-                local_health = json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        local_health = {
-            "status": "offline",
-            "hint": "Run `python scripts/serve_qlora.py --port 8001` to activate local inference on your RTX 5050 GPU."
-        }
-
-    gpu_info = {
-        "device": "NVIDIA GeForce RTX 5050 Laptop GPU",
-        "total_vram_gib": 7.93,
-        "cuda_available": True,
-        "blackwell_sm120": True,
-        "compute_dtype": "bfloat16",
-        "quantization": "4-bit NF4 (bitsandbytes)"
-    }
-
-    # Prefer Gen 3 if trained, else Gen 2, else Gen 1
-    has_gen3 = summary_gen3 is not None
-    has_gen2 = summary_gen2 is not None
-    
-    if has_gen3:
-        active_summary = summary_gen3
-        active_base = "Qwen/Qwen3-1.7B"
-        active_adapter = "training_artifacts/qwen3-17b-gen3-qlora"
-        active_gen = 3
-    elif has_gen2:
-        active_summary = summary_gen2
-        active_base = "Qwen/Qwen3-1.7B"
-        active_adapter = "training_artifacts/qwen3-17b-qlora"
-        active_gen = 2
-    else:
-        active_summary = summary_gen1
-        active_base = "Qwen/Qwen3-0.6B"
-        active_adapter = "training_artifacts/qwen3-06b-qlora"
-        active_gen = 1 if summary_gen1 else 0
-
-    return {
-        "status": "completed" if active_summary else "idle",
-        "generation": active_gen,
-        "base_model": active_base,
-        "adapter_model": active_adapter,
-        "gpu_info": gpu_info,
-        "training_summary": active_summary,
-        "generations": {
-            "gen1": {
-                "model": "Qwen/Qwen3-0.6B",
-                "adapter": "training_artifacts/qwen3-06b-qlora",
-                "summary": summary_gen1,
-            },
-            "gen2": {
-                "model": "Qwen/Qwen3-1.7B",
-                "adapter": "training_artifacts/qwen3-17b-qlora",
-                "summary": summary_gen2,
-            },
-            "gen3": {
-                "model": "Qwen/Qwen3-1.7B",
-                "adapter": "training_artifacts/qwen3-17b-gen3-qlora",
-                "summary": summary_gen3,
-            }
-        },
-        "eval_report": eval_report,
-        "manifest": manifest,
-        "local_inference_server": local_health,
-        "production_mode": "hybrid (Vercel Serverless + Local/Cloud GPU)"
-    }

@@ -2484,21 +2484,61 @@ def _handle_intent_message_impl(
             "lastTopic": sess.get("last_topic")
         }
 
-    # 6. DOCUMENT_ANALYSIS — not implemented; honest guidance.
+    # 6. DOCUMENT_ANALYSIS — full production RAG retrieval with citations
     elif intent == "DOCUMENT_ANALYSIS":
         store.clear_pending_action(sid)
-        resp_text = (
-            "Document and PDF analysis isn't wired into this deployment yet, so I "
-            "can't read an uploaded file. If you paste the text here (a few paragraphs "
-            "or more), I can produce an extractive summary right away — no model "
-            "connection required — and answer questions about it when an assistant "
-            "model is connected."
-        )
+        owner_session = sid.split(":")[0] if ":" in sid else sid
+        from backend.rag_service import service as rag_svc
+        rag_res = rag_svc.retrieve_context(message, owner_session=owner_session, limit=4, rag_mode="on")
+        citations = rag_res.get("citations", [])
+
+        if rag_res.get("chunks"):
+            context_text = rag_res.get("context_text", "")
+            system_prompt = (
+                "You are Atlas, an intelligent research assistant. "
+                "Analyze the user's question using the provided document evidence below. "
+                "Answer directly, concisely, and factually based on the text. "
+                "Cite the document source and page/section where applicable. "
+                "Do not make up facts not present in the document evidence.\n\n"
+                + context_text
+            )
+            resp_text = None
+            if any_provider_configured():
+                try:
+                    resp_text = query_llm(message, system_prompt, on_token=token_callback, timeout=25)
+                except Exception as exc:
+                    print(f"[RAG LLM ERROR] {exc}")
+
+            if not resp_text:
+                lines = ["Based on your indexed documents:", ""]
+                for i, c in enumerate(rag_res["chunks"], 1):
+                    src = c.get("source") or "Document"
+                    page_str = f" (Page {c['page']})" if c.get("page") else ""
+                    lines.append(f"**[{i}] {src}{page_str}**")
+                    lines.append(c["content"])
+                    lines.append("")
+                resp_text = "\n".join(lines).strip()
+        else:
+            docs = rag_svc.list_documents(owner_session=owner_session)
+            if docs:
+                resp_text = (
+                    f"I found {len(docs)} document(s) in your workspace ({', '.join(d['filename'] for d in docs[:3])}), "
+                    f"but could not find a relevant section matching your query: '{message}'. "
+                    "Could you specify a particular section, keyword, or page to look for?"
+                )
+            else:
+                resp_text = (
+                    "No documents have been uploaded to your session yet. "
+                    "You can upload PDF, DOCX, TXT, CSV, JSON, Markdown, or source code files using the upload button, "
+                    "and I will index them for semantic search and document analysis."
+                )
+
         store.update_session(sid, {"last_assistant_message": resp_text})
         return {
             "intent": intent,
             "taskType": "document_analysis",
             "response": resp_text,
+            "sources": citations,
             "action": "NONE",
             "projectId": active_project_id,
             "pendingAction": None,
