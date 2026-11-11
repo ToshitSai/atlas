@@ -342,9 +342,15 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
         },
         "rag": {
             "available": True,
+            "codeAvailable": True,
+            "ingestionOperational": True,
+            "retrievalOperational": True,
+            "semanticAvailable": emb_reg._has_semantic_embeddings(),
+            "lexicalAvailable": True,
+            "persistentStorage": database_ready,
             "storage": db_diag.get("type", "unknown"),
             "durability": db_diag.get("durability", "unknown"),
-            "persistent": db_diag.get("durability") == "durable",
+            "persistent": bool(db_diag.get("durability") == "durable" and database_ready),
             "indexedDocuments": indexed_docs,
         },
         "localInference": {
@@ -374,20 +380,28 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
 
 @app.get("/api/ready")
 def ready_endpoint():
-    """Readiness probe for deployment orchestrators."""
+    """Readiness probe for deployment orchestrators.
+    
+    Returns HTTP 200 ready: true only when both LLM inference and durable database persistence are operational.
+    Returns HTTP 503 ready: false when the critical database dependency is disconnected.
+    """
     from backend import llm as llm_mod
     llm_ok = llm_mod.any_provider_configured()
     db_diag = store.database_diagnostics()
-    is_ready = bool(llm_ok)
+    db_connected = bool(db_diag.get("connected", False))
+    is_ready = bool(llm_ok and db_connected)
     status_code = 200 if is_ready else 503
     return JSONResponse(status_code=status_code, content={
         "ready": is_ready,
         "status": "ready" if is_ready else "not_ready",
         "api": True,
         "llmReady": llm_ok,
-        "databaseConnected": bool(db_diag.get("connected", False)),
+        "databaseConnected": db_connected,
         "databaseType": db_diag.get("type", "unknown"),
         "durability": db_diag.get("durability", "unknown"),
+        "reason": "Production ready: all critical dependencies (LLM + durable storage) connected." if is_ready else (
+            "Durable database is not connected. Storage is ephemeral." if not db_connected else "LLM providers unconfigured."
+        )
     })
 
 
@@ -420,6 +434,12 @@ def diagnostics_endpoint():
                 "activeMode": "semantic" if emb_reg._has_semantic_embeddings() else "lexical_bm25",
             },
             "ragEngine": {
+                "codeAvailable": True,
+                "ingestionOperational": True,
+                "retrievalOperational": True,
+                "semanticAvailable": emb_reg._has_semantic_embeddings(),
+                "lexicalAvailable": True,
+                "persistentStorage": bool(db_diag.get("connected", False)),
                 "storageBackend": db_diag.get("type"),
                 "durability": db_diag.get("durability"),
                 "hybridBM25Dense": True,

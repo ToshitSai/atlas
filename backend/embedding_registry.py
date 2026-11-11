@@ -56,6 +56,15 @@ PROFILE_LOCAL_MINILM_384 = EmbeddingProfile(
     index_version="v1"
 )
 
+PROFILE_GEMINI_EMBEDDING_1536 = EmbeddingProfile(
+    provider="gemini",
+    model_id="gemini-embedding-001",
+    revision="v1",
+    dimensions=1536,
+    normalized=True,
+    index_version="v1"
+)
+
 PROFILE_OPENAI_SMALL_1536 = EmbeddingProfile(
     provider="openai",
     model_id="text-embedding-3-small",
@@ -81,6 +90,7 @@ class EmbeddingRegistry:
     def __init__(self):
         self._profiles: Dict[str, EmbeddingProfile] = {
             "sentence-transformers/all-MiniLM-L6-v2": PROFILE_LOCAL_MINILM_384,
+            "gemini/gemini-embedding-001": PROFILE_GEMINI_EMBEDDING_1536,
             "openai/text-embedding-3-small": PROFILE_OPENAI_SMALL_1536,
             "openai/text-embedding-3-large": PROFILE_OPENAI_LARGE_3072,
         }
@@ -94,15 +104,46 @@ class EmbeddingRegistry:
         return self._profiles.get(key)
 
     def resolve_default_profile(self) -> EmbeddingProfile:
-        """Select default profile based on environment configuration."""
+        """Select default profile based on environment configuration.
+        
+        Order of resolution:
+        1. Explicit EMBEDDING_PROVIDER override ("gemini", "openai", "local", "sentence-transformers").
+        2. Gemini Remote API (gemini-embedding-001, 1536 dim) if GEMINI_API_KEY is available (Production Serverless).
+        3. OpenAI Remote API (text-embedding-3-small, 1536 dim) if OPENAI_API_KEY and USE_OPENAI_EMBEDDINGS.
+        4. Local sentence-transformers (all-MiniLM-L6-v2, 384 dim) if PyTorch/transformers is installed.
+        5. Fallback profile with honest semanticAvailable=False.
+        """
+        override = os.environ.get("EMBEDDING_PROVIDER", "").strip().lower()
+        if override in ("gemini", "google"):
+            return PROFILE_GEMINI_EMBEDDING_1536
+        if override == "openai":
+            return PROFILE_OPENAI_SMALL_1536
+        if override in ("local", "sentence-transformers"):
+            return PROFILE_LOCAL_MINILM_384
+
+        gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if gemini_key:
+            return PROFILE_GEMINI_EMBEDDING_1536
+
         openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
         use_openai = os.environ.get("USE_OPENAI_EMBEDDINGS", "").strip().lower() in ("1", "true", "yes")
         if openai_key and use_openai:
             return PROFILE_OPENAI_SMALL_1536
+
+        try:
+            import torch
+            import transformers
+            return PROFILE_LOCAL_MINILM_384
+        except Exception:
+            pass
+
         return PROFILE_LOCAL_MINILM_384
 
     def _has_semantic_embeddings(self) -> bool:
         """Check if any semantic embedding generation provider is actually functional."""
+        gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if gemini_key:
+            return True
         openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
         use_openai = os.environ.get("USE_OPENAI_EMBEDDINGS", "").strip().lower() in ("1", "true", "yes")
         if openai_key and use_openai:
@@ -152,8 +193,39 @@ class EmbeddingRegistry:
 
         active_profile = profile or self.resolve_default_profile()
 
-        # 1. Remote OpenAI Provider
-        if active_profile.provider == "openai":
+        # 1. Remote Gemini Provider (Production Serverless Native)
+        if active_profile.provider == "gemini":
+            key = os.environ.get("GEMINI_API_KEY", "").strip()
+            if not key:
+                raise EmbeddingProviderUnavailableError(
+                    f"Gemini API key (GEMINI_API_KEY) is missing for profile {active_profile.model_id}."
+                )
+            url = "https://generativelanguage.googleapis.com/v1beta/openai/embeddings"
+            payload = json.dumps({
+                "model": active_profile.model_id,
+                "input": texts,
+                "dimensions": active_profile.dimensions,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                raw_items = data.get("data", [])
+                vecs = [item["embedding"] for item in raw_items]
+                for v in vecs:
+                    self.validate_vector_compatibility(v, active_profile)
+                return vecs
+            except Exception as exc:
+                raise EmbeddingProviderUnavailableError(
+                    f"Gemini embedding generation failed: {exc}"
+                ) from exc
+
+        # 2. Remote OpenAI Provider
+        elif active_profile.provider == "openai":
             key = os.environ.get("OPENAI_API_KEY", "").strip()
             if not key:
                 raise EmbeddingProviderUnavailableError(

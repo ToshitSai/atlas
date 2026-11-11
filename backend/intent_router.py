@@ -2575,13 +2575,34 @@ def _handle_intent_message_impl(
                     print(f"[RAG LLM ERROR] {exc}")
 
             if not resp_text:
-                q_terms = set(re.findall(r"\w{3,}", message.lower())) - {
-                    "what", "where", "when", "which", "whose", "is", "are", "was", "were",
-                    "the", "and", "for", "with", "about", "from", "document", "file"
+                instruction_stopwords = {
+                    "what", "where", "when", "which", "whose", "why", "how", "who", "whom",
+                    "is", "are", "was", "were", "be", "been", "being",
+                    "the", "and", "or", "for", "with", "about", "from", "into", "during", "including",
+                    "document", "documents", "file", "files", "text", "page", "pages",
+                    "compare", "comparison", "contrasting", "contrast", "difference", "differences", "versus", "vs",
+                    "summarize", "summary", "overview", "describe", "description", "explain", "explanation",
+                    "analyze", "analysis", "detail", "details", "tell", "give", "show", "list", "outline",
+                    "review", "similarity", "similarities", "between", "both", "all", "each", "projects", "project",
+                    "info", "information", "data", "report"
                 }
+                q_terms = set(re.findall(r"\w{3,}", message.lower())) - instruction_stopwords
                 chunk_text_lower = " ".join(c.get("content", "").lower() for c in rag_res["chunks"])
-                # If specific query keywords (e.g. food, favorite, color, etc.) are absent from all retrieved chunks, report missing info
-                missing_terms = [t for t in q_terms if t not in chunk_text_lower]
+
+                def _stem_match(term: str, target: str) -> bool:
+                    if term in target:
+                        return True
+                    stem = term
+                    for suffix in ("tion", "tions", "ting", "ted", "ed", "ing", "ly", "es", "s"):
+                        if term.endswith(suffix) and len(term) - len(suffix) >= 4:
+                            stem = term[:-len(suffix)]
+                            break
+                    if stem in target or (len(term) >= 5 and term[:4] in target):
+                        return True
+                    return False
+
+                # If specific query keywords (e.g. budget, revenue, price, etc.) are absent from all retrieved chunks, report missing info
+                missing_terms = [t for t in q_terms if not _stem_match(t, chunk_text_lower)]
                 if missing_terms:
                     src_names = ", ".join(sorted(set(c.get("source", "document") for c in rag_res["chunks"])))
                     resp_text = f"The provided document ({src_names}) does not contain information regarding: '{message}'."
