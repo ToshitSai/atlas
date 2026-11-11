@@ -19,12 +19,56 @@ import math
 import os
 from pathlib import Path
 import sqlite3
+import struct
 import threading
 import time
 from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
 import uuid
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+def vector_to_bytes(vec: List[float]) -> bytes:
+    if not vec:
+        return b""
+    if np is not None:
+        return np.array(vec, dtype=np.float32).tobytes()
+    return struct.pack(f"{len(vec)}f", *vec)
+
+def bytes_to_vector(blob: bytes) -> List[float]:
+    if not blob:
+        return []
+    if np is not None:
+        return np.frombuffer(blob, dtype=np.float32).tolist()
+    count = len(blob) // 4
+    return list(struct.unpack(f"{count}f", blob[:count * 4]))
+
+def vector_norm(vec: List[float]) -> float:
+    if not vec:
+        return 0.0
+    if np is not None:
+        return float(np.linalg.norm(np.array(vec, dtype=np.float32)))
+    return math.sqrt(sum(x * x for x in vec))
+
+def vector_cosine_sim(v1: List[float], norm1: float, v2: List[float]) -> float:
+    if not v1 or not v2 or len(v1) != len(v2) or norm1 <= 0.0:
+        return 0.0
+    if np is not None:
+        c_arr = np.array(v2, dtype=np.float32)
+        c_norm = float(np.linalg.norm(c_arr))
+        if c_norm > 0:
+            return float(np.dot(np.array(v1, dtype=np.float32), c_arr) / (norm1 * c_norm))
+        return 0.0
+    dot = 0.0
+    norm2 = 0.0
+    for a, b in zip(v1, v2):
+        dot += a * b
+        norm2 += b * b
+    if norm2 <= 0.0:
+        return 0.0
+    return float(dot / (norm1 * math.sqrt(norm2)))
 
 from backend.embedding_registry import (
     EmbeddingProfile,
@@ -34,8 +78,21 @@ from backend.embedding_registry import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SQLITE_PATH = ROOT / "database" / "atlas_vector_store.db"
-DEFAULT_SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+def get_default_sqlite_path() -> Path:
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return Path("/tmp") / "atlas_vector_store.db"
+    default_p = ROOT / "database" / "atlas_vector_store.db"
+    try:
+        default_p.parent.mkdir(parents=True, exist_ok=True)
+        test_file = default_p.parent / f".write_test_{os.getpid()}"
+        test_file.touch()
+        test_file.unlink()
+        return default_p
+    except Exception:
+        return Path("/tmp") / "atlas_vector_store.db"
+
+DEFAULT_SQLITE_PATH = get_default_sqlite_path()
 
 
 class RAGStorageBackend(Protocol):
@@ -87,17 +144,30 @@ class RAGStorageBackend(Protocol):
 class SQLiteRAGStorage:
     """Thread-safe SQLite persistent RAG storage."""
 
-    def __init__(self, db_path: Path = DEFAULT_SQLITE_PATH):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[Path] = None):
+        if db_path is None:
+            db_path = get_default_sqlite_path()
+        self.db_path = Path(db_path)
         self._lock = threading.Lock()
         self._init_db()
 
     def _init_db(self):
         with self._lock:
+            try:
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                self.db_path = Path("/tmp") / "atlas_vector_store.db"
+
             conn = sqlite3.connect(str(self.db_path))
             cur = conn.cursor()
-            cur.execute("PRAGMA journal_mode=WAL;")
-            cur.execute("PRAGMA foreign_keys=ON;")
+            try:
+                cur.execute("PRAGMA journal_mode=WAL;")
+            except Exception:
+                pass
+            try:
+                cur.execute("PRAGMA foreign_keys=ON;")
+            except Exception:
+                pass
 
             # 1. Documents
             cur.execute("""
@@ -282,7 +352,7 @@ class SQLiteRAGStorage:
                     vec_blob = None
                     dim = None
                     if vectors and i < len(vectors) and vectors[i] is not None:
-                        vec_blob = np.array(vectors[i], dtype=np.float32).tobytes()
+                        vec_blob = vector_to_bytes(vectors[i])
                         dim = len(vectors[i])
 
                     chunk_id = c.get("chunk_id") or f"{document_id}-{i}"
@@ -486,15 +556,13 @@ class SQLiteRAGStorage:
                 # 2. Dense Cosine Similarity Scoring (if query vector provided)
                 dense_scores: Dict[str, float] = {}
                 if query_vector:
-                    q_arr = np.array(query_vector, dtype=np.float32)
-                    q_norm = np.linalg.norm(q_arr)
+                    q_norm = vector_norm(query_vector)
                     for r in chunk_records:
                         vec_blob = r["embedding_vector"]
                         if vec_blob:
-                            c_arr = np.frombuffer(vec_blob, dtype=np.float32)
-                            c_norm = np.linalg.norm(c_arr)
-                            if q_norm > 0 and c_norm > 0:
-                                sim = float(np.dot(q_arr, c_arr) / (q_norm * c_norm))
+                            c_vec = bytes_to_vector(vec_blob)
+                            if c_vec and q_norm > 0:
+                                sim = vector_cosine_sim(query_vector, q_norm, c_vec)
                                 dense_scores[r["chunk_id"]] = max(0.0, sim)
                             else:
                                 dense_scores[r["chunk_id"]] = 0.0
