@@ -7,23 +7,32 @@ import json
 import urllib.request
 import urllib.error
 import subprocess
+import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PY_EXE = ROOT / "training_env" / "Scripts" / "python.exe"
 
-def run_smoke_test():
-    print("[1/5] Launching local Qwen inference server on port 8001...")
+def run_smoke_test(adapter_path: str = None, model_name: str = None):
+    adapter = adapter_path or str(ROOT / "training_artifacts" / "qwen3-17b-qlora")
+    if not Path(adapter).exists():
+        adapter = str(ROOT / "training_artifacts" / "qwen3-06b-qlora")
+
+    print(f"[1/5] Launching local Qwen inference server with adapter: {adapter} on port 8001...")
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     
+    cmd = [
+        str(PY_EXE),
+        str(ROOT / "scripts" / "serve_qlora.py"),
+        "--port", "8001",
+        "--adapter", adapter
+    ]
+    if model_name:
+        cmd.extend(["--model", model_name])
+
     server_proc = subprocess.Popen(
-        [
-            str(PY_EXE),
-            str(ROOT / "scripts" / "serve_qlora.py"),
-            "--port", "8001",
-            "--adapter", str(ROOT / "training_artifacts" / "qwen3-06b-qlora")
-        ],
+        cmd,
         cwd=str(ROOT),
         env=env,
         stdout=subprocess.PIPE,
@@ -38,7 +47,7 @@ def run_smoke_test():
         print("[2/5] Waiting for server initialization...")
         healthy = False
         start_wait = time.time()
-        while time.time() - start_wait < 60:
+        while time.time() - start_wait < 90:
             if server_proc.poll() is not None:
                 out = server_proc.stdout.read()
                 raise RuntimeError(f"Server exited prematurely with code {server_proc.returncode}:\n{out}")
@@ -47,14 +56,14 @@ def run_smoke_test():
                     if resp.status == 200:
                         data = json.loads(resp.read().decode())
                         if data.get("status") == "healthy":
-                            print(f"Server is healthy! Device: {data.get('device')}, VRAM: {data.get('vram_allocated_mb')}MB")
+                            print(f"Server is healthy! Device: {data.get('device')}, VRAM: {data.get('vram_allocated_mb')}MB, Model: {data.get('model')}")
                             healthy = True
                             break
             except Exception:
                 time.sleep(1)
 
         if not healthy:
-            raise TimeoutError("Server failed to become healthy within 60 seconds.")
+            raise TimeoutError("Server failed to become healthy within 90 seconds.")
 
         # Test non-streaming
         print("[3/5] Testing standard completion (/v1/chat/completions)...")
@@ -62,7 +71,7 @@ def run_smoke_test():
         req_data = {
             "model": "local-qwen",
             "messages": [{"role": "user", "content": "What is Python?"}],
-            "max_tokens": 48,
+            "max_tokens": 64,
             "stream": False
         }
         req = urllib.request.Request(
@@ -105,7 +114,7 @@ def run_smoke_test():
         from backend.llm import call_local_api
         local_resp = call_local_api("Who created you?", return_details=True)
         print(f"backend.llm call_local_api succeeded:")
-        print(f"  Text: {local_resp.get('text', '').strip()}")
+        print(f"  Text: {local_resp.get('text', '').strip()[:100]}...")
         print(f"  Model: {local_resp.get('model')}")
         print(f"  Gen Time: {local_resp.get('generation_time')}s")
 
@@ -121,4 +130,8 @@ def run_smoke_test():
         print("Test server shutdown complete.")
 
 if __name__ == "__main__":
-    run_smoke_test()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--adapter", default=None)
+    parser.add_argument("--model", default=None)
+    args = parser.parse_args()
+    run_smoke_test(adapter_path=args.adapter, model_name=args.model)

@@ -1969,22 +1969,36 @@ def get_finetuning_status():
     """Return comprehensive live status of the Qwen fine-tuning pipeline, artifacts, and local inference server."""
     from pathlib import Path
     repo_root = Path(__file__).resolve().parents[1]
-    artifacts_dir = repo_root / "training_artifacts" / "qwen3-06b-qlora"
-    summary_file = artifacts_dir / "training_summary.json"
-    eval_file = repo_root / "training_artifacts" / "evaluation_report.json"
+    
+    gen2_dir = repo_root / "training_artifacts" / "qwen3-17b-qlora"
+    gen1_dir = repo_root / "training_artifacts" / "qwen3-06b-qlora"
+    
+    summary_gen2_file = gen2_dir / "training_summary.json"
+    summary_gen1_file = gen1_dir / "training_summary.json"
+    
+    eval_gen2_file = repo_root / "training_artifacts" / "evaluation_report_gen2.json"
+    eval_gen1_file = repo_root / "training_artifacts" / "evaluation_report.json"
     manifest_file = repo_root / "data" / "processed" / "manifest.json"
 
-    training_summary = None
-    if summary_file.exists():
+    summary_gen2 = None
+    if summary_gen2_file.exists():
         try:
-            training_summary = json.loads(summary_file.read_text(encoding="utf-8"))
+            summary_gen2 = json.loads(summary_gen2_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    summary_gen1 = None
+    if summary_gen1_file.exists():
+        try:
+            summary_gen1 = json.loads(summary_gen1_file.read_text(encoding="utf-8"))
         except Exception:
             pass
 
     eval_report = None
-    if eval_file.exists():
+    active_eval_file = eval_gen2_file if eval_gen2_file.exists() else eval_gen1_file
+    if active_eval_file.exists():
         try:
-            eval_report = json.loads(eval_file.read_text(encoding="utf-8"))
+            eval_report = json.loads(active_eval_file.read_text(encoding="utf-8"))
         except Exception:
             pass
 
@@ -2018,12 +2032,31 @@ def get_finetuning_status():
         "quantization": "4-bit NF4 (bitsandbytes)"
     }
 
+    # Prefer Gen 2 if trained, else Gen 1
+    has_gen2 = summary_gen2 is not None
+    active_summary = summary_gen2 if has_gen2 else summary_gen1
+    active_base = "Qwen/Qwen3-1.7B" if has_gen2 else "Qwen/Qwen3-0.6B"
+    active_adapter = "training_artifacts/qwen3-17b-qlora" if has_gen2 else "training_artifacts/qwen3-06b-qlora"
+
     return {
-        "status": "completed" if training_summary else "idle",
-        "base_model": "Qwen/Qwen3-0.6B",
-        "adapter_model": "training_artifacts/qwen3-06b-qlora",
+        "status": "completed" if active_summary else "idle",
+        "generation": 2 if has_gen2 else (1 if summary_gen1 else 0),
+        "base_model": active_base,
+        "adapter_model": active_adapter,
         "gpu_info": gpu_info,
-        "training_summary": training_summary,
+        "training_summary": active_summary,
+        "generations": {
+            "gen1": {
+                "model": "Qwen/Qwen3-0.6B",
+                "adapter": "training_artifacts/qwen3-06b-qlora",
+                "summary": summary_gen1,
+            },
+            "gen2": {
+                "model": "Qwen/Qwen3-1.7B",
+                "adapter": "training_artifacts/qwen3-17b-qlora",
+                "summary": summary_gen2,
+            }
+        },
         "eval_report": eval_report,
         "manifest": manifest,
         "local_inference_server": local_health,

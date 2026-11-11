@@ -25,6 +25,10 @@ except ImportError:
     torch = None
 
 ROOT = Path(__file__).resolve().parents[1]
+root_str = str(ROOT)
+for p in [root_str, "", "."]:
+    if p in sys.path:
+        sys.path.remove(p)
 DEFAULT_HF_CACHE = Path.home() / ".cache" / "huggingface" / "hub"
 
 
@@ -102,6 +106,8 @@ def main() -> int:
 
     # Load configuration
     cfg_path = Path(args.config)
+    if not cfg_path.is_absolute():
+        cfg_path = ROOT / cfg_path
     cfg: Dict[str, Any] = {}
     if cfg_path.exists():
         try:
@@ -109,11 +115,23 @@ def main() -> int:
         except Exception:
             cfg = {}
 
-    model_raw = args.model or cfg.get("model_name", "Qwen/Qwen3-0.6B")
+    model_raw = args.model or cfg.get("model_name", "Qwen/Qwen3-1.7B")
     model_resolved = resolve_model_path(model_raw)
 
-    output_dir = args.output_dir or cfg.get("output_dir", f"training_artifacts/{Path(model_raw).name}-qlora")
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    raw_output_dir = args.output_dir or cfg.get("output_dir", f"training_artifacts/{Path(model_raw).name.lower()}-qlora")
+    output_path = Path(raw_output_dir)
+    if not output_path.is_absolute():
+        output_path = ROOT / output_path
+    output_dir = str(output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    train_path = Path(args.train_file)
+    if not train_path.is_absolute():
+        train_path = ROOT / train_path
+
+    eval_path = Path(args.eval_file)
+    if not eval_path.is_absolute():
+        eval_path = ROOT / eval_path
 
     max_seq_len = args.max_seq_len or cfg.get("max_seq_length", 1024)
     batch_size = args.batch_size or cfg.get("per_device_train_batch_size", 1)
@@ -129,7 +147,12 @@ def main() -> int:
     max_steps = args.max_steps if args.max_steps is not None else (int(cfg.get("smoke_test", {}).get("max_steps", 20)) if smoke else -1)
 
     # Preflight
-    min_vram = 0.8 if "0.6B" in model_raw or "0.5B" in model_raw else 6.0
+    if "0.6B" in model_raw or "0.5B" in model_raw:
+        min_vram = 0.8
+    elif "1.7B" in model_raw or "1.5B" in model_raw or "2B" in model_raw or "3B" in model_raw:
+        min_vram = 2.0
+    else:
+        min_vram = 5.0
     vram_stats = preflight_vram_check(torch, min_free_gib=min_vram)
 
     print("\n--- Training Parameters ---", flush=True)
@@ -169,8 +192,8 @@ def main() -> int:
     model.config.use_cache = False
 
     # Datasets
-    print(f"[Data] Loading train from {args.train_file} and eval from {args.eval_file}...", flush=True)
-    ds = load_dataset("json", data_files={"train": args.train_file, "eval": args.eval_file})
+    print(f"[Data] Loading train from {train_path} and eval from {eval_path}...", flush=True)
+    ds = load_dataset("json", data_files={"train": str(train_path), "eval": str(eval_path)})
 
     def format_chatml(example: Dict[str, Any]) -> Dict[str, str]:
         messages = example["messages"]
