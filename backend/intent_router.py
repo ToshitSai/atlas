@@ -751,6 +751,9 @@ _DOCUMENT_TRIGGERS = (
     "summarize this pdf", "summarise this pdf", "read this pdf", "this document",
     "summarize the document", "summarize this document", "analyze this document",
     "extract from pdf", "this pdf", "summarize these notes", "read my resume",
+    "in this document", "in the document", "in the pdf", "according to the document",
+    "according to the file", "what does the doc say", "from the file", "from the document",
+    "in the uploaded document", "in the uploaded file", "in my document", "in my notes",
 )
 
 # Topics that are programming languages / code-ish, so a bare "show me an
@@ -1509,8 +1512,10 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
         f"{history_ctx}{kb_seed}"
         "Treat the history above as context only. The CURRENT USER MESSAGE below "
         "is authoritative and must be answered; do not answer an earlier question. "
-        "Answer it directly and completely in natural English. If it asks 'why' "
-        "or 'how', give the actual reasoning — not just a definition. Resolve "
+        "Answer it directly and completely in natural English. "
+        "If the user message is a bare topic, concept, or entity name (such as 'apple', 'python', or 'linux'), "
+        "provide a clear, comprehensive explanation of that topic or entity. "
+        "If it asks 'why' or 'how', give the actual reasoning — not just a definition. Resolve "
         "pronouns using prior turns only when the current message has no explicit subject.\n"
         f"CURRENT USER MESSAGE: {message}\n{variation_instruction}"
     )
@@ -1569,6 +1574,15 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
         return llm_answer.strip()
     if known:
         return known
+    try:
+        from backend.web_search import search_web
+        search_query = topic or message
+        web_hits = search_web(search_query, limit=3)
+        if web_hits and web_hits[0].get("snippet"):
+            hit = web_hits[0]
+            return f"{hit['snippet']}\n\nSource: {hit['url']}"
+    except Exception:
+        pass
     return "I couldn't reach the AI service just now. Please try again."
 
 
@@ -1603,6 +1617,7 @@ def handle_intent_message(
     token_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     variation_instruction: str = "",
+    owner_session: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1637,7 +1652,8 @@ def handle_intent_message(
             result = _handle_intent_message_impl(message, active_project_id, session_id,
                                                  payload_pending_action, payload_last_topic,
                                                  conversation_history, activity_callback,
-                                                 token_callback, cancel_check, variation_instruction)
+                                                 token_callback, cancel_check, variation_instruction,
+                                                 owner_session=owner_session)
         # The API preserves its existing response shape and adds an optional,
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
@@ -1663,9 +1679,11 @@ def _handle_intent_message_impl(
     token_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     variation_instruction: str = "",
+    owner_session: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
+    owner = owner_session or (sid.split(":")[0] if ":" in sid else sid)
     sess = _best_effort_store("get_session", get_session, sid) or {}
     history_topic = _history_last_topic(conversation_history)
     if history_topic and not (payload_last_topic or sess.get("last_topic")):
@@ -1715,6 +1733,29 @@ def _handle_intent_message_impl(
 
     intent = classify_intent(message, active_project_id, sid, payload_pending_action,
                              payload_last_topic or history_topic)
+
+    # Check if the user has indexed documents in this workspace/session.
+    # If documents exist, and the query is not a casual greeting, pure math, or research control,
+    # evaluate whether this is a RAG query (matches document triggers or retrieved chunks).
+    from backend.rag_service import service as rag_svc
+    user_has_docs = False
+    try:
+        user_has_docs = bool(rag_svc.list_documents(owner_session=owner))
+    except Exception as e:
+        print(f"[RAG LIST WARNING] {e}")
+
+    if user_has_docs:
+        msg_clean_nopunct = re.sub(r'[^\w\s]', '', msg_clean).strip()
+        is_greeting = msg_clean_nopunct in {"hi", "hello", "hey", "how are you", "who are you", "good morning", "good evening", "good afternoon"}
+        is_pure_math = intent == "MATHEMATICS" or (intent == "EXPLANATION" and any(op in msg_clean for op in [" + ", " - ", " * ", " / ", " = "]) and re.search(r"\d", msg_clean))
+        is_control = intent in ("RESEARCH_CONTROL", "CONFIRM_PENDING_ACTION")
+        explicit_search = intent == "WEB_SEARCH" or any(s in msg_clean for s in ["search the web", "search online", "latest news on"])
+
+        if not (is_greeting or is_pure_math or is_control or explicit_search):
+            doc_triggered = any(t in msg_clean for t in _DOCUMENT_TRIGGERS)
+            rag_probe = rag_svc.retrieve_context(message, owner_session=owner, limit=4, rag_mode="auto")
+            if rag_probe.get("chunks") or doc_triggered:
+                intent = "DOCUMENT_ANALYSIS"
 
     # The classification fallback already spent LLM budget without a match;
     # remember that so the answer path below does not burn the remaining
@@ -2487,7 +2528,7 @@ def _handle_intent_message_impl(
     # 6. DOCUMENT_ANALYSIS — full production RAG retrieval with citations
     elif intent == "DOCUMENT_ANALYSIS":
         store.clear_pending_action(sid)
-        owner_session = sid.split(":")[0] if ":" in sid else sid
+        owner_session = owner if owner else (sid.split(":")[0] if ":" in sid else sid)
         from backend.rag_service import service as rag_svc
         rag_res = rag_svc.retrieve_context(message, owner_session=owner_session, limit=4, rag_mode="on")
         citations = rag_res.get("citations", [])
@@ -2496,10 +2537,14 @@ def _handle_intent_message_impl(
             context_text = rag_res.get("context_text", "")
             system_prompt = (
                 "You are Atlas, an intelligent research assistant. "
-                "Analyze the user's question using the provided document evidence below. "
-                "Answer directly, concisely, and factually based on the text. "
-                "Cite the document source and page/section where applicable. "
-                "Do not make up facts not present in the document evidence.\n\n"
+                "Analyze the user's question using ONLY the provided document evidence below.\n"
+                "Answer directly, concisely, and factually based on the text.\n"
+                "Cite the document source and page/section where applicable.\n"
+                "CRITICAL GROUNDING RULES:\n"
+                "1. Base your answer strictly on the facts provided in the document evidence below.\n"
+                "2. If the document evidence does NOT contain the answer or does not mention the requested information, "
+                "you must explicitly state that the document does not contain that information.\n"
+                "3. Do NOT invent, assume, or extrapolate facts that are not present in the evidence.\n\n"
                 + context_text
             )
             resp_text = None
@@ -2510,14 +2555,25 @@ def _handle_intent_message_impl(
                     print(f"[RAG LLM ERROR] {exc}")
 
             if not resp_text:
-                lines = ["Based on your indexed documents:", ""]
-                for i, c in enumerate(rag_res["chunks"], 1):
-                    src = c.get("source") or "Document"
-                    page_str = f" (Page {c['page']})" if c.get("page") else ""
-                    lines.append(f"**[{i}] {src}{page_str}**")
-                    lines.append(c["content"])
-                    lines.append("")
-                resp_text = "\n".join(lines).strip()
+                q_terms = set(re.findall(r"\w{3,}", message.lower())) - {
+                    "what", "where", "when", "which", "whose", "is", "are", "was", "were",
+                    "the", "and", "for", "with", "about", "from", "document", "file"
+                }
+                chunk_text_lower = " ".join(c.get("content", "").lower() for c in rag_res["chunks"])
+                # If specific query keywords (e.g. food, favorite, color, etc.) are absent from all retrieved chunks, report missing info
+                missing_terms = [t for t in q_terms if t not in chunk_text_lower]
+                if missing_terms:
+                    src_names = ", ".join(sorted(set(c.get("source", "document") for c in rag_res["chunks"])))
+                    resp_text = f"The provided document ({src_names}) does not contain information regarding: '{message}'."
+                else:
+                    lines = ["Based on your indexed documents:", ""]
+                    for i, c in enumerate(rag_res["chunks"], 1):
+                        src = c.get("source") or "Document"
+                        page_str = f" (Page {c['page']})" if c.get("page") else ""
+                        lines.append(f"**[{i}] {src}{page_str}**")
+                        lines.append(c["content"])
+                        lines.append("")
+                    resp_text = "\n".join(lines).strip()
         else:
             docs = rag_svc.list_documents(owner_session=owner_session)
             if docs:
@@ -2542,7 +2598,13 @@ def _handle_intent_message_impl(
             "action": "NONE",
             "projectId": active_project_id,
             "pendingAction": None,
-            "lastTopic": sess.get("last_topic")
+            "lastTopic": sess.get("last_topic"),
+            "rag": {
+                "active": True,
+                "chunks_retrieved": len(rag_res.get("chunks", [])),
+                "documents_matched": len(citations),
+                "sources": [c.get("source") for c in citations if isinstance(c, dict)],
+            }
         }
 
     # 7. RESEARCH_FOLLOWUP (context & pronoun resolution about the active study)

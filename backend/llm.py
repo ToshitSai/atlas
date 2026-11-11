@@ -172,59 +172,82 @@ def call_openai_api(prompt: str, system_prompt: Optional[str] = None, timeout: i
         print(f"[LLM Client Warning] OpenAI call failed after {time.monotonic() - start:.2f}s: {e}")
         return None
 
+def _gemini_candidate_models() -> List[str]:
+    """Return ordered list of Gemini model candidates for robust fallback.
+    
+    If the primary model hits 429 quota exhaustion (e.g. 20 req/day limit on free-tier 2.5-flash)
+    or transient 503, the caller falls through to unexhausted model pools.
+    """
+    configured = (os.environ.get("GEMINI_MODEL") or "").strip()
+    defaults = ["gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-2.5-flash"]
+    candidates = []
+    if configured:
+        candidates.append(configured)
+    for m in defaults:
+        if m not in candidates:
+            candidates.append(m)
+    return candidates
+
 def call_gemini_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return None
 
-    start = time.monotonic()
-    try:
-        model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        
-        full_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-        effective_max_tokens = max_tokens or int(os.environ.get("GEMINI_MAX_TOKENS", "8192"))
-
-        payload = {
-            "contents": [
-                {"role": "user", "parts": [{"text": full_text}]}
-            ],
-            "generationConfig": {
-                "maxOutputTokens": effective_max_tokens,
-                "temperature": 0.2
-            }
+    full_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+    effective_max_tokens = max_tokens or int(os.environ.get("GEMINI_MAX_TOKENS", "8192"))
+    payload = {
+        "contents": [
+            {"role": "user", "parts": [{"text": full_text}]}
+        ],
+        "generationConfig": {
+            "maxOutputTokens": effective_max_tokens,
+            "temperature": 0.2
         }
+    }
+    headers = {"Content-Type": "application/json"}
+    data_bytes = json.dumps(payload).encode("utf-8")
 
-        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            candidate = res_data["candidates"][0]
-            text = candidate["content"]["parts"][0]["text"]
-            finish_reason_raw = candidate.get("finishReason", "STOP")
-            finish_reason = "length" if finish_reason_raw in ("MAX_TOKENS", "LENGTH") else "stop"
-            usage = res_data.get("usageMetadata", {})
-            in_tokens = usage.get("promptTokenCount", len(full_text) // 4)
-            out_tokens = usage.get("candidatesTokenCount", len(text) // 4)
+    models = _gemini_candidate_models()
+    for model in models:
+        start = time.monotonic()
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            req = urllib.request.Request(url, data=data_bytes, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                candidates = res_data.get("candidates", [])
+                if not candidates:
+                    continue
+                candidate = candidates[0]
+                parts = candidate.get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                if not text:
+                    continue
+                finish_reason_raw = candidate.get("finishReason", "STOP")
+                finish_reason = "length" if finish_reason_raw in ("MAX_TOKENS", "LENGTH") else "stop"
+                usage = res_data.get("usageMetadata", {})
+                in_tokens = usage.get("promptTokenCount", len(full_text) // 4)
+                out_tokens = usage.get("candidatesTokenCount", len(text) // 4)
 
-            print(f"[LLM TIMING] Gemini ({model}) responded in {time.monotonic() - start:.2f}s | Tokens: in={in_tokens}, out={out_tokens}, finish={finish_reason}")
+                print(f"[LLM TIMING] Gemini ({model}) responded in {time.monotonic() - start:.2f}s | Tokens: in={in_tokens}, out={out_tokens}, finish={finish_reason}")
 
-            if return_details:
-                return {
-                    "text": text,
-                    "finish_reason": finish_reason,
-                    "input_tokens": in_tokens,
-                    "output_tokens": out_tokens,
-                    "requested_output_tokens": effective_max_tokens,
-                    "model_context_limit": 1000000,
-                    "provider": "gemini",
-                    "model": model,
-                    "generation_time": round(time.monotonic() - start, 2)
-                }
-            return text
-    except Exception as e:
-        print(f"[LLM Client Warning] Gemini call failed after {time.monotonic() - start:.2f}s: {e}")
-        return None
+                if return_details:
+                    return {
+                        "text": text,
+                        "finish_reason": finish_reason,
+                        "input_tokens": in_tokens,
+                        "output_tokens": out_tokens,
+                        "requested_output_tokens": effective_max_tokens,
+                        "model_context_limit": 1000000,
+                        "provider": "gemini",
+                        "model": model,
+                        "generation_time": round(time.monotonic() - start, 2)
+                    }
+                return text
+        except Exception as e:
+            print(f"[LLM Client Warning] Gemini ({model}) call failed after {time.monotonic() - start:.2f}s: {e}")
+            continue
+    return None
 
 def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, return_details: bool = False) -> Any:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -240,7 +263,7 @@ def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout
             "anthropic-version": "2023-06-01"
         }
 
-        model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-5-20250929"
+        model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-3-5-sonnet-latest"
         effective_max_tokens = max_tokens or int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096"))
 
         payload = {
@@ -490,40 +513,7 @@ def stream_mistral_api(prompt: str, system_prompt: Optional[str] = None, timeout
 
 def stream_gemini_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT,
                       max_tokens: Optional[int] = None, on_token: Optional[Callable[[str], None]] = None) -> Optional[str]:
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return None
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    chunks: List[str] = []
-    try:
-        url = (f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
-               f":streamGenerateContent?alt=sse&key={api_key}")
-        headers = {"Content-Type": "application/json"}
-        full_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": full_text}]}],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens or int(os.environ.get("GEMINI_MAX_TOKENS", "8192")),
-                "temperature": 0.2,
-            },
-        }
-        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            for obj in _iter_sse_json(response):
-                try:
-                    parts = obj["candidates"][0]["content"].get("parts", [])
-                except (KeyError, IndexError, TypeError):
-                    parts = []
-                for part in parts:
-                    t = part.get("text") if isinstance(part, dict) else None
-                    if t:
-                        chunks.append(t)
-                        _emit(on_token, t)
-    except Exception as e:
-        print(f"[LLM Stream Warning] Gemini streaming failed: {e}")
-        return "".join(chunks) if chunks else None
-    text = "".join(chunks)
-    return text or None
+    return _stream_gemini(prompt, system_prompt, on_token or (lambda _: None), timeout=timeout, max_tokens=max_tokens)
 
 
 def stream_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout: int = _DEFAULT_TIMEOUT,
@@ -788,45 +778,57 @@ def _stream_gemini(prompt: str, system_prompt: Optional[str], on_token: Callable
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
-    headers = {"Content-Type": "application/json"}
     full_text = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-    payload = {"contents": [{"role": "user", "parts": [{"text": full_text}]}], "generationConfig": {"maxOutputTokens": max_tokens or 8192, "temperature": 0.2}}
-    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-    collected = []
-    last_len = 0
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            for line in resp:
-                line_str = line.decode("utf-8").strip()
-                if not line_str.startswith("data: "):
-                    continue
-                data_str = line_str[6:].strip()
-                try:
-                    chunk = json.loads(data_str)
-                    parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                    text_acc = "".join(p.get("text", "") for p in parts)
-                    if len(text_acc) > last_len:
-                        delta = text_acc[last_len:]
-                        last_len = len(text_acc)
-                        collected.append(delta)
-                        on_token(delta)
-                except Exception:
-                    pass
-    except Exception:
-        if collected:
-            return "".join(collected)
-        raise
-    res = "".join(collected)
-    return res if res.strip() else None
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": full_text}]}],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens or int(os.environ.get("GEMINI_MAX_TOKENS", "8192")),
+            "temperature": 0.2
+        }
+    }
+    headers = {"Content-Type": "application/json"}
+    data_bytes = json.dumps(payload).encode("utf-8")
+
+    models = _gemini_candidate_models()
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
+        req = urllib.request.Request(url, data=data_bytes, headers=headers)
+        collected = []
+        last_len = 0
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                for line in resp:
+                    line_str = line.decode("utf-8").strip()
+                    if not line_str.startswith("data: "):
+                        continue
+                    data_str = line_str[6:].strip()
+                    try:
+                        chunk = json.loads(data_str)
+                        parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                        text_acc = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                        if len(text_acc) > last_len:
+                            delta = text_acc[last_len:]
+                            last_len = len(text_acc)
+                            collected.append(delta)
+                            on_token(delta)
+                    except Exception:
+                        pass
+            res = "".join(collected)
+            if res.strip():
+                return res
+        except Exception as e:
+            if collected:
+                return "".join(collected)
+            print(f"[LLM Stream Warning] Gemini ({model}) stream attempt failed: {e}")
+            continue
+    return None
 
 
 def _stream_anthropic(prompt: str, system_prompt: Optional[str], on_token: Callable[[str], None], timeout: int, max_tokens: Optional[int]) -> Optional[str]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-5-20250929"
+    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-3-5-sonnet-latest"
     url = "https://api.anthropic.com/v1/messages"
     headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
     payload = {"model": model, "max_tokens": max_tokens or 4096, "messages": [{"role": "user", "content": prompt}], "stream": True}

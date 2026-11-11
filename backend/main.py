@@ -741,6 +741,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         token_callback=token_callback,
         cancel_check=cancel_check,
         variation_instruction=("Write a fresh formulation. Do not repeat the previous answer's wording or structure:\n" + str(payload.get("previousAnswer") or "")) if payload.get("variation") else "",
+        owner_session=anon_id,
         )
         if decomposition.get("mixed"):
             res["taskDecomposition"] = decomposition
@@ -1171,6 +1172,12 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         "responseToMessageId": user_message_id or None,
         "messageId": response_message_id,
         "conversationId": conversation_id,
+        "diagnostics": {
+            "intent": res.get("intent"),
+            "taskType": res.get("taskType"),
+            "provider": llm_mod.effective_provider_label(saved_settings.get("llmProvider", "")),
+            "rag": res.get("rag", {"active": False, "chunks_retrieved": 0}),
+        },
     })
     print(
         f"[CHAT RESPONSE] conversation_id={conversation_id} "

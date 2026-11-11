@@ -132,7 +132,7 @@ _TASK_CAPABILITY_LABEL: Dict[str, str] = {
 #  latency_tier[1=fastest], cost_tier[1=cheapest], reasoning_tier[3=strongest],
 #  coding_tier, capabilities, strengths)
 _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str], List[str]]] = [
-    ("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929", 200000, 2, 3, 3, 3,
+    ("anthropic", "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest", 200000, 2, 3, 3, 3,
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_TOOLS],
      ["strongest coding & reasoning", "long-form writing", "200k context"]),
@@ -140,7 +140,7 @@ _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str]
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_MULTIMODAL, CAP_TOOLS],
      ["balanced general assistant", "multimodal", "fast"]),
-    ("gemini", "GEMINI_MODEL", "gemini-2.5-flash", 1000000, 1, 1, 2, 2,
+    ("gemini", "GEMINI_MODEL", "gemini-2.5-flash-lite", 1000000, 1, 1, 2, 2,
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_MULTIMODAL, CAP_TOOLS],
      ["very long context (1M)", "multimodal", "fast & low cost"]),
