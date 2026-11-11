@@ -264,7 +264,27 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
 
 # Preference order: keyed, higher-quality providers first; keyless fallback last.
 # Looked up by name at call time so tests (and future overrides) can patch them.
-_PROVIDER_NAMES = ("serpapi", "tavily", "scrape_do", "openalex", "duckduckgo")
+_PROVIDER_NAMES = ("serpapi", "tavily", "duckduckgo_live", "scrape_do", "duckduckgo", "openalex")
+
+def _search_duckduckgo_live(query: str, limit: int) -> List[Dict[str, str]]:
+    """Atlas Gen-3 live search adapter using multi-provider and DDG Lite/HTML transport."""
+    try:
+        from backend.live_search import execute_live_web_search
+        res = execute_live_web_search(query, limit=limit, fetch_full_content=False)
+        return [
+            {
+                "title": r.get("title") or "",
+                "url": r.get("url") or "",
+                "snippet": clean_snippet(r.get("snippet") or ""),
+                "source": r.get("source_provider") or "Web Search",
+                "publisher": r.get("publisher"),
+                "date": r.get("published_date"),
+            }
+            for r in res.get("results", [])
+        ]
+    except Exception as exc:
+        print(f"[WEB SEARCH WARNING] duckduckgo_live: {exc}")
+        return []
 
 def _search_openalex(query: str, limit: int) -> List[Dict[str, str]]:
     url = "https://api.openalex.org/works?" + urllib.parse.urlencode({"search": query, "per-page": limit})

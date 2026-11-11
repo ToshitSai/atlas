@@ -204,11 +204,30 @@ export async function sendDeepResearchStream(message, projectId = null, conversa
 
 // Normal-answer path over SSE so answer text renders token-by-token. The final
 // frame still carries the authoritative, post-processed response for reconcile.
-export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {}, signal, variation = false, previousAnswer = '' } = {}) {
+export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {}, signal, variation = false, previousAnswer = '', model = null, searchMode = 'auto', ragMode = 'auto' } = {}) {
   return streamChat(
-    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, variation, previousAnswer, ...correlation },
+    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, variation, previousAnswer, model, searchMode, ragMode, ...correlation },
     { onActivity, onToken, signal }
   );
+}
+
+export async function uploadRagDocument(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return safeFetchJson(`${API_BASE}/files`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function listRagDocuments() {
+  return safeFetchJson(`${API_BASE}/documents`);
+}
+
+export async function deleteRagDocument(fileId) {
+  return safeFetchJson(`${API_BASE}/documents/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function sendControlSignal(projectId, signal) {

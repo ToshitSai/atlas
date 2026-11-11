@@ -125,11 +125,13 @@ def main() -> int:
     output_dir = str(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    train_path = Path(args.train_file)
+    raw_train_file = cfg.get("train_file") if (args.train_file == "data/processed/train.jsonl" and "train_file" in cfg) else args.train_file
+    train_path = Path(raw_train_file)
     if not train_path.is_absolute():
         train_path = ROOT / train_path
 
-    eval_path = Path(args.eval_file)
+    raw_eval_file = cfg.get("eval_file") if (args.eval_file == "data/processed/eval.jsonl" and "eval_file" in cfg) else args.eval_file
+    eval_path = Path(raw_eval_file)
     if not eval_path.is_absolute():
         eval_path = ROOT / eval_path
 

@@ -20,6 +20,11 @@ artifacts/
 training_env/
 requirements-training.txt
 training_artifacts/
+!training_artifacts/**/training_summary.json
+!training_artifacts/evaluation_report*.json
+!training_artifacts/evaluation_report*.md
+*.db
+*.sqlite*
 models/
 hf_cache/
 .vercel_python_packages/

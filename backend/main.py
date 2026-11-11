@@ -1499,46 +1499,124 @@ async def analyze_file(file: UploadFile = File(...)):
 
 @app.post("/api/files")
 async def upload_rag_file(file: UploadFile = File(...), request: Request = None):
-    """Store, parse, embed and index a private document for this session."""
+    """Store, parse, embed and index a document using Atlas Advanced RAG (with Postgres and local SQLite vector store fallback)."""
+    from backend import advanced_rag
     name = rag.safe_filename(file.filename or "document")
     content = await file.read()
+    owner = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
     try:
-        ext = rag.validate_upload(name, content)
-        pages = rag.extract_text(name, content)
-        chunks = rag.chunk_pages(pages)
-        if not store.database_health() or not getattr(store, "repo", None):
-            raise HTTPException(status_code=503, detail="Document storage is unavailable because the database is not connected.")
-        owner = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
-        storage_key = rag.blob_upload(name, content)
-        repo = store.repo
-        doc_id = str(uuid.uuid4())
-        repo._execute("INSERT INTO documents (id,title,source,doc_type,metadata) VALUES (%s,%s,%s,%s,%s)", (doc_id, name, storage_key, ext[1:], json.dumps({"owner_session": owner})))
-        repo._execute("INSERT INTO document_metadata (document_id,owner_session,storage_key,original_filename,byte_size,status) VALUES (%s,%s,%s,%s,%s,'processing')", (doc_id, owner, storage_key, name, len(content)))
-        model, vectors = rag.embed_texts([item["text"] for item in chunks])
-        for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
-            chunk_id = str(uuid.uuid4())
-            repo._execute("INSERT INTO document_chunks (id,document_id,chunk_index,content,page,metadata,token_count) VALUES (%s,%s,%s,%s,%s,%s,%s)", (chunk_id, doc_id, index, chunk["text"], chunk.get("page"), json.dumps({"start": chunk["start"], "end": chunk["end"]}), max(1, len(chunk["text"]) // 4)))
-            repo._execute("INSERT INTO document_embeddings (chunk_id,embedding_model,dimensions,embedding) VALUES (%s,%s,%s,%s::vector)", (chunk_id, model, len(vector), rag.vector_literal(vector)))
-        repo._execute("UPDATE document_metadata SET status='ready',updated_at=now() WHERE document_id=%s", (doc_id,))
-        return {"id": doc_id, "filename": name, "status": "ready", "chunks": len(chunks), "storage": "private"}
-    except HTTPException:
-        raise
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(status_code=400 if isinstance(exc, ValueError) else 503, detail=str(exc)) from exc
+        # Ingest using Advanced RAG engine (multi-format: PDF, DOCX, HTML, TXT, MD, CSV, JSON, Code)
+        doc_info = advanced_rag.ingest_document(name, content, owner_session=owner)
+        doc_id = doc_info["id"]
+
+        # If PostgreSQL and Blob storage are available, also mirror it for remote multi-node access
+        if store.database_health() and getattr(store, "repo", None):
+            try:
+                storage_key = rag.blob_upload(name, content)
+                repo = store.repo
+                ext = os.path.splitext(name)[1]
+                repo._execute("INSERT INTO documents (id,title,source,doc_type,metadata) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING", (doc_id, name, storage_key, ext[1:], json.dumps({"owner_session": owner})))
+                repo._execute("INSERT INTO document_metadata (document_id,owner_session,storage_key,original_filename,byte_size,status) VALUES (%s,%s,%s,%s,%s,'ready') ON CONFLICT (document_id) DO UPDATE SET status='ready'", (doc_id, owner, storage_key, name, len(content)))
+            except Exception as pg_exc:
+                print(f"[RAG PG MIRROR WARNING] {pg_exc}")
+
+        return {
+            "id": doc_id,
+            "filename": name,
+            "status": "ready",
+            "chunks": doc_info.get("chunks_count", 0),
+            "doc_type": doc_info.get("doc_type", "document"),
+            "storage": "hybrid",
+        }
     except Exception as exc:
-        print(f"[RAG UPLOAD ERROR] type={type(exc).__name__}: {str(exc).splitlines()[0][:240]}")
-        raise HTTPException(status_code=500, detail="Document indexing failed.") from exc
+        print(f"[RAG UPLOAD ERROR] {type(exc).__name__}: {str(exc)[:240]}")
+        raise HTTPException(status_code=500, detail=f"Document indexing failed: {exc}") from exc
+
+
+@app.get("/api/files")
+@app.get("/api/documents")
+async def list_rag_files(request: Request):
+    """List indexed RAG documents for this anonymous session."""
+    from backend import advanced_rag
+    owner = getattr(request.state, "anon_id", "anonymous")
+    vstore = advanced_rag.get_vector_store()
+    docs = vstore.list_documents(owner_session=owner)
+    return {"documents": docs, "total": len(docs)}
+
+
+@app.delete("/api/files/{file_id}")
+@app.delete("/api/documents/{file_id}")
+async def delete_rag_file(file_id: str, request: Request):
+    """Delete an indexed document and its vector embeddings."""
+    from backend import advanced_rag
+    owner = getattr(request.state, "anon_id", "anonymous")
+    vstore = advanced_rag.get_vector_store()
+    deleted = vstore.delete_document(file_id, owner_session=owner)
+    if store.database_health() and getattr(store, "repo", None):
+        try:
+            store.repo._execute("DELETE FROM document_metadata WHERE document_id=%s AND owner_session=%s", (file_id, owner))
+            store.repo._execute("DELETE FROM documents WHERE id=%s", (file_id,))
+        except Exception:
+            pass
+    return {"success": deleted, "id": file_id}
+
+
+@app.post("/api/search/live")
+async def live_search_endpoint(payload: dict):
+    """Direct live web search endpoint using multi-provider and keyless fallback."""
+    from backend import live_search
+    query = (payload.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Search query is required.")
+    limit = int(payload.get("limit") or 5)
+    fetch_full = bool(payload.get("fetch_full_content", False))
+    preferred = payload.get("provider")
+    res = live_search.execute_live_web_search(query, limit=limit, fetch_full_content=fetch_full, preferred_provider=preferred)
+    return res
+
+
+@app.get("/api/research/memory")
+async def get_research_memory(request: Request, q: Optional[str] = None, limit: int = 10):
+    from backend import advanced_rag
+    owner = getattr(request.state, "anon_id", "anonymous")
+    vstore = advanced_rag.get_vector_store()
+    entries = vstore.get_research_memory(owner_session=owner, query=q, limit=limit)
+    return {"entries": entries, "count": len(entries)}
+
+
+@app.post("/api/research/memory")
+async def add_research_memory(payload: dict, request: Request):
+    from backend import advanced_rag
+    owner = getattr(request.state, "anon_id", "anonymous")
+    topic = payload.get("topic") or "General"
+    finding = payload.get("finding") or ""
+    if not finding:
+        raise HTTPException(status_code=400, detail="Finding text is required.")
+    vstore = advanced_rag.get_vector_store()
+    vstore.add_research_memory(
+        owner_session=owner,
+        topic=topic,
+        finding=finding,
+        source_url=payload.get("source_url"),
+        confidence=float(payload.get("confidence") or 0.8),
+        metadata=payload.get("metadata")
+    )
+    return {"success": True}
 
 
 @app.get("/api/files/{file_id}")
 async def rag_file_status(file_id: str, request: Request):
-    if not store.database_health() or not getattr(store, "repo", None):
-        raise HTTPException(status_code=503, detail="Document storage is unavailable because the database is not connected.")
+    from backend import advanced_rag
     owner = getattr(request.state, "anon_id", "anonymous")
-    row = store.repo._query_one("SELECT document_id,original_filename,status,failure_reason,byte_size,updated_at FROM document_metadata WHERE document_id=%s AND owner_session=%s", (file_id, owner))
-    if not row:
-        raise HTTPException(status_code=404, detail="File not found.")
-    return {"id": str(row[0]), "filename": row[1], "status": row[2], "error": row[3], "bytes": row[4], "updatedAt": row[5].isoformat() if row[5] else None}
+    vstore = advanced_rag.get_vector_store()
+    doc = vstore.get_document(file_id, owner_session=owner)
+    if doc:
+        return {"id": doc["id"], "filename": doc["title"], "status": "ready", "chunks": doc.get("chunk_count", 0), "bytes": doc.get("byte_size", 0), "docType": doc.get("doc_type")}
+    if store.database_health() and getattr(store, "repo", None):
+        row = store.repo._query_one("SELECT document_id,original_filename,status,failure_reason,byte_size,updated_at FROM document_metadata WHERE document_id=%s AND owner_session=%s", (file_id, owner))
+        if row:
+            return {"id": str(row[0]), "filename": row[1], "status": row[2], "error": row[3], "bytes": row[4], "updatedAt": row[5].isoformat() if row[5] else None}
+    raise HTTPException(status_code=404, detail="File not found.")
 
 
 @app.get("/api/projects")
@@ -1970,44 +2048,34 @@ def get_finetuning_status():
     from pathlib import Path
     repo_root = Path(__file__).resolve().parents[1]
     
+    gen3_dir = repo_root / "training_artifacts" / "qwen3-17b-gen3-qlora"
     gen2_dir = repo_root / "training_artifacts" / "qwen3-17b-qlora"
     gen1_dir = repo_root / "training_artifacts" / "qwen3-06b-qlora"
     
+    summary_gen3_file = gen3_dir / "training_summary.json"
     summary_gen2_file = gen2_dir / "training_summary.json"
     summary_gen1_file = gen1_dir / "training_summary.json"
     
+    eval_gen3_file = repo_root / "training_artifacts" / "evaluation_report_gen3.json"
     eval_gen2_file = repo_root / "training_artifacts" / "evaluation_report_gen2.json"
     eval_gen1_file = repo_root / "training_artifacts" / "evaluation_report.json"
+    manifest_gen3_file = repo_root / "data" / "processed" / "manifest_gen3.json"
     manifest_file = repo_root / "data" / "processed" / "manifest.json"
 
-    summary_gen2 = None
-    if summary_gen2_file.exists():
-        try:
-            summary_gen2 = json.loads(summary_gen2_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    def _read_json(p: Path):
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+        return None
 
-    summary_gen1 = None
-    if summary_gen1_file.exists():
-        try:
-            summary_gen1 = json.loads(summary_gen1_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    summary_gen3 = _read_json(summary_gen3_file)
+    summary_gen2 = _read_json(summary_gen2_file)
+    summary_gen1 = _read_json(summary_gen1_file)
 
-    eval_report = None
-    active_eval_file = eval_gen2_file if eval_gen2_file.exists() else eval_gen1_file
-    if active_eval_file.exists():
-        try:
-            eval_report = json.loads(active_eval_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
-    manifest = None
-    if manifest_file.exists():
-        try:
-            manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    eval_report = _read_json(eval_gen3_file) or _read_json(eval_gen2_file) or _read_json(eval_gen1_file)
+    manifest = _read_json(manifest_gen3_file) or _read_json(manifest_file)
 
     # Check local inference server health
     local_health = None
@@ -2032,15 +2100,29 @@ def get_finetuning_status():
         "quantization": "4-bit NF4 (bitsandbytes)"
     }
 
-    # Prefer Gen 2 if trained, else Gen 1
+    # Prefer Gen 3 if trained, else Gen 2, else Gen 1
+    has_gen3 = summary_gen3 is not None
     has_gen2 = summary_gen2 is not None
-    active_summary = summary_gen2 if has_gen2 else summary_gen1
-    active_base = "Qwen/Qwen3-1.7B" if has_gen2 else "Qwen/Qwen3-0.6B"
-    active_adapter = "training_artifacts/qwen3-17b-qlora" if has_gen2 else "training_artifacts/qwen3-06b-qlora"
+    
+    if has_gen3:
+        active_summary = summary_gen3
+        active_base = "Qwen/Qwen3-1.7B"
+        active_adapter = "training_artifacts/qwen3-17b-gen3-qlora"
+        active_gen = 3
+    elif has_gen2:
+        active_summary = summary_gen2
+        active_base = "Qwen/Qwen3-1.7B"
+        active_adapter = "training_artifacts/qwen3-17b-qlora"
+        active_gen = 2
+    else:
+        active_summary = summary_gen1
+        active_base = "Qwen/Qwen3-0.6B"
+        active_adapter = "training_artifacts/qwen3-06b-qlora"
+        active_gen = 1 if summary_gen1 else 0
 
     return {
         "status": "completed" if active_summary else "idle",
-        "generation": 2 if has_gen2 else (1 if summary_gen1 else 0),
+        "generation": active_gen,
         "base_model": active_base,
         "adapter_model": active_adapter,
         "gpu_info": gpu_info,
@@ -2055,6 +2137,11 @@ def get_finetuning_status():
                 "model": "Qwen/Qwen3-1.7B",
                 "adapter": "training_artifacts/qwen3-17b-qlora",
                 "summary": summary_gen2,
+            },
+            "gen3": {
+                "model": "Qwen/Qwen3-1.7B",
+                "adapter": "training_artifacts/qwen3-17b-gen3-qlora",
+                "summary": summary_gen3,
             }
         },
         "eval_report": eval_report,

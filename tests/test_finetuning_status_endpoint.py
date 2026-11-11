@@ -11,7 +11,7 @@ def test_finetuning_status_endpoint():
     data = res.json()
     assert data["status"] in ("completed", "idle")
     assert data["base_model"] in ("Qwen/Qwen3-1.7B", "Qwen/Qwen3-0.6B")
-    assert data["generation"] in (1, 2)
+    assert data["generation"] in (1, 2, 3)
     assert "generations" in data
     assert "gpu_info" in data
     assert data["gpu_info"]["cuda_available"] is True

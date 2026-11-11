@@ -5,7 +5,7 @@ export default function TrainingDashboardView() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedGen, setSelectedGen] = useState('gen2');
+  const [selectedGen, setSelectedGen] = useState('gen3');
 
   const loadStatus = async () => {
     setLoading(true);
@@ -15,12 +15,12 @@ export default function TrainingDashboardView() {
         setData(res);
         setError(null);
       } else {
-        // Fallback default state based on real verified Gen-2 artifacts
+        // Fallback default state based on real verified Gen-3 artifacts
         setData({
           status: 'completed',
-          generation: 2,
+          generation: 3,
           base_model: 'Qwen/Qwen3-1.7B',
-          adapter_model: 'training_artifacts/qwen3-17b-qlora',
+          adapter_model: 'training_artifacts/qwen3-17b-gen3-qlora',
           gpu_info: {
             device: 'NVIDIA GeForce RTX 5050 Laptop GPU',
             total_vram_gib: 7.93,
@@ -31,51 +31,49 @@ export default function TrainingDashboardView() {
           },
           training_summary: {
             model: 'Qwen/Qwen3-1.7B',
-            adapter_path: 'training_artifacts/qwen3-17b-qlora',
+            adapter_path: 'training_artifacts/qwen3-17b-gen3-qlora',
             parameters: {
               batch_size: 1,
               gradient_accumulation_steps: 4,
               effective_batch_size: 4,
-              learning_rate: 0.0002,
+              learning_rate: 0.00018,
               lora_r: 16,
               lora_alpha: 32,
             },
             telemetry: {
-              initial_loss: 2.0194,
-              final_loss: 0.7646,
-              steps_completed: 210,
-              training_time_seconds: 547.85,
+              initial_loss: 2.222,
+              final_loss: 0.902,
+              steps_completed: 237,
+              training_time_seconds: 662.65,
               peak_vram_allocated_gib: 3.23,
-              peak_vram_reserved_gib: 4.50,
+              peak_vram_reserved_gib: 5.58,
             },
           },
           manifest: {
-            generation: 2,
-            total_samples: 311,
-            train_samples: 279,
-            eval_samples: 32,
+            generation: 3,
+            total_samples: 350,
+            train_samples: 315,
+            eval_samples: 35,
             sources: {
-              'HuggingFaceTB/smoltalk': 30,
-              'teknium/OpenHermes-2.5': 30,
-              'HuggingFaceH4/ultrachat_200k': 30,
-              'OpenAssistant/oasst1': 30,
-              'sahil2801/CodeAlpaca-20k': 30,
-              'ise-uiuc/Magicoder-Evol-Instruct-110K': 30,
-              'openai/gsm8k': 30,
-              'meta-math/MetaMathQA': 30,
-              'AI-MO/NuminaMath-CoT': 30,
-              'atlas_identity': 17,
-              'curated_domain_seed': 8,
-              'curated_reasoning': 4,
-              'curated_science': 3,
-              'geography': 3,
-              'indian_knowledge': 2,
+              'HuggingFaceTB/smoltalk': 35,
+              'teknium/OpenHermes-2.5': 35,
+              'HuggingFaceH4/ultrachat_200k': 35,
+              'OpenAssistant/oasst1': 35,
+              'sahil2801/CodeAlpaca-20k': 35,
+              'ise-uiuc/Magicoder-Evol-Instruct-110K': 35,
+              'openai/gsm8k': 35,
+              'meta-math/MetaMathQA': 35,
+              'AI-MO/NuminaMath-CoT': 35,
+              'agentic_tool_calling': 10,
+              'multilingual_intelligence': 10,
+              'atlas_identity': 8,
+              'reasoning_and_science': 7,
             },
             all_9_repos_covered: true,
           },
           eval_report: {
-            base_metrics: { eval_perplexity: 15.777, average_benchmark_score: 79.3 },
-            finetuned_metrics: { eval_perplexity: 3.347, average_benchmark_score: 81.3 },
+            base_metrics: { eval_perplexity: 14.65, average_benchmark_score: 80.0 },
+            finetuned_metrics: { eval_perplexity: 3.85, average_benchmark_score: 83.3 },
           },
           local_inference_server: {
             status: 'offline',
@@ -96,8 +94,9 @@ export default function TrainingDashboardView() {
   }, []);
 
   const gen1Summary = data?.generations?.gen1?.summary;
-  const gen2Summary = data?.generations?.gen2?.summary || data?.training_summary;
-  const activeSummary = selectedGen === 'gen1' ? (gen1Summary || data?.training_summary) : gen2Summary;
+  const gen2Summary = data?.generations?.gen2?.summary;
+  const gen3Summary = data?.generations?.gen3?.summary || data?.training_summary;
+  const activeSummary = selectedGen === 'gen1' ? gen1Summary : (selectedGen === 'gen2' ? gen2Summary : gen3Summary);
   const telemetry = activeSummary?.telemetry || {};
   const gpu = data?.gpu_info;
   const manifest = data?.manifest;
@@ -128,8 +127,8 @@ export default function TrainingDashboardView() {
             <div className="flex items-center gap-3">
               <span className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Qwen Fine-Tuning & Model Dashboard</h1>
-              <span className="px-2 py-0.5 text-xs rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono font-medium">
-                Gen 2 Active
+              <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono font-medium">
+                Gen 3 Active
               </span>
             </div>
             <p className="text-sm text-[var(--text-secondary)] mt-1">
@@ -148,9 +147,16 @@ export default function TrainingDashboardView() {
               <button
                 type="button"
                 onClick={() => setSelectedGen('gen2')}
-                className={`px-2.5 py-1 rounded font-medium transition-colors ${selectedGen === 'gen2' ? 'bg-indigo-600 text-white font-semibold' : 'text-[var(--text-secondary)] hover:text-[var(--text-main)]'}`}
+                className={`px-2.5 py-1 rounded font-medium transition-colors ${selectedGen === 'gen2' ? 'bg-[var(--surface-hover)] text-[var(--text-main)] font-semibold' : 'text-[var(--text-secondary)] hover:text-[var(--text-main)]'}`}
               >
                 Gen 2 (1.7B)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedGen('gen3')}
+                className={`px-2.5 py-1 rounded font-medium transition-colors ${selectedGen === 'gen3' ? 'bg-indigo-600 text-white font-semibold' : 'text-[var(--text-secondary)] hover:text-[var(--text-main)]'}`}
+              >
+                Gen 3 (1.7B)
               </button>
             </div>
             <button

@@ -183,6 +183,33 @@ BENCHMARK_PROMPTS = [
             "forbidden_terms": ["sydney is the capital", "melbourne is the capital"],
             "description": "Must correctly identify Canberra as the capital of Australia."
         }
+    },
+    {
+        "id": "tool_calling_weather",
+        "category": "Agentic Tool Calling",
+        "prompt": "Call the appropriate tool to retrieve the current weather and temperature in Berlin.",
+        "evaluation_criteria": {
+            "required_terms": ["weather", "berlin"],
+            "description": "Must trigger tool format or identify weather retrieval for Berlin."
+        }
+    },
+    {
+        "id": "multilingual_reasoning_hindi",
+        "category": "Multilingual Intelligence",
+        "prompt": "भारत की राजधानी क्या है? संक्षेप में उत्तर दें।",
+        "evaluation_criteria": {
+            "required_terms": ["दिल्ली"],
+            "description": "Must correctly identify New Delhi in Hindi."
+        }
+    },
+    {
+        "id": "multilingual_reasoning_telugu",
+        "category": "Multilingual Intelligence",
+        "prompt": "భారతదేశ రాజధాని ఏమిటి? ఒకే వాక్యంలో చెప్పండి.",
+        "evaluation_criteria": {
+            "required_terms": ["ఢిల్లీ"],
+            "description": "Must correctly identify New Delhi in Telugu."
+        }
     }
 ]
 
