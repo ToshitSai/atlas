@@ -130,7 +130,15 @@ class Repository:
                 hostname = p.hostname or "unknown"
                 port = p.port or 5432
             except Exception:
-                pass
+                import re
+                m = re.search(r"@([^:/]+)(?::(\d+))?", self.url)
+                if m:
+                    hostname = m.group(1)
+                    if m.group(2):
+                        try:
+                            port = int(m.group(2))
+                        except ValueError:
+                            pass
         healthy = self.health_check()
         return {
             "configured": bool(self.url),

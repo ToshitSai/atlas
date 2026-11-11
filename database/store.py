@@ -796,15 +796,30 @@ class ResearchStore:
             return diag
         
         err = getattr(self.repo, "_last_error", None) if self.repo else getattr(self, "_init_db_error", "Connection failed")
-        import urllib.parse
-        p = urllib.parse.urlparse(url)
+        host = "unknown"
+        port = 5432
+        try:
+            import urllib.parse
+            p = urllib.parse.urlparse(url)
+            host = p.hostname or "unknown"
+            port = p.port or 5432
+        except Exception:
+            import re
+            m = re.search(r"@([^:/]+)(?::(\d+))?", url)
+            if m:
+                host = m.group(1)
+                if m.group(2):
+                    try:
+                        port = int(m.group(2))
+                    except ValueError:
+                        pass
         return {
             "configured": True,
             "connected": False,
             "type": "ephemeral_serverless" if is_serverless else "sqlite_local",
             "durability": "ephemeral" if is_serverless else "durable_local",
-            "host": p.hostname or "unknown",
-            "port": p.port or 5432,
+            "host": host,
+            "port": port,
             "pgvector": False,
             "error": err,
             "warning": "PostgreSQL is unavailable. Data will NOT persist across serverless instances." if is_serverless else "PostgreSQL is unavailable. Using local SQLite."

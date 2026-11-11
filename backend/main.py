@@ -319,6 +319,12 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
     default_profile = emb_reg.resolve_default_profile()
     anon_id = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
 
+    indexed_docs = 0
+    try:
+        indexed_docs = len(rag_svc.list_documents(owner_session=anon_id))
+    except Exception:
+        indexed_docs = 0
+
     result = {
         "status": "healthy" if dependencies_ready else "degraded",
         "api": True,
@@ -339,7 +345,7 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
             "storage": db_diag.get("type", "unknown"),
             "durability": db_diag.get("durability", "unknown"),
             "persistent": db_diag.get("durability") == "durable",
-            "indexedDocuments": len(rag_svc.list_documents(owner_session=anon_id)),
+            "indexedDocuments": indexed_docs,
         },
         "localInference": {
             "configured": bool(os.environ.get("LOCAL_LLM_BASE_URL")),
