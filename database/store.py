@@ -804,15 +804,16 @@ class ResearchStore:
             host = p.hostname or "unknown"
             port = p.port or 5432
         except Exception:
-            import re
-            m = re.search(r"@([^:/]+)(?::(\d+))?", url)
-            if m:
-                host = m.group(1)
-                if m.group(2):
-                    try:
-                        port = int(m.group(2))
-                    except ValueError:
-                        pass
+            try:
+                netloc_part = url.rsplit("@", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+                if ":" in netloc_part:
+                    h, pt = netloc_part.split(":", 1)
+                    host = h or "unknown"
+                    port = int(pt) if pt.isdigit() else 5432
+                else:
+                    host = netloc_part or "unknown"
+            except Exception:
+                pass
         return {
             "configured": True,
             "connected": False,

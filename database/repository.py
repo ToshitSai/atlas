@@ -130,15 +130,16 @@ class Repository:
                 hostname = p.hostname or "unknown"
                 port = p.port or 5432
             except Exception:
-                import re
-                m = re.search(r"@([^:/]+)(?::(\d+))?", self.url)
-                if m:
-                    hostname = m.group(1)
-                    if m.group(2):
-                        try:
-                            port = int(m.group(2))
-                        except ValueError:
-                            pass
+                try:
+                    netloc_part = self.url.rsplit("@", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+                    if ":" in netloc_part:
+                        h, pt = netloc_part.split(":", 1)
+                        hostname = h or "unknown"
+                        port = int(pt) if pt.isdigit() else 5432
+                    else:
+                        hostname = netloc_part or "unknown"
+                except Exception:
+                    pass
         healthy = self.health_check()
         return {
             "configured": bool(self.url),
