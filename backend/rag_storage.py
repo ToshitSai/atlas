@@ -935,7 +935,11 @@ class PostgresRAGStorage:
                 # 4. Insert chunks and optional pgvector embeddings
                 has_vector = self.repo._has_pgvector()
                 for i, c in enumerate(chunks):
-                    chunk_id = c.get("chunk_id") or str(uuid.uuid4())
+                    raw_cid = c.get("chunk_id") or ""
+                    try:
+                        chunk_id = str(uuid.UUID(raw_cid))
+                    except Exception:
+                        chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{document_id}_{i}"))
                     vec = vectors[i] if (vectors and i < len(vectors)) else None
 
                     # If pgvector is installed and profile matches 1536 dim
