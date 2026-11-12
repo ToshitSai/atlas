@@ -7,6 +7,7 @@ storage synchronization, citation synthesis, and knowledge graph persistence.
 
 from __future__ import annotations
 
+import collections
 import csv
 import hashlib
 import io
@@ -17,6 +18,12 @@ import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 import uuid
 
+from backend.document_extractors import (
+    ALL_SUPPORTED_EXTENSIONS,
+    MAX_FILE_BYTES,
+    clean_text,
+    extract_document_or_image,
+)
 from backend.embedding_registry import (
     EmbeddingProfile,
     EmbeddingProviderUnavailableError,
@@ -27,13 +34,7 @@ from backend.rag_storage import (
     get_rag_storage,
 )
 
-MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
-
-SUPPORTED_EXTENSIONS = {
-    ".pdf", ".docx", ".txt", ".md", ".json", ".csv", ".html", ".htm",
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".c", ".cpp", ".rs",
-    ".go", ".sql", ".sh", ".yaml", ".yml"
-}
+SUPPORTED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS
 
 
 def safe_filename(name: str) -> str:
@@ -46,164 +47,34 @@ def compute_file_sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-# ============================================================================
-# Multi-Format Text Extraction
-# ============================================================================
+def store_original_file(document_id: str, filename: str, content: bytes, owner_session: str) -> str:
+    """Store the original uploaded document/image securely."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
+    os.makedirs(storage_dir, exist_ok=True)
+    target_path = os.path.join(storage_dir, f"{document_id}_{safe_filename(filename)}")
+    with open(target_path, "wb") as f:
+        f.write(content)
+    return target_path
 
-def extract_document_text(filename: str, content: bytes) -> List[Dict[str, Any]]:
-    """Safely extracts text and sections from all 8 supported document formats."""
-    ext = os.path.splitext(filename.lower())[1]
-    if ext not in SUPPORTED_EXTENSIONS:
-        raise ValueError(f"Unsupported file format '{ext}'. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
 
-    if not content or len(content.strip()) == 0:
-        raise ValueError("Uploaded document is empty.")
-    if len(content) > MAX_FILE_BYTES:
-        raise ValueError("File exceeds maximum allowed size (50 MB).")
+def delete_stored_file(document_id: str, owner_session: str) -> None:
+    """Remove stored physical file from data/storage if present."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
+    if os.path.exists(storage_dir):
+        for f in os.listdir(storage_dir):
+            if f.startswith(f"{document_id}_"):
+                try:
+                    os.remove(os.path.join(storage_dir, f))
+                except Exception:
+                    pass
 
-    # 1. PDF Extraction
-    if ext == ".pdf":
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(content))
-            pages = []
-            for num, page in enumerate(reader.pages, 1):
-                t = (page.extract_text() or "").strip()
-                if t:
-                    pages.append({"page": num, "section": f"Page {num}", "text": t})
-            if not pages:
-                raise ValueError("PDF contains no selectable text layer; OCR is unavailable on this deployment.")
-            return pages
-        except ValueError:
-            raise
-        except Exception as exc:
-            if "password" in str(exc).lower() or "encrypt" in str(exc).lower():
-                raise ValueError("This PDF is password-protected and cannot be read.") from exc
-            raise ValueError(f"Failed to parse PDF document: {exc}") from exc
 
-    # 2. DOCX Extraction
-    elif ext == ".docx":
-        try:
-            import docx
-            doc = docx.Document(io.BytesIO(content))
-            sections: List[Dict[str, Any]] = []
-            current_heading = "Introduction"
-            current_paras: List[str] = []
-
-            for para in doc.paragraphs:
-                txt = para.text.strip()
-                if not txt:
-                    continue
-                if para.style.name.startswith("Heading"):
-                    if current_paras:
-                        sections.append({
-                            "page": None,
-                            "section": current_heading,
-                            "text": "\n\n".join(current_paras)
-                        })
-                        current_paras = []
-                    current_heading = txt
-                else:
-                    current_paras.append(txt)
-
-            if current_paras:
-                sections.append({
-                    "page": None,
-                    "section": current_heading,
-                    "text": "\n\n".join(current_paras)
-                })
-
-            for t_idx, table in enumerate(doc.tables, 1):
-                rows = []
-                for row in table.rows:
-                    row_txt = " | ".join(cell.text.strip() for cell in row.cells)
-                    if row_txt.strip():
-                        rows.append(row_txt)
-                if rows:
-                    sections.append({
-                        "page": None,
-                        "section": f"Table {t_idx}",
-                        "text": "\n".join(rows)
-                    })
-
-            if not sections:
-                raise ValueError("DOCX document contains no readable text.")
-            return sections
-        except ValueError:
-            raise
-        except Exception as exc:
-            raise ValueError(f"Failed to parse DOCX document: {exc}") from exc
-
-    # 3. HTML Extraction
-    elif ext in (".html", ".htm"):
-        try:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(content.decode("utf-8", errors="replace"), "html.parser")
-            for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "svg"]):
-                tag.decompose()
-            text = soup.get_text(separator="\n\n").strip()
-            if not text:
-                raise ValueError("HTML document contains no readable body text.")
-            title = soup.title.string.strip() if soup.title and soup.title.string else "HTML Document"
-            return [{"page": None, "section": title, "text": text}]
-        except ValueError:
-            raise
-        except Exception as exc:
-            raise ValueError(f"Failed to parse HTML: {exc}") from exc
-
-    # 4. CSV Extraction
-    elif ext == ".csv":
-        try:
-            text = content.decode("utf-8", errors="replace")
-            reader = csv.reader(io.StringIO(text))
-            rows = [r for r in reader if r]
-            if not rows:
-                raise ValueError("CSV document is empty.")
-            header = rows[0]
-            chunks = []
-            batch_size = 25
-            for i in range(1, len(rows), batch_size):
-                batch = rows[i:i + batch_size]
-                table_lines = [" | ".join(header)]
-                for r in batch:
-                    table_lines.append(" | ".join(r))
-                chunks.append({
-                    "page": None,
-                    "section": f"Rows {i}-{min(len(rows)-1, i + batch_size - 1)}",
-                    "text": "\n".join(table_lines)
-                })
-            return chunks or [{"page": None, "section": "CSV Header", "text": " | ".join(header)}]
-        except ValueError:
-            raise
-        except Exception as exc:
-            raise ValueError(f"Failed to parse CSV: {exc}") from exc
-
-    # 5. JSON Extraction
-    elif ext == ".json":
-        try:
-            raw_data = json.loads(content.decode("utf-8", errors="replace"))
-            formatted = json.dumps(raw_data, indent=2)
-            if not formatted.strip() or formatted.strip() in ("{}", "[]"):
-                raise ValueError("JSON file contains no data.")
-            return [{"page": None, "section": "JSON Data", "text": formatted}]
-        except ValueError:
-            raise
-        except Exception as exc:
-            raise ValueError(f"Failed to parse JSON file: {exc}") from exc
-
-    # 6. Source Code (.py, .js, .ts, etc.)
-    elif ext in (".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".c", ".cpp", ".rs", ".go", ".sql", ".sh", ".yaml", ".yml"):
-        text = content.decode("utf-8", errors="replace").strip()
-        if not text:
-            raise ValueError("Source code file is empty.")
-        return [{"page": None, "section": f"Source Code ({ext})", "text": text}]
-
-    # 7. Markdown (.md) and Plain Text (.txt)
-    else:
-        text = content.decode("utf-8", errors="replace").strip()
-        if not text:
-            raise ValueError("Document contains no text content.")
-        return [{"page": None, "section": "Document", "text": text}]
+def extract_document_text(filename: str, content: bytes, owner_session: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Safely extracts text and sections from all supported document and image formats."""
+    sections, _ = extract_document_or_image(filename, content, owner_session=owner_session)
+    return sections
 
 
 # ============================================================================
@@ -334,9 +205,10 @@ class RAGService:
         self,
         filename: str,
         content: bytes,
-        owner_session: str
+        owner_session: str,
+        workflow: str = "knowledge_base"
     ) -> Dict[str, Any]:
-        """Ingest, extract, chunk, embed, and store document with transactional consistency.
+        """Ingest, extract, chunk, embed, and store document or image with transactional consistency.
         
         Never displays a document as ready until extraction, chunking, and persistence succeed.
         """
@@ -346,15 +218,21 @@ class RAGService:
         doc_type = os.path.splitext(clean_name)[1].lstrip(".") or "document"
         doc_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{owner_session}:{content_hash}"))
 
-        # 1. Multi-format text extraction
-        sections = extract_document_text(clean_name, content)
+        # 1. Multi-format extraction (documents + multimodal images)
+        sections, extra_meta = extract_document_or_image(clean_name, content, owner_session=owner_session)
 
-        # 2. Structure-aware chunking
+        # 2. Secure original file storage
+        try:
+            store_original_file(doc_id, clean_name, content, owner_session)
+        except Exception as store_err:
+            print(f"[RAG STORAGE WARNING] Failed to write original file: {store_err}")
+
+        # 3. Structure-aware chunking
         chunks = chunk_document_smart(sections, doc_id, clean_name)
         if not chunks:
-            raise ValueError("No extractable chunks found in document.")
+            raise ValueError("No extractable chunks found in document or image.")
 
-        # 3. Real semantic vector generation
+        # 4. Real semantic vector generation
         profile = registry.resolve_default_profile()
         chunk_texts = [c["content"] for c in chunks]
         vectors = None
@@ -366,10 +244,10 @@ class RAGService:
             print(f"[RAG Ingestion Notice] Semantic vectors omitted: {err}")
             vectors = None
 
-        # 4. Extract knowledge graph edges
+        # 5. Extract knowledge graph edges
         kg_edges = extract_kg_relations(chunks)
 
-        # 5. Atomic save into persistent storage (Postgres or SQLite)
+        # 6. Atomic save into persistent storage (Postgres or SQLite)
         doc_record = self.storage.save_document(
             document_id=doc_id,
             filename=clean_name,
@@ -382,6 +260,15 @@ class RAGService:
             embedding_profile=profile if vectors else None,
             kg_edges=kg_edges,
         )
+
+        doc_record["is_image"] = extra_meta.get("is_image", False)
+        doc_record["workflow"] = workflow
+        if extra_meta.get("ocr_text"):
+            doc_record["ocr_text"] = extra_meta["ocr_text"]
+        if extra_meta.get("visual_description"):
+            doc_record["visual_description"] = extra_meta["visual_description"]
+        if extra_meta.get("image_type"):
+            doc_record["image_type"] = extra_meta["image_type"]
 
         return doc_record
 
@@ -412,11 +299,13 @@ class RAGService:
             query_vector = None
 
         # Execute hybrid search
+        is_comparison = any(w in query.lower() for w in ("compare", "comparison", "contrast", "both", "all", "versus", "vs", "difference", "differences"))
+        search_limit = max(limit * 2, len(user_docs) * 3) if is_comparison else limit
         hits = self.storage.hybrid_search(
             query_text=query,
             query_vector=query_vector,
             owner_session=owner_session,
-            limit=limit
+            limit=search_limit
         )
 
         if not hits:
@@ -435,7 +324,19 @@ class RAGService:
             # In auto mode, if retrieval confidence is low, don't force unrelated context
             return {"active": True, "chunks": [], "context_text": "", "citations": []}
 
-        active_hits = filtered_hits or hits[:limit]
+        if is_comparison and len(user_docs) > 1:
+            # Multi-document diversity: group hits by document_id so every document is represented
+            doc_groups = collections.defaultdict(list)
+            for h in (filtered_hits or hits):
+                doc_groups[h.get("document_id")].append(h)
+            diverse_hits = []
+            for round_idx in range(4):
+                for d_id, doc_hits in doc_groups.items():
+                    if round_idx < len(doc_hits):
+                        diverse_hits.append(doc_hits[round_idx])
+            active_hits = diverse_hits if diverse_hits else (filtered_hits or hits[:limit])
+        else:
+            active_hits = (filtered_hits or hits)[:limit]
 
         # Format clean, isolated evidence blocks protecting against prompt injection
         evidence_blocks = []
@@ -476,6 +377,7 @@ class RAGService:
         return self.storage.get_document(document_id=document_id, owner_session=owner_session)
 
     def delete_document(self, document_id: str, owner_session: str) -> bool:
+        delete_stored_file(document_id, owner_session)
         return self.storage.delete_document(document_id=document_id, owner_session=owner_session)
 
     def get_research_memory(self, owner_session: str, query: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:

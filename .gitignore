@@ -28,3 +28,4 @@ training_artifacts/
 models/
 hf_cache/
 .vercel_python_packages/
+data/storage/

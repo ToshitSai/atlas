@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { uploadRagDocument } from '../api';
 
 /**
  * Question Composer:
  * Features:
  * - Single rounded pill container (`rounded-2xl`) with dark surface `#1C1C20`
- * - Smooth GPU-friendly focus/blur border transition (250-400ms easing)
- * - Focus activation on direct click, tabbing, or container click
- * - Left `+` quick access trigger button
- * - Clean borderless auto-resizing text field
+ * - File attachment button (+) triggering file picker for documents & images
+ * - Drag-and-drop file ingestion support
+ * - Real-time attachment status chips (UPLOADING, INDEXING, READY, FAILED)
  * - Keyboard shortcuts: Enter to send (Shift+Enter for newline), Cmd/Ctrl+K to focus
  * - Speech-to-text via Web Speech API with full lifecycle & error handling
  * - Right action button:
  *   - When empty: Microphone toggle with listening animation state
- *   - When text typed: Orange send button (`#F15A3A`)
+ *   - When text typed or files attached: Send button
  */
 export default function QuestionComposer({
   onSubmit,
@@ -28,8 +28,11 @@ export default function QuestionComposer({
   const [text, setText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
   const baseTextRef = useRef('');
 
@@ -101,19 +104,13 @@ export default function QuestionComposer({
       return;
     }
 
-    // Stop any stale instance before starting a new session
-    if (recognitionRef.current) {
-      stopListening();
-    }
-
     try {
       const recog = new SpeechRecognition();
       recog.continuous = true;
       recog.interimResults = true;
       recog.lang = 'en-US';
 
-      // Store current text before speech begins so recognized text is appended cleanly
-      baseTextRef.current = text ? (text.trim() + ' ') : '';
+      baseTextRef.current = text ? (text.endsWith(' ') ? text : text + ' ') : '';
 
       recog.onstart = () => {
         setIsListening(true);
@@ -121,28 +118,34 @@ export default function QuestionComposer({
       };
 
       recog.onresult = (event) => {
-        let sessionTranscript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          sessionTranscript += event.results[i][0].transcript;
+        let interim = '';
+        let final = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
         }
-        const updatedText = baseTextRef.current + sessionTranscript;
-        setText(updatedText);
+
+        if (final) {
+          baseTextRef.current += final + ' ';
+        }
+
+        setText(baseTextRef.current + interim);
       };
 
       recog.onerror = (event) => {
-        console.warn('Speech recognition error event:', event.error);
-        setIsListening(false);
-        recognitionRef.current = null;
-
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setSpeechError('Microphone permission denied. Please enable microphone access in browser settings.');
+        console.warn('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+          setSpeechError('Microphone permission denied. Please allow microphone access in browser settings.');
         } else if (event.error === 'no-speech') {
-          // Quiet timeout, no intrusive toast
-        } else if (event.error === 'audio-capture') {
-          setSpeechError('No microphone detected. Please connect a microphone and try again.');
-        } else if (event.error !== 'aborted') {
-          setSpeechError(`Voice input error (${event.error})`);
+          // ignore no-speech
+        } else {
+          setSpeechError(`Voice input error (${event.error}). Please type your question.`);
         }
+        stopListening();
       };
 
       recog.onend = () => {
@@ -165,21 +168,106 @@ export default function QuestionComposer({
     }
   };
 
+  // Upload and process files
+  const processFiles = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+
+    const files = Array.from(fileList);
+    for (const file of files) {
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const ext = file.name.split('.').pop().toLowerCase();
+      const isImg = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
+
+      const newAttachment = {
+        tempId,
+        id: null,
+        filename: file.name,
+        size: file.size,
+        doc_type: ext,
+        is_image: isImg,
+        status: 'UPLOADING',
+        error: null,
+      };
+
+      setAttachments((prev) => [...prev, newAttachment]);
+
+      try {
+        // Upload as chat_attachment workflow
+        const res = await uploadRagDocument(file, 'chat_attachment');
+        setAttachments((prev) => prev.map((a) => {
+          if (a.tempId === tempId) {
+            return {
+              ...a,
+              id: res.id,
+              status: 'READY',
+              chunks: res.chunks,
+              is_image: res.is_image,
+              ocr_text: res.ocr_text,
+              visual_description: res.visual_description,
+              image_type: res.image_type,
+            };
+          }
+          return a;
+        }));
+      } catch (err) {
+        setAttachments((prev) => prev.map((a) => {
+          if (a.tempId === tempId) {
+            return {
+              ...a,
+              status: 'FAILED',
+              error: err.message || 'Extraction failed',
+            };
+          }
+          return a;
+        }));
+      }
+    }
+  };
+
+  const handleFileSelect = (e) => {
+    if (e.target.files) {
+      processFiles(e.target.files);
+      e.target.value = '';
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer?.files) {
+      processFiles(e.dataTransfer.files);
+    }
+  };
+
+  const removeAttachment = (tempId) => {
+    setAttachments((prev) => prev.filter((a) => a.tempId !== tempId));
+  };
+
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || isPending) return;
+    const readyAttachments = attachments.filter((a) => a.status === 'READY');
+    if ((!trimmed && readyAttachments.length === 0) || isPending) return;
 
     if (isListening) {
       stopListening();
     }
 
-    onSubmit(trimmed, () => {
-      setText('');
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
-    });
+    const finalMessage = trimmed || (readyAttachments.length > 0
+      ? `Analyze attached ${readyAttachments.map((a) => a.filename).join(', ')}`
+      : '');
+
+    onSubmit(
+      finalMessage,
+      () => {
+        setText('');
+        setAttachments([]);
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
+      },
+      { attachments: readyAttachments }
+    );
   };
 
   const handleKeyDown = (e) => {
@@ -190,15 +278,27 @@ export default function QuestionComposer({
     }
   };
 
+  const formatSize = (bytes) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
   return (
     <div className="w-full font-sans select-none space-y-1.5">
       {/* Feedback alerts if disconnected, failed, or speech error */}
       {errorFeedback ? (
         <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5 flex items-center justify-between gap-2">
           {errorFeedback}
-          {onRetry && <button type="button" onClick={onRetry} className="text-[var(--text-secondary)] underline underline-offset-2">Retry</button>}
+          {onRetry && (
+            <button type="button" onClick={onRetry} className="text-[var(--text-secondary)] underline underline-offset-2">
+              Retry
+            </button>
+          )}
         </div>
-      ) : (connectionState === 'OFFLINE' && !backendConnected) ? (
+      ) : connectionState === 'OFFLINE' && !backendConnected ? (
         <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5 flex items-center justify-between">
           <span>Research service not configured. No investigation or experiment has started.</span>
         </div>
@@ -217,27 +317,82 @@ export default function QuestionComposer({
         </div>
       )}
 
-      {/* Main Single Pill Bar Container */}
+      {/* Hidden File Picker Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        multiple
+        accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.gif,.py,.js,.ts,.html,.xml"
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
+      {/* Attachment Chips Bar (renders when files are attached) */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-1 bg-[var(--surface-alt)]/60 rounded-xl border border-[var(--border-subtle)] backdrop-blur-sm">
+          {attachments.map((att) => (
+            <div
+              key={att.tempId}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[var(--surface)] border border-[var(--border-subtle)] text-[var(--text-main)] shadow-sm max-w-[260px]"
+            >
+              <span className="text-sm">
+                {att.is_image ? '🖼️' : att.doc_type?.includes('xls') || att.doc_type === 'csv' ? '📊' : att.doc_type?.includes('ppt') ? '📑' : '📄'}
+              </span>
+              <span className="truncate max-w-[120px]" title={att.filename}>{att.filename}</span>
+              <span className="text-[10px] text-[var(--text-muted)]">({formatSize(att.size)})</span>
+
+              {att.status === 'UPLOADING' && (
+                <span className="text-[10px] text-amber-500 font-semibold animate-pulse">Uploading…</span>
+              )}
+              {att.status === 'READY' && (
+                <span className="text-[10px] text-emerald-500 font-bold" title="Ready for analysis">✓ Ready</span>
+              )}
+              {att.status === 'FAILED' && (
+                <span className="text-[10px] text-red-500 font-semibold" title={att.error}>Failed</span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => removeAttachment(att.tempId)}
+                className="ml-1 text-[var(--text-muted)] hover:text-red-500 text-sm font-bold leading-none cursor-pointer"
+                title="Remove attachment"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Main Single Pill Bar Container with Drag-and-Drop */}
       <form
         onSubmit={handleSubmit}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
         onClick={(e) => {
           if (e.target !== textareaRef.current && !e.target.closest('button')) {
             textareaRef.current?.focus();
           }
         }}
         className={`w-full bg-[var(--surface)] hover:bg-[var(--surface-hover)] border ${
-          isListening
+          isDragging
+            ? 'border-indigo-500 bg-indigo-50/10 ring-2 ring-indigo-500/30'
+            : isListening
             ? 'border-[var(--accent-yellow)]'
             : 'border-[var(--border-subtle)] focus-within:border-[var(--focus-ring)]'
-        } rounded-full px-3.5 py-1 flex items-center gap-2.5 shadow-[0_4px_20px_rgba(20,18,10,.06)] transition-all duration-300 ease-in-out h-[50px]`}
+        } rounded-full px-3.5 py-1 flex items-center gap-2.5 shadow-[0_4px_20px_rgba(20,18,10,.06)] transition-all duration-300 ease-in-out min-h-[50px]`}
       >
-        {/* Left "+" Icon / Quick Access Trigger */}
+        {/* Left "+" Icon / Attachment Trigger */}
         <button
           type="button"
-          onClick={() => textareaRef.current?.focus()}
-          className="text-[var(--text-main)] text-xl font-light leading-none shrink-0 transition-colors cursor-pointer px-1"
-          title="Quick access commands"
-          aria-label="Quick access"
+          onClick={() => fileInputRef.current?.click()}
+          className="text-[var(--text-main)] hover:text-indigo-400 text-xl font-light leading-none shrink-0 transition-colors cursor-pointer px-1"
+          title="Attach files or images (PDF, DOCX, XLSX, PPTX, Images, etc.)"
+          aria-label="Attach files"
         >
           +
         </button>
@@ -248,7 +403,16 @@ export default function QuestionComposer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder || (isListening ? "Listening… Speak your question" : "Ask Atlas")}
+          placeholder={
+            placeholder ||
+            (isDragging
+              ? 'Drop files to attach…'
+              : isListening
+              ? 'Listening… Speak your question'
+              : attachments.length > 0
+              ? 'Ask anything about the attached files…'
+              : 'Ask Atlas')
+          }
           rows={1}
           disabled={isPending}
           aria-label="Research question input"
@@ -257,21 +421,13 @@ export default function QuestionComposer({
 
         {/* Right Action Stack */}
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            className="hidden sm:flex items-center gap-1 text-[13.5px] font-medium text-[var(--text-body)] hover:text-[var(--text-main)] cursor-pointer bg-transparent border-none px-1"
-          >
-            <span>Thinking</span>
-            <svg className="w-3.5 h-3.5 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-          </button>
-
           {/* Microphone Toggle Button */}
           <button
             type="button"
             onClick={toggleListening}
             disabled={isPending}
-            aria-label={isListening ? "Stop listening" : "Start voice recognition"}
-            title={isListening ? "Stop listening" : "Click to speak"}
+            aria-label={isListening ? 'Stop listening' : 'Start voice recognition'}
+            title={isListening ? 'Stop listening' : 'Click to speak'}
             className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 shrink-0 ${
               isListening
                 ? 'bg-[#F15A3A] text-white shadow-md ring-2 ring-[#F15A3A]/40 animate-pulse cursor-pointer'
@@ -293,7 +449,7 @@ export default function QuestionComposer({
           <button
             type={isPending ? 'button' : 'submit'}
             onClick={isPending ? onStop : undefined}
-            disabled={!isPending && !text.trim()}
+            disabled={!isPending && !text.trim() && attachments.filter((a) => a.status === 'READY').length === 0}
             aria-label={isPending ? 'Stop response' : 'Send question'}
             title={isPending ? 'Stop response' : 'Send question (Enter)'}
             className="w-9.5 h-9.5 rounded-full bg-[var(--text-main)] hover:scale-105 text-[var(--bg-main)] flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer disabled:opacity-60"
@@ -311,4 +467,3 @@ export default function QuestionComposer({
     </div>
   );
 }
-

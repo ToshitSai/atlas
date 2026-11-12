@@ -195,29 +195,34 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {}, sig
   return finalResult;
 }
 
-export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}, onToken = () => {}, signal = undefined) {
+export async function sendDeepResearchStream(message, projectId = null, conversationId = null, pendingAction = null, lastTopic = null, correlation = {}, conversationHistory = [], onActivity = () => {}, onToken = () => {}, signal = undefined, attachments = []) {
   return streamChat(
-    { message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, ...correlation },
+    { message, projectId, conversationId, pendingAction, lastTopic, conversationHistory, attachments, ...correlation },
     { onActivity, onToken, signal }
   );
 }
 
 // Normal-answer path over SSE so answer text renders token-by-token. The final
 // frame still carries the authoritative, post-processed response for reconcile.
-export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {}, signal, variation = false, previousAnswer = '', model = null, searchMode = 'auto', ragMode = 'auto' } = {}) {
+export async function sendChatStream(message, projectId = null, conversationId = null, { onToken = () => {}, onActivity = () => {}, conversationHistory = [], correlation = {}, signal, variation = false, previousAnswer = '', model = null, searchMode = 'auto', ragMode = 'auto', attachments = [] } = {}) {
   return streamChat(
-    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, variation, previousAnswer, model, searchMode, ragMode, ...correlation },
+    { message, projectId, conversationId, pendingAction: null, lastTopic: null, conversationHistory, variation, previousAnswer, model, searchMode, ragMode, attachments, ...correlation },
     { onActivity, onToken, signal }
   );
 }
 
-export async function uploadRagDocument(file) {
+export async function uploadRagDocument(file, workflow = 'knowledge_base') {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('workflow', workflow);
   return safeFetchJson(`${API_BASE}/files`, {
     method: 'POST',
     body: formData,
   });
+}
+
+export function getDocumentDownloadUrl(fileId) {
+  return `${API_BASE}/files/${encodeURIComponent(fileId)}/download`;
 }
 
 export async function listRagDocuments() {

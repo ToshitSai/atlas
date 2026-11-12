@@ -21,7 +21,7 @@ import urllib.error
 import urllib.parse
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -767,6 +767,9 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # A short, truncated conversation context is enough for routing; the full
     # conversation is never sent. No secrets or message text leave the server.
     chat_files = payload.get("files") if isinstance(payload.get("files"), list) else None
+    chat_attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
+    if chat_files and not chat_attachments:
+        chat_attachments = chat_files
     requested_model = str(payload.get("model") or "").strip()
     router_context = ""
     if conversation_history:
@@ -853,17 +856,18 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
             res = {"intent": "WEATHER", "response": "Which city should I check the weather for?", "sources": [], "verification": {"available": False, "failed": False}, "statusText": "A city is needed for weather"}
     else:
         res = handle_intent_message(
-        message=handler_message, 
-        active_project_id=active_project_id, 
-        session_id=conversation_id,
-        payload_pending_action=payload_pending_action,
-        payload_last_topic=payload_last_topic,
-        conversation_history=conversation_history,
-        activity_callback=activity_callback,
-        token_callback=token_callback,
-        cancel_check=cancel_check,
-        variation_instruction=("Write a fresh formulation. Do not repeat the previous answer's wording or structure:\n" + str(payload.get("previousAnswer") or "")) if payload.get("variation") else "",
-        owner_session=anon_id,
+            message=handler_message, 
+            active_project_id=active_project_id, 
+            session_id=conversation_id,
+            payload_pending_action=payload_pending_action,
+            payload_last_topic=payload_last_topic,
+            conversation_history=conversation_history,
+            activity_callback=activity_callback,
+            token_callback=token_callback,
+            cancel_check=cancel_check,
+            variation_instruction=("Write a fresh formulation. Do not repeat the previous answer's wording or structure:\n" + str(payload.get("previousAnswer") or "")) if payload.get("variation") else "",
+            owner_session=anon_id,
+            attachments=chat_attachments,
         )
         if decomposition.get("mixed"):
             res["taskDecomposition"] = decomposition
@@ -1628,20 +1632,37 @@ async def analyze_file(file: UploadFile = File(...)):
 
 
 @app.post("/api/files")
-async def upload_rag_file(file: UploadFile = File(...), request: Request = None):
-    """Store, parse, embed and index a document using Atlas Unified RAG Service."""
+@app.post("/api/documents")
+async def upload_rag_file(
+    file: UploadFile = File(...),
+    workflow: Optional[str] = Form(None),
+    request: Request = None
+):
+    """Store, parse, embed and index a document or image using Atlas Unified RAG Service."""
     from backend.rag_service import service as rag_svc
     name = file.filename or "document"
     content = await file.read()
     owner = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
+
+    # Determine workflow: "knowledge_base" or "chat_attachment"
+    wf = workflow
+    if not wf and request:
+        wf = request.query_params.get("workflow")
+    wf = wf or "knowledge_base"
+
     try:
-        doc_info = rag_svc.ingest_document(name, content, owner_session=owner)
+        doc_info = rag_svc.ingest_document(name, content, owner_session=owner, workflow=wf)
         return {
             "id": doc_info["id"],
             "filename": doc_info["filename"],
             "status": doc_info.get("status", "ready"),
             "chunks": doc_info.get("chunks_count", 0),
             "doc_type": doc_info.get("doc_type", "document"),
+            "is_image": doc_info.get("is_image", False),
+            "workflow": doc_info.get("workflow", wf),
+            "ocr_text": doc_info.get("ocr_text", ""),
+            "visual_description": doc_info.get("visual_description", ""),
+            "image_type": doc_info.get("image_type", ""),
             "storage": doc_info.get("storage", "unknown"),
             "durability": doc_info.get("durability", "unknown"),
             "persistent": doc_info.get("persistent", False),
@@ -1651,6 +1672,48 @@ async def upload_rag_file(file: UploadFile = File(...), request: Request = None)
     except Exception as exc:
         print(f"[RAG UPLOAD ERROR] {type(exc).__name__}: {str(exc)[:240]}")
         raise HTTPException(status_code=500, detail=f"Document indexing failed: {exc}") from exc
+
+
+@app.get("/api/files/{file_id}/download")
+@app.get("/api/documents/{file_id}/download")
+async def download_rag_file(file_id: str, request: Request):
+    """Download or view the original uploaded document or image file."""
+    import mimetypes
+    from backend.rag_service import safe_filename
+    owner = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner))
+
+    target_path = None
+    if os.path.exists(storage_dir):
+        for f in os.listdir(storage_dir):
+            if f.startswith(f"{file_id}_"):
+                target_path = os.path.join(storage_dir, f)
+                break
+
+    if not target_path or not os.path.isfile(target_path):
+        common_dir = os.path.join(base_dir, "data", "storage")
+        if os.path.exists(common_dir):
+            for sub in os.listdir(common_dir):
+                subpath = os.path.join(common_dir, sub)
+                if os.path.isdir(subpath):
+                    for f in os.listdir(subpath):
+                        if f.startswith(f"{file_id}_"):
+                            target_path = os.path.join(subpath, f)
+                            break
+                if target_path:
+                    break
+
+    if not target_path or not os.path.isfile(target_path):
+        raise HTTPException(status_code=404, detail="File not found or expired.")
+
+    media_type, _ = mimetypes.guess_type(target_path)
+    clean_display_name = os.path.basename(target_path).split("_", 1)[-1]
+    return FileResponse(
+        target_path,
+        media_type=media_type or "application/octet-stream",
+        filename=clean_display_name
+    )
 
 
 @app.get("/api/files")

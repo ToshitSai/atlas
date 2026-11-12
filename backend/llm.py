@@ -179,7 +179,14 @@ def _gemini_candidate_models() -> List[str]:
     or transient 503, the caller falls through to unexhausted model pools.
     """
     configured = (os.environ.get("GEMINI_MODEL") or "").strip()
-    defaults = ["gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-2.5-flash"]
+    defaults = [
+        "gemini-flash-lite-latest",
+        "gemini-3-flash-preview",
+        "gemini-flash-latest",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash"
+    ]
     candidates = []
     if configured:
         candidates.append(configured)

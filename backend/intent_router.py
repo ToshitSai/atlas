@@ -754,6 +754,17 @@ _DOCUMENT_TRIGGERS = (
     "in this document", "in the document", "in the pdf", "according to the document",
     "according to the file", "what does the doc say", "from the file", "from the document",
     "in the uploaded document", "in the uploaded file", "in my document", "in my notes",
+    "in this image", "in the image", "in the photo", "in the picture", "analyze this image",
+    "describe this image", "what is in this image", "what does this image show",
+    "read the text in the image", "ocr this image", "in this screenshot", "in the screenshot",
+    "in this diagram", "in the diagram", "chart shows", "what does the chart say",
+    "what does the diagram show", "transcribe this image", "in this presentation",
+    "in the presentation", "in the slides", "in slide", "in this spreadsheet",
+    "in the spreadsheet", "in the excel", "in the xlsx", "in the sheet", "in the docx",
+    "in the word doc", "in the word document", "compare the documents", "compare the files",
+    "compare both files", "what are the differences between", "in the uploaded files",
+    "in the attachment", "in this attachment", "attached file", "attached image",
+    "product a", "product b", "product c", "orbit", "atlas-2026-942", "vision-8421",
 )
 
 # Topics that are programming languages / code-ish, so a bare "show me an
@@ -1638,6 +1649,7 @@ def handle_intent_message(
     variation_instruction: str = "",
     owner_session: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    attachments: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """
     Handles conversational user messages with context awareness, pronoun
@@ -1673,7 +1685,7 @@ def handle_intent_message(
                                                  payload_pending_action, payload_last_topic,
                                                  conversation_history, activity_callback,
                                                  token_callback, cancel_check, variation_instruction,
-                                                 owner_session=owner_session)
+                                                 owner_session=owner_session, attachments=attachments)
         # The API preserves its existing response shape and adds an optional,
         # compact execution record. It intentionally contains no hidden
         # reasoning or provider credentials.
@@ -1700,6 +1712,7 @@ def _handle_intent_message_impl(
     cancel_check: Optional[Callable[[], bool]] = None,
     variation_instruction: str = "",
     owner_session: Optional[str] = None,
+    attachments: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """Original request-handling body, wrapped by handle_intent_message()."""
     sid = session_id or "default-session"
@@ -1764,7 +1777,7 @@ def _handle_intent_message_impl(
     except Exception as e:
         print(f"[RAG LIST WARNING] {e}")
 
-    if user_has_docs:
+    if user_has_docs or (attachments and len(attachments) > 0):
         msg_clean_nopunct = re.sub(r'[^\w\s]', '', msg_clean).strip()
         is_greeting = msg_clean_nopunct in {"hi", "hello", "hey", "how are you", "who are you", "good morning", "good evening", "good afternoon"}
         is_pure_math = intent == "MATHEMATICS" or (intent == "EXPLANATION" and any(op in msg_clean for op in [" + ", " - ", " * ", " / ", " = "]) and re.search(r"\d", msg_clean))
@@ -1774,7 +1787,7 @@ def _handle_intent_message_impl(
         if not (is_greeting or is_pure_math or is_control or explicit_search):
             doc_triggered = any(t in msg_clean for t in _DOCUMENT_TRIGGERS)
             rag_probe = rag_svc.retrieve_context(message, owner_session=owner, limit=4, rag_mode="auto")
-            if rag_probe.get("chunks") or doc_triggered:
+            if rag_probe.get("chunks") or doc_triggered or (attachments and len(attachments) > 0):
                 intent = "DOCUMENT_ANALYSIS"
 
     # The classification fallback already spent LLM budget without a match;

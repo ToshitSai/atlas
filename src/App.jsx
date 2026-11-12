@@ -295,6 +295,7 @@ function WorkspaceApp({ onSignOut }) {
     const turnId = `${conversationId}:${Date.now()}`;
     const requestId = createConversationId();
     const messageId = turnId;
+    const attachments = Array.isArray(options.attachments) ? options.attachments : [];
     let selectedModelName = options.model;
     if (!selectedModelName) {
       try { selectedModelName = localStorage.getItem('atlas-model') || 'Atlas Large'; } catch { selectedModelName = 'Atlas Large'; }
@@ -325,7 +326,7 @@ function WorkspaceApp({ onSignOut }) {
 
     setConversationTurns((prev) => [...prev, {
       id: turnId, question: queryText, answer: '', sources: [], confidence: null,
-      mode: deepCheck ? 'deep' : 'normal', isLoading: true,
+      mode: deepCheck ? 'deep' : 'normal', isLoading: true, attachments,
     }]);
 
     // Determine initial routing intention
@@ -409,7 +410,8 @@ function WorkspaceApp({ onSignOut }) {
           priorHistory,
           onActivity,
           onResearchToken,
-          requestController.signal
+          requestController.signal,
+          attachments
         );
 
         if (res) {
@@ -464,6 +466,7 @@ function WorkspaceApp({ onSignOut }) {
           signal: requestController.signal,
           variation: Boolean(options.variation),
           previousAnswer: options.previousAnswer || '',
+          attachments,
         });
 
         setSessionState('COMPLETE');

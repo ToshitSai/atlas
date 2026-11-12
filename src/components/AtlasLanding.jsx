@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ProgressiveMarkdown from './ProgressiveMarkdown';
 import AtlasLogo from './AtlasLogo';
+import { uploadRagDocument } from '../api';
 
 // ============================================================================
 // DESIGN SYSTEM TOKENS (Section 1)
@@ -283,10 +284,83 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
   // Typewriter state
   const [streamIndex, setStreamIndex] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
   const hasConversation = conversationTurns.length > 0;
 
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const processFiles = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    for (const file of files) {
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const ext = file.name.split('.').pop().toLowerCase();
+      const isImg = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
+
+      setAttachments((prev) => [...prev, {
+        tempId,
+        id: null,
+        filename: file.name,
+        size: file.size,
+        doc_type: ext,
+        is_image: isImg,
+        status: 'UPLOADING',
+        error: null,
+      }]);
+
+      try {
+        const res = await uploadRagDocument(file, 'chat_attachment');
+        setAttachments((prev) => prev.map((a) => {
+          if (a.tempId === tempId) {
+            return {
+              ...a,
+              id: res.id,
+              status: 'READY',
+              chunks: res.chunks,
+              is_image: res.is_image,
+              ocr_text: res.ocr_text,
+              visual_description: res.visual_description,
+              image_type: res.image_type,
+            };
+          }
+          return a;
+        }));
+      } catch (err) {
+        setAttachments((prev) => prev.map((a) => {
+          if (a.tempId === tempId) {
+            return {
+              ...a,
+              status: 'FAILED',
+              error: err.message || 'Extraction failed',
+            };
+          }
+          return a;
+        }));
+      }
+    }
+  };
+
+  const handleFileSelect = (e) => {
+    if (e.target.files) {
+      processFiles(e.target.files);
+      e.target.value = '';
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer?.files) {
+      processFiles(e.dataTransfer.files);
+    }
+  };
+
+  const removeAttachment = (tempId) => {
+    setAttachments((prev) => prev.filter((a) => a.tempId !== tempId));
+  };
   const fullTextLength = RAW_ANSWER_CONTENT.block1.length + RAW_ANSWER_CONTENT.block3.length + 80;
 
   useEffect(() => {
@@ -361,15 +435,25 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
 
   const handleSend = (text) => {
     const prompt = (text || inputText).trim();
-    if (!prompt) return;
+    const readyAttachments = attachments.filter((a) => a.status === 'READY');
+    if (!prompt && readyAttachments.length === 0) return;
+
+    const finalPrompt = prompt || (readyAttachments.length > 0
+      ? `Analyze attached ${readyAttachments.map((a) => a.filename).join(', ')}`
+      : '');
 
     if (onSendMessage) {
-      onSendMessage(prompt, () => setInputText(''), { deepResearch: isDeepResearch, model: selectedModel });
+      onSendMessage(
+        finalPrompt,
+        () => {
+          setInputText('');
+          setAttachments([]);
+        },
+        { deepResearch: isDeepResearch, model: selectedModel, attachments: readyAttachments }
+      );
     }
-    // The landing component is input-only. Conversation state and the real
-    // response stream belong to WorkspaceApp; keeping a local demo response
-    // here caused the old CLIP/ECE fixture to appear for unrelated questions.
     setInputText('');
+    setAttachments([]);
     return;
   };
 
@@ -912,15 +996,21 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
       className={`atlas-prompt-dock ${hasConversation ? 'is-chat' : 'is-home'}`}
         >
           <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
             style={{
               width: 'min(100%, 760px)',
               maxWidth: '760px',
               minHeight: '0',
               height: 'auto',
               backgroundColor: TOKENS.colors.card,
-              border: `1px solid ${TOKENS.colors.line}`,
+              border: `1px solid ${isDragging ? TOKENS.colors.amber : TOKENS.colors.line}`,
               borderRadius: '28px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+              boxShadow: isDragging ? '0 8px 30px rgba(245, 158, 11, 0.15)' : '0 4px 20px rgba(0,0,0,0.06)',
               padding: '16px 20px',
               pointerEvents: 'auto',
               display: 'flex',
@@ -929,6 +1019,52 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               gap: '10px'
             }}
           >
+            {/* Hidden File Picker Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.gif,.py,.js,.ts,.html,.xml"
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
+            />
+
+            {/* Attachment Chips Bar */}
+            {attachments.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', width: '100%', marginBottom: '4px' }}>
+                {attachments.map((att) => (
+                  <div
+                    key={att.tempId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      background: TOKENS.colors.bubble,
+                      border: `1px solid ${TOKENS.colors.line}`,
+                      color: TOKENS.colors.ink
+                    }}
+                  >
+                    <span>{att.is_image ? '🖼️' : att.doc_type?.includes('xls') || att.doc_type === 'csv' ? '📊' : att.doc_type?.includes('ppt') ? '📑' : '📄'}</span>
+                    <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.filename}>{att.filename}</span>
+                    {att.status === 'UPLOADING' && <span style={{ color: TOKENS.colors.orange, fontSize: '11px' }}>Uploading…</span>}
+                    {att.status === 'READY' && <span style={{ color: '#12B76A', fontSize: '11px', fontWeight: 600 }}>✓ Ready</span>}
+                    {att.status === 'FAILED' && <span style={{ color: '#F04438', fontSize: '11px', fontWeight: 600 }}>Failed</span>}
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(att.tempId)}
+                      style={{ background: 'none', border: 'none', color: TOKENS.colors.muted, cursor: 'pointer', padding: 0, marginLeft: '4px' }}
+                      title="Remove attachment"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Input Textarea */}
             <textarea
               className="atlas-composer-input"
@@ -943,7 +1079,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                   handleSend();
                 }
               }}
-              placeholder="Ask Atlas"
+              placeholder={isDragging ? 'Drop files to attach…' : attachments.length > 0 ? 'Ask anything about the attached files…' : 'Ask Atlas'}
               style={{
                 flex: 'none',
                 width: '100%',
@@ -963,6 +1099,31 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
 
             {/* Right Action Stack: Dropdown + Mic + Send */}
             <div className="atlas-composer-controls" style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', flexShrink: 0, position: 'relative' }}>
+              {/* Attach Button */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  height: '34px',
+                  padding: '0 10px',
+                  borderRadius: '999px',
+                  border: `1px solid ${TOKENS.colors.line}`,
+                  backgroundColor: 'transparent',
+                  fontSize: '12.5px',
+                  fontWeight: 500,
+                  color: TOKENS.colors.body,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer'
+                }}
+                title="Attach documents or images"
+                aria-label="Attach file"
+              >
+                <IconPlus size={13} style={{ color: TOKENS.colors.muted }} />
+                <span style={{ fontSize: '12.5px' }}>Attach</span>
+              </button>
+
               {/* Model Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
@@ -1064,7 +1225,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                 type="button"
                 className="atlas-send-button"
                 onClick={() => handleSend()}
-                disabled={!inputText.trim()}
+                disabled={!inputText.trim() && attachments.filter((a) => a.status === 'READY').length === 0}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 style={{
@@ -1132,6 +1293,29 @@ function ConversationThread({ turns, isPending, confidenceChecking = false, onEd
           >
           <div className="atlas-user-message-wrap" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', maxWidth: '78%' }}>
+              {turn.attachments && turn.attachments.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px', justifyContent: 'flex-end' }}>
+                  {turn.attachments.map((att, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        background: TOKENS.colors.card,
+                        border: `1px solid ${TOKENS.colors.line}`,
+                        color: TOKENS.colors.ink
+                      }}
+                    >
+                      <span>{att.is_image ? '🖼️' : att.doc_type?.includes('xls') || att.doc_type === 'csv' ? '📊' : att.doc_type?.includes('ppt') ? '📑' : '📄'}</span>
+                      <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.filename}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ background: TOKENS.colors.bubble, borderRadius: '16px 16px 4px 16px', padding: '14px 18px', color: TOKENS.colors.ink, fontSize: '15px', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{turn.question}</div>
               <MessageActions text={turn.question || ''} onEdit={(value) => onEditMessage?.(turns.indexOf(turn), value)} />
             </div>
