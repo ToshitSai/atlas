@@ -96,6 +96,22 @@ class Repository:
         try:
             conn = psycopg.connect(dsn, connect_timeout=CONNECT_TIMEOUT)
         except Exception as exc:
+            if "getaddrinfo failed" in str(exc).lower():
+                try:
+                    import json
+                    import urllib.request
+                    host_part = dsn.split("@")[-1].split("/")[0].split(":")[0].split("?")[0]
+                    req = urllib.request.Request(f"https://dns.google/resolve?name={host_part}&type=A")
+                    with urllib.request.urlopen(req, timeout=5) as r:
+                        d = json.loads(r.read().decode("utf-8"))
+                        ans = [a["data"] for a in d.get("Answer", []) if a.get("type") == 1]
+                        if ans:
+                            conn = psycopg.connect(dsn, hostaddr=ans[0], connect_timeout=CONNECT_TIMEOUT)
+                            conn.autocommit = False
+                            self._local.conn = conn
+                            return conn
+                except Exception:
+                    pass
             # Never include the DSN: it can contain a database password.
             code = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None) or "n/a"
             print(f"[POSTGRES CONNECT ERROR] type={type(exc).__name__} code={code} reason={str(exc).splitlines()[0][:240]}")

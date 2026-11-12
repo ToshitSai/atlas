@@ -111,6 +111,7 @@ class RAGStorageBackend(Protocol):
     ) -> Dict[str, Any]: ...
 
     def get_document(self, document_id: str, owner_session: str) -> Optional[Dict[str, Any]]: ...
+    def get_document_any_owner(self, document_id: str) -> Optional[Dict[str, Any]]: ...
     def list_documents(self, owner_session: str) -> List[Dict[str, Any]]: ...
     def delete_document(self, document_id: str, owner_session: str) -> bool: ...
     def hybrid_search(
@@ -476,6 +477,27 @@ class SQLiteRAGStorage:
                     "chunk_count": row["chunk_count"],
                     "status": row["status"],
                     "created_at": row["created_at"],
+                }
+            finally:
+                conn.close()
+
+    def get_document_any_owner(self, document_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT document_id, filename, owner_session
+                    FROM documents
+                    WHERE document_id = ?
+                """, (document_id,))
+                row = cur.fetchone()
+                if not row:
+                    return None
+                return {
+                    "id": row["document_id"],
+                    "filename": row["filename"],
+                    "owner_session": row["owner_session"],
                 }
             finally:
                 conn.close()
@@ -988,6 +1010,21 @@ class PostgresRAGStorage:
             "status": row[4],
             "updated_at": row[5].isoformat() if row[5] else None,
         }
+
+    def get_document_any_owner(self, document_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            row = self.repo._query_one(
+                """SELECT d.id, d.title, m.owner_session
+                   FROM documents d
+                   JOIN document_metadata m ON m.document_id = d.id
+                   WHERE d.id = %s""",
+                (document_id,)
+            )
+            if row:
+                return {"id": str(row[0]), "filename": row[1], "owner_session": row[2]}
+        except Exception:
+            pass
+        return self._fallback_sqlite.get_document_any_owner(document_id)
 
     def list_documents(self, owner_session: str) -> List[Dict[str, Any]]:
         rows = self.repo._execute(

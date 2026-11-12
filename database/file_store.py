@@ -3,7 +3,7 @@
 The database stores only metadata (files table); bytes live here. The local
 adapter keeps development dependency-free; the S3 adapter is used when
 STORAGE_URL/STORAGE_BUCKET are configured; the Vercel Blob adapter is used
-when BLOB_READ_WRITE_TOKEN is configured.
+when PRIVATE_READ_WRITE_TOKEN or BLOB_READ_WRITE_TOKEN is configured.
 """
 from __future__ import annotations
 
@@ -22,17 +22,42 @@ class FileStore:
     def __init__(self, config: Optional[dict] = None):
         config = config or {}
         self.backend_kind = "local"
+        self.access = "local"
         self._s3 = None
-        self._blob_token = (
+        self._blob_urls: dict[str, str] = {}
+
+        # 1. Check Private Vercel Blob first (P0 for Gen-3.3.4)
+        private_token = (
+            config.get("private_blob_token")
+            or os.environ.get("PRIVATE_READ_WRITE_TOKEN")
+            or ""
+        ).strip()
+        public_token = (
             config.get("blob_token")
             or os.environ.get("BLOB_READ_WRITE_TOKEN")
             or ""
         ).strip()
-        self._blob_urls: dict[str, str] = {}
 
-        # 1. Check Vercel Blob
-        if self._blob_token:
+        if private_token:
+            self._blob_token = private_token
             self.backend_kind = "vercel_blob"
+            self.access = "private"
+            store_id = (config.get("private_store_id") or os.environ.get("PRIVATE_STORE_ID") or "store_IwpyWGiUGAmA6dgS").strip()
+            self._store_id = store_id
+            subdomain = store_id.replace("store_", "").lower()
+            self._base_host = f"{subdomain}.private.blob.vercel-storage.com"
+        elif public_token:
+            self._blob_token = public_token
+            self.backend_kind = "vercel_blob"
+            self.access = "public"
+            store_id = (config.get("blob_store_id") or os.environ.get("BLOB_STORE_ID") or "").strip()
+            self._store_id = store_id
+            subdomain = store_id.replace("store_", "").lower() if store_id else ""
+            self._base_host = f"{subdomain}.public.blob.vercel-storage.com" if subdomain else "blob.vercel-storage.com"
+        else:
+            self._blob_token = ""
+            self._store_id = ""
+            self._base_host = ""
 
         # 2. Check S3-compatible storage
         if self.backend_kind == "local":
@@ -51,6 +76,7 @@ class FileStore:
                     )
                     self._bucket = bucket
                     self.backend_kind = "s3"
+                    self.access = "private"
                 except Exception as e:
                     print(f"[FILESTORE S3 WARNING]: {e} — falling back to local dir")
 
@@ -61,7 +87,30 @@ class FileStore:
                     or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                     "object_store"))
             self._root = root
+            self.access = "local"
             os.makedirs(self._root, exist_ok=True)
+
+    # ------------------------------------------------------------------ status
+    def status(self) -> dict:
+        """Report deterministic storage provider, access level, and durability."""
+        is_connected = False
+        if self.backend_kind == "vercel_blob":
+            is_connected = bool(self._blob_token)
+        elif self.backend_kind == "s3":
+            is_connected = self._s3 is not None
+        else:
+            is_connected = True
+
+        durability = "durable" if self.backend_kind in ("vercel_blob", "s3") else "local_disk"
+        persistent = self.backend_kind in ("vercel_blob", "s3")
+
+        return {
+            "storage_provider": self.backend_kind,
+            "storage_access": self.access,
+            "storage_connected": is_connected,
+            "durability": durability,
+            "persistent": persistent,
+        }
 
     # ------------------------------------------------------------------ paths
     def _safe_key(self, key: str) -> str:
@@ -79,22 +128,28 @@ class FileStore:
 
         if self.backend_kind == "vercel_blob" and self._blob_token:
             try:
-                url = f"https://blob.vercel-storage.com/{key}"
+                # Add addRandomSuffix=false to ensure deterministic key mapping
+                url = f"https://blob.vercel-storage.com/{key}?addRandomSuffix=false"
+                headers = {
+                    "Authorization": f"Bearer {self._blob_token}",
+                    "x-api-version": "7",
+                    "Content-Type": content_type or "application/octet-stream",
+                    "x-add-random-suffix": "0",
+                }
+                if self.access == "private":
+                    headers["x-vercel-blob-access"] = "private"
+
                 req = urllib.request.Request(
                     url,
                     data=data,
-                    headers={
-                        "Authorization": f"Bearer {self._blob_token}",
-                        "x-api-version": "7",
-                        "Content-Type": content_type or "application/octet-stream",
-                    },
+                    headers=headers,
                     method="PUT"
                 )
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     resp_data = json.loads(resp.read().decode("utf-8"))
-                    public_url = resp_data.get("url")
-                    if public_url:
-                        self._blob_urls[key] = public_url
+                    blob_url = resp_data.get("url")
+                    if blob_url:
+                        self._blob_urls[key] = blob_url
                 return key, len(data), digest
             except Exception as blob_err:
                 print(f"[FILESTORE BLOB WARNING]: {blob_err} — falling back to local write")
@@ -113,13 +168,25 @@ class FileStore:
     def get(self, key: str) -> Optional[bytes]:
         key = self._safe_key(key)
 
-        if self.backend_kind == "vercel_blob" and key in self._blob_urls:
-            try:
-                public_url = self._blob_urls[key]
-                with urllib.request.urlopen(public_url, timeout=30) as resp:
-                    return resp.read()
-            except Exception:
-                pass
+        if self.backend_kind == "vercel_blob":
+            # Attempt to retrieve via known URL, explicit HTTP URL, or constructed base URL
+            target_url = self._blob_urls.get(key)
+            if not target_url and key.startswith("http://") or key.startswith("https://"):
+                target_url = key
+            elif not target_url and self._base_host:
+                target_url = f"https://{self._base_host}/{key}"
+
+            if target_url:
+                try:
+                    headers = {}
+                    if self._blob_token:
+                        headers["Authorization"] = f"Bearer {self._blob_token}"
+                    req = urllib.request.Request(target_url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        return resp.read()
+                except Exception as e:
+                    # If direct constructed fetch failed, fall through to local
+                    pass
 
         if self._s3 is not None:
             try:
@@ -148,25 +215,34 @@ class FileStore:
     def delete(self, key: str) -> bool:
         key = self._safe_key(key)
 
-        if self.backend_kind == "vercel_blob" and self._blob_token and key in self._blob_urls:
-            try:
-                del_url = "https://blob.vercel-storage.com/delete"
-                payload = json.dumps({"urls": [self._blob_urls[key]]}).encode("utf-8")
-                req = urllib.request.Request(
-                    del_url,
-                    data=payload,
-                    headers={
-                        "Authorization": f"Bearer {self._blob_token}",
-                        "Content-Type": "application/json",
-                    },
-                    method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=15):
+        if self.backend_kind == "vercel_blob" and self._blob_token:
+            target_url = self._blob_urls.get(key)
+            if not target_url and (key.startswith("http://") or key.startswith("https://")):
+                target_url = key
+            elif not target_url and self._base_host:
+                target_url = f"https://{self._base_host}/{key}"
+
+            if target_url:
+                try:
+                    del_url = "https://blob.vercel-storage.com/delete"
+                    payload = json.dumps({"urls": [target_url]}).encode("utf-8")
+                    req = urllib.request.Request(
+                        del_url,
+                        data=payload,
+                        headers={
+                            "Authorization": f"Bearer {self._blob_token}",
+                            "Content-Type": "application/json",
+                            "x-api-version": "7",
+                        },
+                        method="POST"
+                    )
+                    with urllib.request.urlopen(req, timeout=15):
+                        pass
+                    if key in self._blob_urls:
+                        del self._blob_urls[key]
+                    return True
+                except Exception:
                     pass
-                del self._blob_urls[key]
-                return True
-            except Exception:
-                pass
 
         if self._s3 is not None:
             try:

@@ -1,0 +1,13 @@
+{
+  "timestamp": 1794491278.1885285,
+  "total_original_files": 0,
+  "successfully_migrated": 0,
+  "failed_migrations": 0,
+  "orphaned_files": 0,
+  "checksum_mismatches": 0,
+  "migrated_files": [],
+  "orphaned_details": [],
+  "failures": [],
+  "preserved_old_blobs_count": 0,
+  "dry_run": false
+}

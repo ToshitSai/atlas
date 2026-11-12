@@ -325,10 +325,29 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
     except Exception:
         indexed_docs = 0
 
+    from database.file_store import get_file_store
+    fs = get_file_store()
+    fs_status = fs.status()
+
     result = {
-        "status": "healthy" if dependencies_ready else "degraded",
+        "status": "healthy" if (dependencies_ready and fs_status.get("storage_connected")) else "degraded",
         "api": True,
         "database": database_ready,
+        "databaseType": db_diag.get("type", "unknown"),
+        "pgvector": bool(db_diag.get("pgvector", False)),
+        "durability": db_diag.get("durability", "unknown"),
+        "persistent": bool(db_diag.get("durability") == "durable" and database_ready),
+        "objectStorage": {
+            "provider": fs_status.get("storage_provider", "local"),
+            "access": fs_status.get("storage_access", "local"),
+            "connected": fs_status.get("storage_connected", False),
+        },
+        "semanticEmbeddings": {
+            "provider": default_profile.provider,
+            "model": default_profile.model_id,
+            "dimensions": default_profile.dimensions,
+            "available": emb_reg._has_semantic_embeddings(),
+        },
         "databaseDetails": db_diag,
         "llm": llm_configured,
         "llmExecution": get_llm_telemetry(),
@@ -382,25 +401,48 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
 def ready_endpoint():
     """Readiness probe for deployment orchestrators.
     
-    Returns HTTP 200 ready: true only when both LLM inference and durable database persistence are operational.
-    Returns HTTP 503 ready: false when the critical database dependency is disconnected.
+    Returns HTTP 200 ready: true only when LLM, durable database persistence, and object storage are operational.
+    Returns HTTP 503 ready: false when critical dependencies are disconnected or ephemeral.
     """
     from backend import llm as llm_mod
+    from database.file_store import get_file_store
+    from backend.embedding_registry import registry as emb_reg
+    default_profile = emb_reg.resolve_default_profile()
+
     llm_ok = llm_mod.any_provider_configured()
     db_diag = store.database_diagnostics()
     db_connected = bool(db_diag.get("connected", False))
-    is_ready = bool(llm_ok and db_connected)
+    fs = get_file_store()
+    fs_status = fs.status()
+    storage_ok = bool(fs_status.get("storage_connected", False))
+
+    is_ready = bool(llm_ok and db_connected and storage_ok)
     status_code = 200 if is_ready else 503
     return JSONResponse(status_code=status_code, content={
         "ready": is_ready,
         "status": "ready" if is_ready else "not_ready",
         "api": True,
-        "llmReady": llm_ok,
-        "databaseConnected": db_connected,
+        "database": db_connected,
         "databaseType": db_diag.get("type", "unknown"),
+        "pgvector": bool(db_diag.get("pgvector", False)),
         "durability": db_diag.get("durability", "unknown"),
-        "reason": "Production ready: all critical dependencies (LLM + durable storage) connected." if is_ready else (
-            "Durable database is not connected. Storage is ephemeral." if not db_connected else "LLM providers unconfigured."
+        "persistent": bool(db_diag.get("durability") == "durable" and db_connected),
+        "objectStorage": {
+            "provider": fs_status.get("storage_provider", "local"),
+            "access": fs_status.get("storage_access", "local"),
+            "connected": storage_ok,
+        },
+        "semanticEmbeddings": {
+            "provider": default_profile.provider,
+            "model": default_profile.model_id,
+            "dimensions": default_profile.dimensions,
+            "available": emb_reg._has_semantic_embeddings(),
+        },
+        "llmReady": llm_ok,
+        "reason": "Production ready: all critical dependencies (LLM + durable database + object storage) connected." if is_ready else (
+            "Durable database is not connected. Storage is ephemeral." if not db_connected else (
+                "Object storage is not connected." if not storage_ok else "LLM providers unconfigured."
+            )
         )
     })
 
@@ -411,6 +453,8 @@ def diagnostics_endpoint():
     db_diag = store.database_diagnostics()
     from backend import model_router, llm as llm_mod
     from backend.embedding_registry import registry as emb_reg
+    from database.file_store import get_file_store
+    fs = get_file_store()
     default_profile = emb_reg.resolve_default_profile()
 
     return {
@@ -420,6 +464,7 @@ def diagnostics_endpoint():
         "subsystems": {
             "api": {"status": "healthy", "corsConfigured": True},
             "database": db_diag,
+            "objectStorage": fs.status(),
             "llmProviders": {
                 "anyConfigured": llm_mod.any_provider_configured(),
                 "registry": model_router.build_registry(),
@@ -1678,58 +1723,74 @@ async def upload_rag_file(
 @app.get("/api/files/{file_id}/download")
 @app.get("/api/documents/{file_id}/download")
 async def download_rag_file(file_id: str, request: Request):
-    """Download or view the original uploaded document or image file."""
+    """Download or view the original uploaded document or image file securely with session authorization."""
     import mimetypes
-    from backend.rag_service import safe_filename
+    from backend.rag_service import safe_filename, service as rag_svc
+    from database.file_store import get_file_store
+
     owner = getattr(request.state, "anon_id", "anonymous") if request else "anonymous"
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner))
 
-    target_path = None
-    if os.path.exists(storage_dir):
-        for f in os.listdir(storage_dir):
-            if f.startswith(f"{file_id}_"):
-                target_path = os.path.join(storage_dir, f)
-                break
+    # 1. Authorize: query document record for this owner session
+    doc = rag_svc.get_document(file_id, owner_session=owner)
+    if not doc:
+        # Check if the document exists under a different owner session
+        if hasattr(rag_svc.storage, "get_document_any_owner"):
+            other = rag_svc.storage.get_document_any_owner(file_id)
+            if other and other.get("owner_session") != owner:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Forbidden: You do not have permission to access this private document.",
+                    headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+                )
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found or expired.",
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+        )
 
-    if not target_path or not os.path.isfile(target_path):
-        common_dir = os.path.join(base_dir, "data", "storage")
-        if os.path.exists(common_dir):
-            for sub in os.listdir(common_dir):
-                subpath = os.path.join(common_dir, sub)
-                if os.path.isdir(subpath):
-                    for f in os.listdir(subpath):
-                        if f.startswith(f"{file_id}_"):
-                            target_path = os.path.join(subpath, f)
-                            break
-                if target_path:
+    filename = safe_filename(doc.get("filename") or doc.get("title") or f"file_{file_id}")
+    media_type, _ = mimetypes.guess_type(filename)
+    media_type = media_type or "application/octet-stream"
+
+    # 2. Retrieve bytes from FileStore (Private Vercel Blob / S3 / local)
+    fs = get_file_store()
+    storage_key = f"documents/{safe_filename(owner)}/{file_id}_{filename}"
+    file_bytes = fs.get(storage_key)
+    if not file_bytes:
+        file_bytes = fs.get(f"documents/{safe_filename(owner)}/{file_id}")
+
+    # Fallback to local disk if FileStore did not return bytes
+    if not file_bytes:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner))
+        if os.path.exists(storage_dir):
+            for f in os.listdir(storage_dir):
+                if f.startswith(f"{file_id}_"):
+                    target_path = os.path.join(storage_dir, f)
+                    try:
+                        with open(target_path, "rb") as fl:
+                            file_bytes = fl.read()
+                    except Exception:
+                        pass
                     break
 
-    if not target_path or not os.path.isfile(target_path):
-        # Check FileStore (Vercel Blob / S3 / local object store)
-        try:
-            from database.file_store import get_file_store
-            fs = get_file_store()
-            # Try finding by file_id in file_store
-            key = f"documents/{safe_filename(owner)}/{file_id}"
-            blob_bytes = fs.get(key)
-            if blob_bytes:
-                from fastapi.responses import Response
-                return Response(
-                    content=blob_bytes,
-                    media_type="application/octet-stream",
-                    headers={"Content-Disposition": f'attachment; filename="download_{file_id}"'}
-                )
-        except Exception:
-            pass
-        raise HTTPException(status_code=404, detail="File not found or expired.")
+    if not file_bytes:
+        raise HTTPException(
+            status_code=404,
+            detail="Document file content not found in permanent storage.",
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+        )
 
-    media_type, _ = mimetypes.guess_type(target_path)
-    clean_display_name = os.path.basename(target_path).split("_", 1)[-1]
-    return FileResponse(
-        target_path,
-        media_type=media_type or "application/octet-stream",
-        filename=clean_display_name
+    headers = {
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": f'inline; filename="{filename}"'
+    }
+
+    return Response(
+        content=file_bytes,
+        media_type=media_type,
+        headers=headers
     )
 
 
@@ -1746,10 +1807,22 @@ async def list_rag_files(request: Request):
 @app.delete("/api/files/{file_id}")
 @app.delete("/api/documents/{file_id}")
 async def delete_rag_file(file_id: str, request: Request):
-    """Delete an indexed document and its vector embeddings."""
+    """Delete an indexed document and its vector embeddings with session authorization."""
     from backend.rag_service import service as rag_svc
     owner = getattr(request.state, "anon_id", "anonymous")
+
+    # Authorize: check if document belongs to another session
+    if hasattr(rag_svc.storage, "get_document_any_owner"):
+        other = rag_svc.storage.get_document_any_owner(file_id)
+        if other and other.get("owner_session") != owner:
+            raise HTTPException(
+                status_code=403,
+                detail="Forbidden: You cannot delete another session's private document."
+            )
+
     deleted = rag_svc.delete_document(file_id, owner_session=owner)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found.")
     return {"success": deleted, "id": file_id}
 
 
