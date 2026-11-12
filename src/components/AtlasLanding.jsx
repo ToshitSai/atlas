@@ -302,6 +302,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
 
       setAttachments((prev) => [...prev, {
         tempId,
+        rawFile: file,
         id: null,
         filename: file.name,
         size: file.size,
@@ -311,8 +312,19 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         error: null,
       }]);
 
+      const tExtract = setTimeout(() => {
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
+      }, 350);
+      const tIndex = setTimeout(() => {
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
+      }, 850);
+      const tStore = setTimeout(() => {
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
+      }, 1400);
+
       try {
         const res = await uploadRagDocument(file, 'chat_attachment');
+        clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
         setAttachments((prev) => prev.map((a) => {
           if (a.tempId === tempId) {
             return {
@@ -329,6 +341,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           return a;
         }));
       } catch (err) {
+        clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
         setAttachments((prev) => prev.map((a) => {
           if (a.tempId === tempId) {
             return {
@@ -340,6 +353,55 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
           return a;
         }));
       }
+    }
+  };
+
+  const retryAttachment = async (tempId) => {
+    const att = attachments.find((a) => a.tempId === tempId);
+    if (!att || !att.rawFile) return;
+
+    setAttachments((prev) => prev.map((a) => a.tempId === tempId ? { ...a, status: 'UPLOADING', error: null } : a));
+
+    const tExtract = setTimeout(() => {
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
+    }, 350);
+    const tIndex = setTimeout(() => {
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
+    }, 850);
+    const tStore = setTimeout(() => {
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
+    }, 1400);
+
+    try {
+      const res = await uploadRagDocument(att.rawFile, 'chat_attachment');
+      clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+      setAttachments((prev) => prev.map((a) => {
+        if (a.tempId === tempId) {
+          return {
+            ...a,
+            id: res.id,
+            status: 'READY',
+            chunks: res.chunks,
+            is_image: res.is_image,
+            ocr_text: res.ocr_text,
+            visual_description: res.visual_description,
+            image_type: res.image_type,
+          };
+        }
+        return a;
+      }));
+    } catch (err) {
+      clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+      setAttachments((prev) => prev.map((a) => {
+        if (a.tempId === tempId) {
+          return {
+            ...a,
+            status: 'FAILED',
+            error: err.message || 'Retry failed',
+          };
+        }
+        return a;
+      }));
     }
   };
 
@@ -1024,7 +1086,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               type="file"
               ref={fileInputRef}
               multiple
-              accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.gif,.py,.js,.ts,.html,.xml"
+              accept=".pdf,.docx,.txt,.md,.json,.csv,.tsv,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.py,.js,.ts,.html,.xml"
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />
@@ -1047,11 +1109,25 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                       color: TOKENS.colors.ink
                     }}
                   >
-                    <span>{att.is_image ? '🖼️' : att.doc_type?.includes('xls') || att.doc_type === 'csv' ? '📊' : att.doc_type?.includes('ppt') ? '📑' : '📄'}</span>
+                    <span>{att.is_image ? '🖼️' : att.doc_type?.includes('xls') || att.doc_type === 'csv' || att.doc_type === 'tsv' ? '📊' : att.doc_type?.includes('ppt') ? '📑' : '📄'}</span>
                     <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.filename}>{att.filename}</span>
                     {att.status === 'UPLOADING' && <span style={{ color: TOKENS.colors.orange, fontSize: '11px' }}>Uploading…</span>}
+                    {att.status === 'EXTRACTING' && <span style={{ color: '#0284C7', fontSize: '11px' }}>Extracting…</span>}
+                    {att.status === 'INDEXING' && <span style={{ color: '#6366F1', fontSize: '11px' }}>Indexing…</span>}
+                    {att.status === 'STORING' && <span style={{ color: '#8B5CF6', fontSize: '11px' }}>Storing…</span>}
                     {att.status === 'READY' && <span style={{ color: '#12B76A', fontSize: '11px', fontWeight: 600 }}>✓ Ready</span>}
-                    {att.status === 'FAILED' && <span style={{ color: '#F04438', fontSize: '11px', fontWeight: 600 }}>Failed</span>}
+                    {att.status === 'FAILED' && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ color: '#F04438', fontSize: '11px', fontWeight: 600 }}>Failed</span>
+                        <button
+                          type="button"
+                          onClick={() => retryAttachment(att.tempId)}
+                          style={{ background: 'none', border: 'none', color: TOKENS.colors.orange, fontSize: '11px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                        >
+                          Retry
+                        </button>
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeAttachment(att.tempId)}

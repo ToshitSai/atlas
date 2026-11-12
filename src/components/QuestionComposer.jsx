@@ -168,7 +168,7 @@ export default function QuestionComposer({
     }
   };
 
-  // Upload and process files
+  // Upload and process files with granular lifecycle states
   const processFiles = async (fileList) => {
     if (!fileList || fileList.length === 0) return;
 
@@ -180,6 +180,7 @@ export default function QuestionComposer({
 
       const newAttachment = {
         tempId,
+        rawFile: file,
         id: null,
         filename: file.name,
         size: file.size,
@@ -191,9 +192,21 @@ export default function QuestionComposer({
 
       setAttachments((prev) => [...prev, newAttachment]);
 
+      // Lifecycle status timers: UPLOADING -> EXTRACTING -> INDEXING -> STORING
+      const tExtract = setTimeout(() => {
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
+      }, 350);
+      const tIndex = setTimeout(() => {
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
+      }, 850);
+      const tStore = setTimeout(() => {
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
+      }, 1400);
+
       try {
         // Upload as chat_attachment workflow
         const res = await uploadRagDocument(file, 'chat_attachment');
+        clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
         setAttachments((prev) => prev.map((a) => {
           if (a.tempId === tempId) {
             return {
@@ -210,6 +223,7 @@ export default function QuestionComposer({
           return a;
         }));
       } catch (err) {
+        clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
         setAttachments((prev) => prev.map((a) => {
           if (a.tempId === tempId) {
             return {
@@ -221,6 +235,55 @@ export default function QuestionComposer({
           return a;
         }));
       }
+    }
+  };
+
+  const retryAttachment = async (tempId) => {
+    const att = attachments.find((a) => a.tempId === tempId);
+    if (!att || !att.rawFile) return;
+
+    setAttachments((prev) => prev.map((a) => a.tempId === tempId ? { ...a, status: 'UPLOADING', error: null } : a));
+
+    const tExtract = setTimeout(() => {
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
+    }, 350);
+    const tIndex = setTimeout(() => {
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
+    }, 850);
+    const tStore = setTimeout(() => {
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
+    }, 1400);
+
+    try {
+      const res = await uploadRagDocument(att.rawFile, 'chat_attachment');
+      clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+      setAttachments((prev) => prev.map((a) => {
+        if (a.tempId === tempId) {
+          return {
+            ...a,
+            id: res.id,
+            status: 'READY',
+            chunks: res.chunks,
+            is_image: res.is_image,
+            ocr_text: res.ocr_text,
+            visual_description: res.visual_description,
+            image_type: res.image_type,
+          };
+        }
+        return a;
+      }));
+    } catch (err) {
+      clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+      setAttachments((prev) => prev.map((a) => {
+        if (a.tempId === tempId) {
+          return {
+            ...a,
+            status: 'FAILED',
+            error: err.message || 'Retry failed',
+          };
+        }
+        return a;
+      }));
     }
   };
 
@@ -322,7 +385,7 @@ export default function QuestionComposer({
         type="file"
         ref={fileInputRef}
         multiple
-        accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.gif,.py,.js,.ts,.html,.xml"
+        accept=".pdf,.docx,.txt,.md,.json,.csv,.tsv,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.py,.js,.ts,.html,.xml"
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
@@ -333,22 +396,40 @@ export default function QuestionComposer({
           {attachments.map((att) => (
             <div
               key={att.tempId}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[var(--surface)] border border-[var(--border-subtle)] text-[var(--text-main)] shadow-sm max-w-[260px]"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[var(--surface)] border border-[var(--border-subtle)] text-[var(--text-main)] shadow-sm max-w-[280px]"
             >
               <span className="text-sm">
-                {att.is_image ? '🖼️' : att.doc_type?.includes('xls') || att.doc_type === 'csv' ? '📊' : att.doc_type?.includes('ppt') ? '📑' : '📄'}
+                {att.is_image ? '🖼️' : att.doc_type?.includes('xls') || att.doc_type === 'csv' || att.doc_type === 'tsv' ? '📊' : att.doc_type?.includes('ppt') ? '📑' : '📄'}
               </span>
-              <span className="truncate max-w-[120px]" title={att.filename}>{att.filename}</span>
+              <span className="truncate max-w-[110px]" title={att.filename}>{att.filename}</span>
               <span className="text-[10px] text-[var(--text-muted)]">({formatSize(att.size)})</span>
 
               {att.status === 'UPLOADING' && (
                 <span className="text-[10px] text-amber-500 font-semibold animate-pulse">Uploading…</span>
               )}
+              {att.status === 'EXTRACTING' && (
+                <span className="text-[10px] text-sky-400 font-semibold animate-pulse">Extracting…</span>
+              )}
+              {att.status === 'INDEXING' && (
+                <span className="text-[10px] text-indigo-400 font-semibold animate-pulse">Indexing…</span>
+              )}
+              {att.status === 'STORING' && (
+                <span className="text-[10px] text-purple-400 font-semibold animate-pulse">Storing…</span>
+              )}
               {att.status === 'READY' && (
                 <span className="text-[10px] text-emerald-500 font-bold" title="Ready for analysis">✓ Ready</span>
               )}
               {att.status === 'FAILED' && (
-                <span className="text-[10px] text-red-500 font-semibold" title={att.error}>Failed</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-red-500 font-semibold" title={att.error}>Failed</span>
+                  <button
+                    type="button"
+                    onClick={() => retryAttachment(att.tempId)}
+                    className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
               )}
 
               <button

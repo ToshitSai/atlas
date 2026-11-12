@@ -48,18 +48,28 @@ def compute_file_sha256(content: bytes) -> str:
 
 
 def store_original_file(document_id: str, filename: str, content: bytes, owner_session: str) -> str:
-    """Store the original uploaded document/image securely."""
+    """Store the original uploaded document/image securely via FileStore (object store or local)."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
     os.makedirs(storage_dir, exist_ok=True)
     target_path = os.path.join(storage_dir, f"{document_id}_{safe_filename(filename)}")
     with open(target_path, "wb") as f:
         f.write(content)
+
+    # Also persist to FileStore (Vercel Blob / S3 / local object store)
+    try:
+        from database.file_store import get_file_store
+        file_store = get_file_store()
+        key = f"documents/{safe_filename(owner_session)}/{document_id}_{safe_filename(filename)}"
+        file_store.put(key, content)
+    except Exception as fs_err:
+        print(f"[FILESTORE PUT WARNING] {fs_err}")
+
     return target_path
 
 
 def delete_stored_file(document_id: str, owner_session: str) -> None:
-    """Remove stored physical file from data/storage if present."""
+    """Remove stored physical file from data/storage and FileStore if present."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
     if os.path.exists(storage_dir):
@@ -69,6 +79,15 @@ def delete_stored_file(document_id: str, owner_session: str) -> None:
                     os.remove(os.path.join(storage_dir, f))
                 except Exception:
                     pass
+
+    try:
+        from database.file_store import get_file_store
+        file_store = get_file_store()
+        key = f"documents/{safe_filename(owner_session)}/{document_id}_"
+        # Attempt to delete known matching key
+        file_store.delete(key)
+    except Exception:
+        pass
 
 
 def extract_document_text(filename: str, content: bytes, owner_session: Optional[str] = None) -> List[Dict[str, Any]]:

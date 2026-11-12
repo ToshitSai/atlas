@@ -1656,6 +1656,7 @@ async def upload_rag_file(
             "id": doc_info["id"],
             "filename": doc_info["filename"],
             "status": doc_info.get("status", "ready"),
+            "stage": "ready",
             "chunks": doc_info.get("chunks_count", 0),
             "doc_type": doc_info.get("doc_type", "document"),
             "is_image": doc_info.get("is_image", False),
@@ -1705,6 +1706,22 @@ async def download_rag_file(file_id: str, request: Request):
                     break
 
     if not target_path or not os.path.isfile(target_path):
+        # Check FileStore (Vercel Blob / S3 / local object store)
+        try:
+            from database.file_store import get_file_store
+            fs = get_file_store()
+            # Try finding by file_id in file_store
+            key = f"documents/{safe_filename(owner)}/{file_id}"
+            blob_bytes = fs.get(key)
+            if blob_bytes:
+                from fastapi.responses import Response
+                return Response(
+                    content=blob_bytes,
+                    media_type="application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="download_{file_id}"'}
+                )
+        except Exception:
+            pass
         raise HTTPException(status_code=404, detail="File not found or expired.")
 
     media_type, _ = mimetypes.guess_type(target_path)

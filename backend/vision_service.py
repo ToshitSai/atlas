@@ -82,13 +82,46 @@ class VisionService:
         mime_type = get_image_mime(filename, content)
         b64_data = base64.b64encode(content).decode("utf-8")
 
+        # Inspect GIF frames if image is a GIF
+        gif_note = ""
+        keyframe_ocr_texts = []
+        if mime_type == "image/gif":
+            try:
+                import io
+                from PIL import Image
+                gif_img = Image.open(io.BytesIO(content))
+                n_frames = getattr(gif_img, "n_frames", 1)
+                is_animated = getattr(gif_img, "is_animated", False)
+                if is_animated or n_frames > 1:
+                    gif_note = f"\nThis image is an animated GIF containing {n_frames} frames. Inspect and analyze content across frames.\n"
+                    # Sample keyframes for OCR if multiple frames
+                    key_indices = sorted(set([0, n_frames // 2, n_frames - 1]))
+                    for f_idx in key_indices[1:]:
+                        try:
+                            gif_img.seek(f_idx)
+                            frame_rgb = gif_img.convert("RGB")
+                            f_buf = io.BytesIO()
+                            frame_rgb.save(f_buf, format="PNG")
+                            f_b64 = base64.b64encode(f_buf.getvalue()).decode("utf-8")
+                            f_res = self._call_multimodal(
+                                f"Extract any visible text in frame {f_idx + 1} of this animated GIF verbatim. Return only the text.",
+                                f_b64, "image/png", timeout=15
+                            )
+                            if f_res and f_res.strip():
+                                keyframe_ocr_texts.append(f"[Frame {f_idx + 1}]: {f_res.strip()}")
+                        except Exception:
+                            pass
+            except Exception as gif_err:
+                print(f"[VISION SERVICE] GIF inspection notice: {gif_err}")
+
         prompt = (
-            "You are the Atlas Multimodal Vision Engine. Analyze this image thoroughly and accurately.\n"
-            "CRITICAL INSTRUCTIONS:\n"
+            "You are the Atlas Multimodal Vision Engine. Analyze this image thoroughly and accurately."
+            + gif_note +
+            "\nCRITICAL INSTRUCTIONS:\n"
             "1. OCR EXTRACTION: Extract ALL visible text, codes, identifiers, labels, numbers, table values, "
             "or mathematical formulas verbatim. If there is no text in the image, return an empty string \"\".\n"
             "2. VISUAL DESCRIPTION: Provide a detailed, factual visual description of what is depicted: "
-            "the type of image (e.g. screenshot, photograph, architectural diagram, flowchart, chart, table, UI mockup), "
+            "the type of image (e.g. screenshot, photograph, architectural diagram, flowchart, chart, table, UI mockup, animated sequence), "
             "all visible objects, layout structure, colors, relationships, and visual components.\n"
             "3. CLASSIFICATION: Classify the image type.\n"
             "4. KEY ENTITIES: List key entities, components, or topics identified in the image.\n"
@@ -128,6 +161,10 @@ class VisionService:
                 # Extract potential OCR text
                 lines = [line.strip() for line in res.split("\n") if line.strip()]
                 ocr_text = "\n".join(lines[:10])
+
+        if keyframe_ocr_texts:
+            extra_ocr = "\n".join(keyframe_ocr_texts)
+            ocr_text = f"{ocr_text}\n\nKeyframe Text:\n{extra_ocr}".strip() if ocr_text else extra_ocr
 
         if not visual_desc and not ocr_text:
             visual_desc = f"Uploaded image: {filename} ({mime_type}, {len(content)} bytes)."

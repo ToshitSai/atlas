@@ -29,13 +29,13 @@ from backend.vision_service import (
 
 SUPPORTED_DOCUMENT_EXTENSIONS = {
     # Documents
-    ".pdf", ".docx", ".doc", ".txt", ".md", ".markdown",
+    ".pdf", ".docx", ".txt", ".md", ".markdown",
     # Spreadsheets
-    ".csv", ".xlsx", ".xls",
+    ".csv", ".tsv", ".xlsx",
     # Structured Data
     ".json", ".html", ".htm", ".xml",
     # Presentations
-    ".pptx", ".ppt",
+    ".pptx",
     # Code
     ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".c", ".cpp",
     ".rs", ".go", ".sql", ".sh", ".yaml", ".yml"
@@ -61,8 +61,15 @@ def extract_pdf(content: bytes, filename: str) -> List[Dict[str, Any]]:
     try:
         import pypdf
         reader = pypdf.PdfReader(io.BytesIO(content))
+        if getattr(reader, "is_encrypted", False):
+            try:
+                decrypted = reader.decrypt("")
+                if not decrypted:
+                    raise ValueError("This PDF is password-protected and cannot be decrypted.")
+            except Exception as enc_err:
+                raise ValueError("This PDF is password-protected and cannot be decrypted.") from enc_err
     except Exception as exc:
-        if "password" in str(exc).lower() or "encrypt" in str(exc).lower():
+        if "password" in str(exc).lower() or "encrypt" in str(exc).lower() or "decrypt" in str(exc).lower():
             raise ValueError("This PDF is password-protected and cannot be decrypted.") from exc
         raise ValueError(f"Failed to parse PDF document: {exc}") from exc
 
@@ -85,8 +92,15 @@ def extract_pdf(content: bytes, filename: str) -> List[Dict[str, Any]]:
             # Check for embedded page image for scanned PDF handling
             try:
                 for img_obj in page.images:
-                    scanned_candidates.append((idx, img_obj.data))
-                    break
+                    if hasattr(img_obj, "data") and img_obj.data:
+                        scanned_candidates.append((idx, img_obj.data))
+                if not page.images and "/Resources" in page and "/XObject" in page["/Resources"]:
+                    xObject = page["/Resources"]["/XObject"].get_object()
+                    for obj in xObject:
+                        if xObject[obj]["/Subtype"] == "/Image":
+                            data = xObject[obj].get_data()
+                            if data:
+                                scanned_candidates.append((idx, data))
             except Exception:
                 pass
 
@@ -100,14 +114,14 @@ def extract_pdf(content: bytes, filename: str) -> List[Dict[str, Any]]:
                     if ocr_t:
                         pages.append({
                             "page": p_num,
-                            "section": f"Scanned Page {p_num} (OCR)",
+                            "section": f"Page {p_num} (Scanned OCR)",
                             "text": ocr_t
                         })
                 except Exception as ocr_err:
                     print(f"[PDF SCANNED OCR ERROR] Page {p_num}: {ocr_err}")
 
         if not pages:
-            raise ValueError("PDF contains no selectable text layer; OCR is unavailable on this deployment or could not extract readable content.")
+            raise ValueError("PDF contains no selectable text layer and no extractable scanned page images; please upload a readable PDF or clear image.")
 
     return pages
 
@@ -397,6 +411,37 @@ def extract_csv(content: bytes) -> List[Dict[str, Any]]:
     return chunks or [{"page": None, "section": "CSV Header", "text": " | ".join(header)}]
 
 
+def extract_tsv(content: bytes) -> List[Dict[str, Any]]:
+    """Extract TSV (Tab-Separated Values) with header and structured rows."""
+    text = content.decode("utf-8", errors="replace")
+    reader = csv.reader(io.StringIO(text), delimiter="\t")
+    rows = [r for r in reader if any(c.strip() for c in r)]
+    if not rows:
+        raise ValueError("TSV document is empty.")
+
+    header = rows[0]
+    chunks: List[Dict[str, Any]] = []
+    batch_size = 30
+
+    for i in range(1, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        table_lines = [
+            "| " + " | ".join(header) + " |",
+            "| " + " | ".join("---" for _ in header) + " |"
+        ]
+        for r in batch:
+            padded = r + [""] * (len(header) - len(r))
+            table_lines.append("| " + " | ".join(padded[:len(header)]) + " |")
+
+        chunks.append({
+            "page": None,
+            "section": f"TSV Rows {i}-{min(len(rows)-1, i + batch_size - 1)}",
+            "text": "\n".join(table_lines)
+        })
+
+    return chunks or [{"page": None, "section": "TSV Header", "text": " | ".join(header)}]
+
+
 def extract_json(content: bytes) -> List[Dict[str, Any]]:
     """Extract structured formatted JSON."""
     raw_data = json.loads(content.decode("utf-8", errors="replace"))
@@ -473,6 +518,17 @@ def extract_document_or_image(
         raise ValueError("File exceeds maximum allowed size (50 MB).")
 
     ext = os.path.splitext(filename.lower())[1]
+
+    # Explicit rejection for legacy binary formats (DOC, XLS, PPT) or OLE CFBF magic bytes
+    is_ole_magic = content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    if ext in (".doc", ".xls", ".ppt") or (is_ole_magic and ext not in (".docx", ".xlsx", ".pptx")):
+        clean_ext = ext.lstrip(".") or "doc"
+        target_modern = "docx" if clean_ext == "doc" else ("xlsx" if clean_ext == "xls" else "pptx")
+        raise ValueError(
+            f"Legacy binary Microsoft Office format (.{clean_ext}) is not supported. "
+            f"Please save or export your file as modern .{clean_ext}x (.{target_modern}) and upload again."
+        )
+
     if ext not in ALL_SUPPORTED_EXTENSIONS:
         raise ValueError(
             f"Unsupported file format '{ext}'. "
@@ -499,27 +555,23 @@ def extract_document_or_image(
     if ext == ".pdf":
         return extract_pdf(content, filename), {"is_image": False, "format": "pdf"}
 
-    # 3. Word (.docx, .doc)
+    # 3. Word (.docx)
     if ext == ".docx":
         return extract_docx(content), {"is_image": False, "format": "docx"}
-    if ext == ".doc":
-        return extract_doc_binary(content), {"is_image": False, "format": "doc"}
 
-    # 4. Excel (.xlsx, .xls)
+    # 4. Excel (.xlsx)
     if ext == ".xlsx":
         return extract_xlsx(content), {"is_image": False, "format": "xlsx"}
-    if ext == ".xls":
-        return extract_xls_binary(content), {"is_image": False, "format": "xls"}
 
-    # 5. PowerPoint (.pptx, .ppt)
+    # 5. PowerPoint (.pptx)
     if ext == ".pptx":
         return extract_pptx(content), {"is_image": False, "format": "pptx"}
-    if ext == ".ppt":
-        return extract_ppt_binary(content), {"is_image": False, "format": "ppt"}
 
-    # 6. CSV (.csv)
+    # 6. CSV and TSV (.csv, .tsv)
     if ext == ".csv":
         return extract_csv(content), {"is_image": False, "format": "csv"}
+    if ext == ".tsv":
+        return extract_tsv(content), {"is_image": False, "format": "tsv"}
 
     # 7. JSON (.json)
     if ext == ".json":
