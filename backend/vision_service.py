@@ -244,11 +244,12 @@ class VisionService:
         gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if gemini_key:
             candidate_models = [
-                "gemini-3-flash-preview",
                 "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-flash-lite-latest",
                 "gemini-flash-latest",
                 "gemini-3.1-flash-lite-preview",
-                "gemini-2.5-flash",
+                "gemini-3-flash-preview",
                 "gemini-2.5-pro",
             ]
             for model in candidate_models:
@@ -269,7 +270,7 @@ class VisionService:
                     headers={"Content-Type": "application/json"}
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    with urllib.request.urlopen(req, timeout=min(timeout, 12)) as resp:
                         res = json.loads(resp.read().decode("utf-8"))
                         candidates = res.get("candidates", [])
                         if candidates:
