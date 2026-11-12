@@ -49,43 +49,55 @@ def compute_file_sha256(content: bytes) -> str:
 
 def store_original_file(document_id: str, filename: str, content: bytes, owner_session: str) -> str:
     """Store the original uploaded document/image securely via FileStore (object store or local)."""
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
-    os.makedirs(storage_dir, exist_ok=True)
-    target_path = os.path.join(storage_dir, f"{document_id}_{safe_filename(filename)}")
-    with open(target_path, "wb") as f:
-        f.write(content)
-
-    # Also persist to FileStore (Vercel Blob / S3 / local object store)
+    # 1. Primary: Persist to durable FileStore (Private Vercel Blob / S3)
+    key = f"documents/{safe_filename(owner_session)}/{document_id}_{safe_filename(filename)}"
     try:
         from database.file_store import get_file_store
         file_store = get_file_store()
-        key = f"documents/{safe_filename(owner_session)}/{document_id}_{safe_filename(filename)}"
         file_store.put(key, content)
     except Exception as fs_err:
         print(f"[FILESTORE PUT WARNING] {fs_err}")
 
-    return target_path
+    # 2. Secondary: Local disk cache (tolerant of read-only serverless filesystems)
+    target_path = ""
+    try:
+        base_dir = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
+        os.makedirs(storage_dir, exist_ok=True)
+        target_path = os.path.join(storage_dir, f"{document_id}_{safe_filename(filename)}")
+        with open(target_path, "wb") as f:
+            f.write(content)
+    except Exception as local_err:
+        # Expected and safe on read-only serverless lambdas
+        pass
+
+    return target_path or key
 
 
-def delete_stored_file(document_id: str, owner_session: str) -> None:
-    """Remove stored physical file from data/storage and FileStore if present."""
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
-    if os.path.exists(storage_dir):
-        for f in os.listdir(storage_dir):
-            if f.startswith(f"{document_id}_"):
-                try:
-                    os.remove(os.path.join(storage_dir, f))
-                except Exception:
-                    pass
-
+def delete_stored_file(document_id: str, owner_session: str, filename: Optional[str] = None) -> None:
+    """Remove stored physical file from FileStore (Vercel Blob / S3) and local disk."""
+    # 1. Delete from durable FileStore
     try:
         from database.file_store import get_file_store
         file_store = get_file_store()
-        key = f"documents/{safe_filename(owner_session)}/{document_id}_"
-        # Attempt to delete known matching key
-        file_store.delete(key)
+        if filename:
+            key = f"documents/{safe_filename(owner_session)}/{document_id}_{safe_filename(filename)}"
+            file_store.delete(key)
+        file_store.delete(f"documents/{safe_filename(owner_session)}/{document_id}")
+    except Exception as fs_err:
+        print(f"[FILESTORE DELETE WARNING] {fs_err}")
+
+    # 2. Local disk cleanup
+    try:
+        base_dir = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner_session))
+        if os.path.exists(storage_dir):
+            for f in os.listdir(storage_dir):
+                if f.startswith(f"{document_id}_"):
+                    try:
+                        os.remove(os.path.join(storage_dir, f))
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -396,7 +408,9 @@ class RAGService:
         return self.storage.get_document(document_id=document_id, owner_session=owner_session)
 
     def delete_document(self, document_id: str, owner_session: str) -> bool:
-        delete_stored_file(document_id, owner_session)
+        doc = self.storage.get_document(document_id=document_id, owner_session=owner_session)
+        filename = (doc or {}).get("filename") or (doc or {}).get("title") or ""
+        delete_stored_file(document_id, owner_session, filename=filename)
         return self.storage.delete_document(document_id=document_id, owner_session=owner_session)
 
     def get_research_memory(self, owner_session: str, query: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:

@@ -1766,7 +1766,7 @@ async def download_rag_file(file_id: str, request: Request):
 
     # Fallback to local disk if FileStore did not return bytes
     if not file_bytes:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         storage_dir = os.path.join(base_dir, "data", "storage", safe_filename(owner))
         if os.path.exists(storage_dir):
             for f in os.listdir(storage_dir):
