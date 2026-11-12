@@ -97,8 +97,13 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
         if content_length and content_length.isdigit() and int(content_length) > MAX_REQUEST_BYTES:
             return JSONResponse(status_code=413, content={"detail": "Request body is too large."})
 
-        # Anonymous session id: reuse the cookie when valid, else mint a new one.
-        sid = request.cookies.get(SESSION_COOKIE, "") or request.cookies.get("atlas_anon_session", "")
+        # Anonymous session id: reuse the cookie or valid client header when present, else mint a new one.
+        sid = (
+            request.cookies.get(SESSION_COOKIE, "")
+            or request.cookies.get("atlas_anon_session", "")
+            or request.headers.get("x-anonymous-id", "")
+            or request.headers.get("x-session-id", "")
+        )
         new_cookie = not _valid_sid(sid)
         if new_cookie:
             sid = secrets.token_hex(16)  # 128-bit unguessable id
@@ -127,7 +132,7 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
         if path in ("/api/chat", "/api/chat/stream"):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
-        if new_cookie:
+        if new_cookie or not (request.cookies.get(SESSION_COOKIE) or request.cookies.get("atlas_anon_session")):
             is_secure = os.environ.get("VERCEL_ENV") == "production" or request.url.scheme == "https"
             response.set_cookie(
                 SESSION_COOKIE, sid,
