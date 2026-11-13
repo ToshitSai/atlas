@@ -720,6 +720,9 @@ def _is_currency_query(text: str) -> bool:
     if not text:
         return False
     msg_low = text.lower()
+    # Datetime / clock queries must never be classified as currency/live web lookups
+    if _is_datetime_query(msg_low):
+        return False
     if re.search(r"\b(?:research paper|sample paper|sample research|fake news|news detection|news classifier|news dataset|colleges? list|list of colleges|colleges in)\b", msg_low):
         return False
     if not _WEB_CURRENCY_RE.search(msg_low):
