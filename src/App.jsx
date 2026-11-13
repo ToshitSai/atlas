@@ -341,7 +341,19 @@ function WorkspaceApp({ onSignOut }) {
     }
     const sourceTurns = Array.isArray(actualOptions.historyOverride) ? actualOptions.historyOverride : conversationTurns;
     const priorHistory = sourceTurns.flatMap((turn) => [
-      { role: 'user', content: turn.question },
+      {
+        role: 'user',
+        content: turn.question,
+        ...(Array.isArray(turn.attachments) && turn.attachments.length > 0
+          ? {
+              attachments: turn.attachments.map((a) => ({
+                document_id: a.document_id || a.id,
+                id: a.document_id || a.id,
+                filename: a.filename || a.name || 'document',
+              })),
+            }
+          : {}),
+      },
       ...(turn.answer ? [{ role: 'assistant', content: turn.answer }] : []),
     ]).slice(-20);
 
@@ -561,10 +573,23 @@ function WorkspaceApp({ onSignOut }) {
         });
 
         setSessionState('COMPLETE');
-        console.debug('[Atlas raw stream final]', res.response || streamed || '');
-        setNormalAnswer(res.response || streamed || 'No response returned.');
-        const finalConfidence = (res.sources && res.sources.length > 0 && res.confidence) ? res.confidence : null;
+        const finalAnswer = res.response || streamed || 'No response returned.';
+        const finalSources = Array.isArray(res.sources) ? res.sources : [];
+        console.debug('[Atlas raw stream final]', finalAnswer);
+        setNormalAnswer(finalAnswer);
+        setNormalSources(finalSources);
+        const finalConfidence = (finalSources.length > 0 && res.confidence) ? res.confidence : null;
         setResponseConfidence(finalConfidence);
+        setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
+          ? {
+              ...turn,
+              answer: finalAnswer,
+              sources: finalSources,
+              confidence: finalConfidence,
+              isLoading: false,
+              retrievalDiagnostics: res.retrievalDiagnostics || null,
+            }
+          : turn));
 
         if (res.sources && res.sources.length > 0) {
           setConfidenceChecking(true);

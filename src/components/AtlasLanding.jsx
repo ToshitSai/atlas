@@ -389,6 +389,15 @@ export default function AtlasLanding({
       ? `Analyze attached ${readyAttachments.map((a) => a.filename).join(', ')}`
       : '');
 
+    const cleanAttachments = readyAttachments.map((a) => ({
+      document_id: a.id || a.document_id,
+      id: a.id || a.document_id,
+      filename: a.filename || a.name || 'document',
+      doc_type: a.doc_type,
+      is_image: Boolean(a.is_image),
+      workflow: a.workflow || 'chat_attachment',
+    }));
+
     if (onSendMessage) {
       onSendMessage(
         finalPrompt,
@@ -396,7 +405,7 @@ export default function AtlasLanding({
           setInputText('');
           setAttachments([]);
         },
-        { deepResearch: isDeepResearch, model: selectedModel, attachments: readyAttachments }
+        { deepResearch: isDeepResearch, model: selectedModel, attachments: cleanAttachments }
       );
     }
     setInputText('');

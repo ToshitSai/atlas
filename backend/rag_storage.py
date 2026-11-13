@@ -114,6 +114,7 @@ class RAGStorageBackend(Protocol):
     def get_document_any_owner(self, document_id: str) -> Optional[Dict[str, Any]]: ...
     def list_documents(self, owner_session: str) -> List[Dict[str, Any]]: ...
     def delete_document(self, document_id: str, owner_session: str) -> bool: ...
+    def get_document_chunks(self, document_id: str, owner_session: str) -> List[Dict[str, Any]]: ...
     def hybrid_search(
         self,
         query_text: str,
@@ -122,6 +123,7 @@ class RAGStorageBackend(Protocol):
         limit: int = 5,
         bm25_weight: float = 0.5,
         dense_weight: float = 0.5,
+        document_ids: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]: ...
     def save_research_memory(
         self,
@@ -556,6 +558,39 @@ class SQLiteRAGStorage:
             finally:
                 conn.close()
 
+    def get_document_chunks(
+        self,
+        document_id: str,
+        owner_session: str
+    ) -> List[Dict[str, Any]]:
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT chunk_id, document_id, chunk_index, page, section,
+                           source, content, token_count
+                    FROM chunks
+                    WHERE document_id = ? AND owner_session = ?
+                    ORDER BY chunk_index ASC
+                """, (document_id, owner_session))
+                rows = cur.fetchall()
+                return [
+                    {
+                        "chunk_id": r["chunk_id"],
+                        "document_id": r["document_id"],
+                        "chunk_index": r["chunk_index"],
+                        "page": r["page"],
+                        "section": r["section"],
+                        "source": r["source"],
+                        "content": r["content"],
+                        "token_count": r["token_count"],
+                    }
+                    for r in rows
+                ]
+            finally:
+                conn.close()
+
     def hybrid_search(
         self,
         query_text: str,
@@ -564,6 +599,7 @@ class SQLiteRAGStorage:
         limit: int = 5,
         bm25_weight: float = 0.5,
         dense_weight: float = 0.5,
+        document_ids: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         with self._lock:
             conn = self._get_connection()
@@ -579,12 +615,19 @@ class SQLiteRAGStorage:
                 elif "embedding_vector" not in c_cols:
                     vec_expr = "NULL"
 
+                where_clause = "WHERE owner_session = ?"
+                params: List[Any] = [owner_session]
+                if document_ids:
+                    placeholders = ",".join("?" for _ in document_ids)
+                    where_clause += f" AND document_id IN ({placeholders})"
+                    params.extend(document_ids)
+
                 cur.execute(f"""
                     SELECT chunk_id, document_id, chunk_index, page, section,
                            source, content, token_count, {vec_expr} AS embedding_vector
                     FROM chunks
-                    WHERE owner_session = ?
-                """, (owner_session,))
+                    {where_clause}
+                """, tuple(params))
                 rows = cur.fetchall()
                 if not rows:
                     return []
@@ -1070,6 +1113,13 @@ class PostgresRAGStorage:
         sqlite_deleted = self._fallback_sqlite.delete_document(document_id, owner_session)
         return deleted or sqlite_deleted
 
+    def get_document_chunks(
+        self,
+        document_id: str,
+        owner_session: str
+    ) -> List[Dict[str, Any]]:
+        return self._fallback_sqlite.get_document_chunks(document_id, owner_session)
+
     def hybrid_search(
         self,
         query_text: str,
@@ -1078,21 +1128,28 @@ class PostgresRAGStorage:
         limit: int = 5,
         bm25_weight: float = 0.5,
         dense_weight: float = 0.5,
+        document_ids: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         # Dense pgvector query if vector provided and extension active
         has_vector = self.repo._has_pgvector()
         if query_vector and has_vector and len(query_vector) == 1536:
             try:
                 vec_lit = "[" + ",".join(str(float(x)) for x in query_vector) + "]"
+                doc_filter = ""
+                pg_params = [vec_lit, owner_session]
+                if document_ids:
+                    doc_filter = " AND c.document_id = ANY(%s)"
+                    pg_params.append(document_ids)
+                pg_params.extend([vec_lit, limit])
                 rows = self.repo._execute(
-                    """SELECT c.id, c.document_id, c.chunk_index, c.page, c.section,
+                    f"""SELECT c.id, c.document_id, c.chunk_index, c.page, c.section,
                               d.title, c.content, 1 - (c.embedding <=> %s::vector) AS score
                        FROM document_chunks c
                        JOIN documents d ON d.id = c.document_id
                        JOIN document_metadata m ON m.document_id = d.id
-                       WHERE m.owner_session = %s AND c.embedding IS NOT NULL
+                       WHERE m.owner_session = %s{doc_filter} AND c.embedding IS NOT NULL
                        ORDER BY c.embedding <=> %s::vector LIMIT %s""",
-                    (vec_lit, owner_session, vec_lit, limit)
+                    tuple(pg_params)
                 )
                 if rows:
                     return [
@@ -1113,7 +1170,7 @@ class PostgresRAGStorage:
 
         # Fallback to SQLite hybrid search (Dense + BM25 + RRF)
         return self._fallback_sqlite.hybrid_search(
-            query_text, query_vector, owner_session, limit, bm25_weight, dense_weight
+            query_text, query_vector, owner_session, limit, bm25_weight, dense_weight, document_ids=document_ids
         )
 
     def save_research_memory(

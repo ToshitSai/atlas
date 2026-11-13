@@ -840,9 +840,23 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     llm_mod.begin_engine_trace()
 
     chat_files = payload.get("files") if isinstance(payload.get("files"), list) else None
-    chat_attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
-    if chat_files and not chat_attachments:
-        chat_attachments = chat_files
+    raw_attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
+    if chat_files and not raw_attachments:
+        raw_attachments = chat_files
+
+    # Normalize attachments ensuring document_id and filename are canonical
+    chat_attachments = []
+    for att in raw_attachments:
+        if isinstance(att, dict):
+            d_id = att.get("document_id") or att.get("id") or att.get("file_id")
+            chat_attachments.append({
+                "document_id": str(d_id) if d_id else "",
+                "id": str(d_id) if d_id else "",
+                "filename": str(att.get("filename") or att.get("name") or "document"),
+                "is_image": bool(att.get("is_image")),
+                "doc_type": att.get("doc_type"),
+                "workflow": att.get("workflow", "chat_attachment")
+            })
 
     current_activity_tier = "none"
 
@@ -958,9 +972,23 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # A short, truncated conversation context is enough for routing; the full
     # conversation is never sent. No secrets or message text leave the server.
     chat_files = payload.get("files") if isinstance(payload.get("files"), list) else None
-    chat_attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
-    if chat_files and not chat_attachments:
-        chat_attachments = chat_files
+    raw_attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
+    if chat_files and not raw_attachments:
+        raw_attachments = chat_files
+
+    # Normalize attachments ensuring document_id and filename are canonical
+    chat_attachments = []
+    for att in raw_attachments:
+        if isinstance(att, dict):
+            d_id = att.get("document_id") or att.get("id") or att.get("file_id")
+            chat_attachments.append({
+                "document_id": str(d_id) if d_id else "",
+                "id": str(d_id) if d_id else "",
+                "filename": str(att.get("filename") or att.get("name") or "document"),
+                "is_image": bool(att.get("is_image")),
+                "doc_type": att.get("doc_type"),
+                "workflow": att.get("workflow", "chat_attachment")
+            })
     requested_model = str(payload.get("model") or "").strip()
     router_context = ""
     if conversation_history:

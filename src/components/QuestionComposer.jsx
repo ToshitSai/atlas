@@ -393,6 +393,15 @@ export default function QuestionComposer({
       ? `Analyze attached ${readyAttachments.map((a) => a.filename).join(', ')}`
       : '');
 
+    const cleanAttachments = readyAttachments.map((a) => ({
+      document_id: a.id || a.document_id,
+      id: a.id || a.document_id,
+      filename: a.filename || a.name || 'document',
+      doc_type: a.doc_type,
+      is_image: Boolean(a.is_image),
+      workflow: a.workflow || 'chat_attachment',
+    }));
+
     onSubmit(
       finalMessage,
       () => {
@@ -402,7 +411,7 @@ export default function QuestionComposer({
           textareaRef.current.style.height = 'auto';
         }
       },
-      { attachments: readyAttachments }
+      { attachments: cleanAttachments }
     );
   };
 

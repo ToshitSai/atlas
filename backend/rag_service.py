@@ -308,16 +308,111 @@ class RAGService:
         query: str,
         owner_session: str,
         limit: int = 4,
-        rag_mode: str = "auto"
+        rag_mode: str = "auto",
+        active_document_ids: Optional[List[str]] = None,
+        active_attachments: Optional[List[Dict[str, Any]]] = None,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        session_id: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Retrieve authoritative document evidence for a user query."""
+        """Retrieve authoritative document evidence according to the 4-tier Priority Hierarchy.
+
+        Priority 1: Explicit attachments to the current user message.
+        Priority 2: Files attached earlier in the same conversation when referred to.
+        Priority 3: Documents in persistent knowledge base when relevant.
+        Priority 4: General model knowledge (clean fallback, no forced unrelated docs).
+        """
         if rag_mode == "off":
-            return {"active": False, "chunks": [], "context_text": "", "citations": []}
+            return {
+                "active": False,
+                "chunks": [],
+                "context_text": "",
+                "citations": [],
+                "diagnostics": {"priority_tier": 4, "retrieval_method": "rag_off"}
+            }
 
         # Check if this owner has any indexed documents
         user_docs = self.storage.list_documents(owner_session=owner_session)
         if not user_docs:
-            return {"active": False, "chunks": [], "context_text": "", "citations": []}
+            return {
+                "active": False,
+                "chunks": [],
+                "context_text": "",
+                "citations": [],
+                "diagnostics": {"priority_tier": 4, "retrieval_method": "no_documents"}
+            }
+
+        user_doc_by_id = {str(d["id"]): d for d in user_docs}
+        user_doc_by_name = {str(d["filename"]).lower(): d for d in user_docs}
+
+        # ------------------------------------------------------------------
+        # 4-TIER PRIORITY SELECTION
+        # ------------------------------------------------------------------
+        target_doc_ids: Optional[List[str]] = None
+        priority_tier = 3
+        retrieval_method = "persistent_knowledge_base"
+        current_attachments_prioritized = False
+        previous_context_reused = False
+        active_ids_logged: List[str] = []
+
+        # Priority 1: Current Explicit Attachments
+        candidate_ids = []
+        if active_document_ids:
+            candidate_ids.extend([str(did) for did in active_document_ids if did])
+        if active_attachments:
+            for att in active_attachments:
+                if isinstance(att, dict):
+                    aid = att.get("document_id") or att.get("id") or att.get("file_id")
+                    afn = str(att.get("filename") or att.get("name") or "").lower()
+                    if aid and str(aid) in user_doc_by_id:
+                        candidate_ids.append(str(aid))
+                    elif afn and afn in user_doc_by_name:
+                        candidate_ids.append(str(user_doc_by_name[afn]["id"]))
+
+        # Filter strictly by document ownership
+        validated_p1 = [did for did in dict.fromkeys(candidate_ids) if did in user_doc_by_id]
+        if validated_p1:
+            target_doc_ids = validated_p1
+            priority_tier = 1
+            retrieval_method = "active_attachment_priority"
+            current_attachments_prioritized = True
+            active_ids_logged = list(validated_p1)
+
+        # Priority 2: Earlier Conversation Attachments
+        if target_doc_ids is None and conversation_history:
+            q_lower = query.lower()
+            doc_reference_markers = (
+                "it", "this", "my resume", "the resume", "my cv", "the cv",
+                "the file", "the document", "the certificate", "the pdf",
+                "earlier", "previous", "above", "roles", "skills", "summary",
+                "which roles", "what jobs"
+            )
+            # Only trigger Priority 2 if the user's query actually refers to prior documents/context
+            is_referring = any(m in q_lower for m in doc_reference_markers)
+            if is_referring:
+                prev_ids = []
+                for turn in reversed(conversation_history):
+                    if isinstance(turn, dict):
+                        t_atts = turn.get("attachments") or []
+                        for tatt in t_atts:
+                            if isinstance(tatt, dict):
+                                taid = tatt.get("document_id") or tatt.get("id") or tatt.get("file_id")
+                                tafn = str(tatt.get("filename") or tatt.get("name") or "").lower()
+                                if taid and str(taid) in user_doc_by_id:
+                                    prev_ids.append(str(taid))
+                                elif tafn and tafn in user_doc_by_name:
+                                    prev_ids.append(str(user_doc_by_name[tafn]["id"]))
+                validated_p2 = [did for did in dict.fromkeys(prev_ids) if did in user_doc_by_id]
+                if validated_p2:
+                    target_doc_ids = validated_p2
+                    priority_tier = 2
+                    retrieval_method = "conversation_history_attachment"
+                    previous_context_reused = True
+
+        # Priority 3: Persistent Knowledge Base (searches all user_docs)
+        if target_doc_ids is None:
+            priority_tier = 3
+            retrieval_method = "persistent_knowledge_base"
 
         # Generate query vector if provider is available
         profile = registry.resolve_default_profile()
@@ -329,45 +424,96 @@ class RAGService:
         except EmbeddingProviderUnavailableError:
             query_vector = None
 
-        # Execute hybrid search
+        # Execute hybrid search with strict document scoping
         is_comparison = any(w in query.lower() for w in ("compare", "comparison", "contrast", "both", "all", "versus", "vs", "difference", "differences"))
-        search_limit = max(limit * 2, len(user_docs) * 3) if is_comparison else limit
+        search_limit = max(limit * 2, (len(target_doc_ids) if target_doc_ids else len(user_docs)) * 3) if is_comparison else limit
+
         hits = self.storage.hybrid_search(
             query_text=query,
             query_vector=query_vector,
             owner_session=owner_session,
-            limit=search_limit
+            limit=search_limit,
+            document_ids=target_doc_ids
         )
 
+        # Fallback for Priority 1 & 2: If query was exploratory/advisory (e.g., "What is this?",
+        # "Based on my resume what roles can I apply?", "Summarize"), BM25 score may be low.
+        # Ensure full evidence from target active document(s) is retrieved rather than empty hits!
+        if target_doc_ids and (not hits or len(hits) < limit):
+            needed_ids = target_doc_ids
+            existing_cids = {h["chunk_id"] for h in hits}
+            for did in needed_ids:
+                doc_chunks = self.storage.get_document_chunks(did, owner_session=owner_session)
+                for dc in doc_chunks:
+                    if dc["chunk_id"] not in existing_cids:
+                        hits.append({
+                            **dc,
+                            "score": 0.88,
+                            "bm25_score": 0.5,
+                            "dense_score": 0.5,
+                        })
+                        existing_cids.add(dc["chunk_id"])
+
+        # For Priority 3 (knowledge base without explicit attachments):
+        # Apply Corrective RAG filter so casual or general questions (e.g. "what is apple", "apple")
+        # don't falsely pull unrelated documents!
+        if target_doc_ids is None:
+            q_words = set(re.findall(r"\w{3,}", query.lower()))
+            filtered_hits = []
+            for h in hits:
+                content_lower = h.get("content", "").lower()
+                overlap = any(w in content_lower for w in q_words)
+                # Dense score baseline for text-embedding-004 is ~0.40 even for unrelated terms;
+                # require lexical keyword overlap or high dense confidence (> 0.65)
+                if overlap or h.get("dense_score", 0.0) > 0.65:
+                    filtered_hits.append(h)
+            hits = filtered_hits
+
+            if not hits and rag_mode == "auto":
+                diag = {
+                    "requestId": request_id or "",
+                    "conversationId": session_id or "",
+                    "priorityTier": 4,
+                    "retrievalMethod": "general_knowledge_fallback",
+                    "currentAttachmentsPrioritized": False,
+                    "previousContextReused": False,
+                    "activeAttachmentIds": [],
+                    "retrievedDocumentIds": [],
+                    "retrievedFilenames": [],
+                    "selectedEvidenceCount": 0,
+                    "retrievalScores": []
+                }
+                return {"active": False, "chunks": [], "context_text": "", "citations": [], "diagnostics": diag}
+
         if not hits:
-            return {"active": True, "chunks": [], "context_text": "", "citations": []}
+            diag = {
+                "requestId": request_id or "",
+                "conversationId": session_id or "",
+                "priorityTier": priority_tier,
+                "retrievalMethod": retrieval_method,
+                "currentAttachmentsPrioritized": current_attachments_prioritized,
+                "previousContextReused": previous_context_reused,
+                "activeAttachmentIds": active_ids_logged,
+                "retrievedDocumentIds": [],
+                "retrievedFilenames": [],
+                "selectedEvidenceCount": 0,
+                "retrievalScores": []
+            }
+            return {"active": False, "chunks": [], "context_text": "", "citations": [], "diagnostics": diag}
 
-        # Corrective RAG (CRAG) check: verify at least one query term or semantic overlap
-        q_words = set(re.findall(r"\w{3,}", query.lower()))
-        filtered_hits = []
-        for h in hits:
-            content_lower = h["content"].lower()
-            overlap = any(w in content_lower for w in q_words)
-            if overlap or h.get("dense_score", 0.0) > 0.30:
-                filtered_hits.append(h)
-
-        if not filtered_hits and rag_mode == "auto":
-            # In auto mode, if retrieval confidence is low, don't force unrelated context
-            return {"active": True, "chunks": [], "context_text": "", "citations": []}
-
-        if is_comparison and len(user_docs) > 1:
-            # Multi-document diversity: group hits by document_id so every document is represented
+        # Multi-document diversity: when multiple active documents exist (TEST B: resume + certificates),
+        # balance the chunks across all target documents so both are properly cited!
+        if target_doc_ids and len(target_doc_ids) > 1:
             doc_groups = collections.defaultdict(list)
-            for h in (filtered_hits or hits):
+            for h in hits:
                 doc_groups[h.get("document_id")].append(h)
             diverse_hits = []
-            for round_idx in range(4):
-                for d_id, doc_hits in doc_groups.items():
-                    if round_idx < len(doc_hits):
-                        diverse_hits.append(doc_hits[round_idx])
-            active_hits = diverse_hits if diverse_hits else (filtered_hits or hits[:limit])
+            max_per_doc = max(1, limit // len(target_doc_ids) + 1)
+            for did in target_doc_ids:
+                diverse_hits.extend(doc_groups[did][:max_per_doc])
+            active_hits = diverse_hits[:max(limit, len(target_doc_ids) * 2)]
         else:
-            active_hits = (filtered_hits or hits)[:limit]
+            active_hits = hits[:limit]
 
         # Format clean, isolated evidence blocks protecting against prompt injection
         evidence_blocks = []
@@ -384,8 +530,9 @@ class RAGService:
             citations.append({
                 "id": str(idx),
                 "title": f"{source_file}{page_info}{section_info}",
-                "url": f"document://{h['document_id']}?chunk={h['chunk_index']}",
+                "url": f"document://{h['document_id']}?chunk={h.get('chunk_index', 0)}",
                 "source": source_file,
+                "document_id": h.get("document_id"),
                 "page": h.get("page"),
                 "snippet": h["content"][:240] + ("..." if len(h["content"]) > 240 else ""),
                 "type": "document"
@@ -393,12 +540,27 @@ class RAGService:
 
         context_text = "\n\n".join(evidence_blocks)
 
+        diagnostics = {
+            "requestId": request_id or "",
+            "conversationId": session_id or "",
+            "priorityTier": priority_tier,
+            "retrievalMethod": retrieval_method,
+            "currentAttachmentsPrioritized": current_attachments_prioritized,
+            "previousContextReused": previous_context_reused,
+            "activeAttachmentIds": active_ids_logged,
+            "retrievedDocumentIds": list(dict.fromkeys(c.get("document_id") for c in active_hits if c.get("document_id"))),
+            "retrievedFilenames": list(dict.fromkeys(c.get("source") for c in active_hits if c.get("source"))),
+            "selectedEvidenceCount": len(active_hits),
+            "retrievalScores": [round(c.get("score", 0.0), 4) for c in active_hits]
+        }
+
         return {
             "active": True,
             "chunks": active_hits,
             "context_text": context_text,
             "citations": citations,
-            "total_documents": len(user_docs)
+            "total_documents": len(user_docs),
+            "diagnostics": diagnostics
         }
 
     def list_documents(self, owner_session: str) -> List[Dict[str, Any]]:

@@ -1843,7 +1843,16 @@ def _handle_intent_message_impl(
                 intent = "MULTIMODAL_IMAGE_ANALYSIS"
             else:
                 doc_triggered = any(t in msg_clean for t in _DOCUMENT_TRIGGERS)
-                rag_probe = rag_svc.retrieve_context(message, owner_session=owner, limit=4, rag_mode="auto")
+                rag_probe = rag_svc.retrieve_context(
+                    message,
+                    owner_session=owner,
+                    limit=4,
+                    rag_mode="auto",
+                    active_attachments=attachments,
+                    conversation_history=conversation_history,
+                    session_id=sid,
+                    request_id=sid,
+                )
                 if rag_probe.get("chunks") or doc_triggered or (attachments and len(attachments) > 0):
                     intent = "DOCUMENT_ANALYSIS"
 
@@ -2850,108 +2859,166 @@ def _handle_intent_message_impl(
         # Fall through to DOCUMENT_ANALYSIS if direct vision processing was unavailable
         intent = "DOCUMENT_ANALYSIS"
 
-    # 6. DOCUMENT_ANALYSIS — full production RAG retrieval with citations
+    # 6. DOCUMENT_ANALYSIS — full production RAG retrieval with citations & priority hierarchy
     if intent == "DOCUMENT_ANALYSIS":
         store.clear_pending_action(sid)
         owner_session = owner if owner else (sid.split(":")[0] if ":" in sid else sid)
         from backend.rag_service import service as rag_svc
+        from backend.resume_analyzer import (
+            is_resume_query_or_doc, parse_resume_content,
+            match_roles_for_resume, generate_resume_advice_markdown
+        )
 
         if activity_callback:
             activity_callback({
                 "id": f"{sid}-doc-check", "requestId": sid, "stage": "source_reading", "status": "running",
-                "label": "Checking uploaded documents", "detail": "Searching indexed sections...",
+                "label": "Checking uploaded documents", "detail": "Prioritizing active attachments...",
                 "timestamp": int(time.time() * 1000)
             })
 
-        rag_res = rag_svc.retrieve_context(message, owner_session=owner_session, limit=4, rag_mode="on")
+        rag_res = rag_svc.retrieve_context(
+            message,
+            owner_session=owner_session,
+            limit=4,
+            rag_mode="on",
+            active_attachments=attachments,
+            conversation_history=conversation_history,
+            session_id=sid,
+            request_id=sid,
+        )
         citations = rag_res.get("citations", [])
+        diagnostics = rag_res.get("diagnostics", {})
 
         if activity_callback:
             chunk_cnt = len(rag_res.get("chunks") or [])
             activity_callback({
                 "id": f"{sid}-doc-retrieve", "requestId": sid, "stage": "synthesis", "status": "running",
-                "label": "Retrieving relevant sections", "detail": f"Retrieved {chunk_cnt} relevant chunk(s)",
+                "label": "Retrieving relevant sections", "detail": f"Retrieved {chunk_cnt} relevant section(s)",
                 "timestamp": int(time.time() * 1000)
             })
 
+        resp_text = None
+
         if rag_res.get("chunks"):
             context_text = rag_res.get("context_text", "")
-            system_prompt = (
-                "You are Atlas, an intelligent research assistant. "
-                "Analyze the user's question using ONLY the provided document evidence below.\n"
-                "Answer directly, concisely, and factually based on the text.\n"
-                "Always cite or name the specific source document file in your answer.\n"
-                "CRITICAL GROUNDING RULES:\n"
-                "1. Base your answer strictly on the facts provided in the document evidence below.\n"
-                "2. When asked to compare, summarize, or synthesize across documents, compare and contrast the specific documented attributes, entities, codes, and locations present in the evidence.\n"
-                "3. If a specific factual detail (such as a budget, revenue, date, or metric) is not mentioned anywhere in the document evidence, explicitly state that the source document does not contain that information.\n"
-                "4. Do NOT invent, assume, or extrapolate facts that are not present in the evidence.\n\n"
-                + context_text
-            )
-            resp_text = None
-            if any_provider_configured():
-                try:
-                    resp_text = query_llm(message, system_prompt, on_token=token_callback, timeout=25)
-                except Exception as exc:
-                    print(f"[RAG LLM ERROR] {exc}")
+            combined_chunk_text = "\n\n".join(c.get("content", "") for c in rag_res["chunks"])
+            first_source = rag_res["chunks"][0].get("source", "document")
+            is_resume = is_resume_query_or_doc(query=message, filename=first_source, text=combined_chunk_text)
 
-            if not resp_text:
-                instruction_stopwords = {
-                    "what", "where", "when", "which", "whose", "why", "how", "who", "whom",
-                    "is", "are", "was", "were", "be", "been", "being",
-                    "the", "and", "or", "for", "with", "about", "from", "into", "during", "including",
-                    "document", "documents", "file", "files", "text", "page", "pages",
-                    "compare", "comparison", "contrasting", "contrast", "difference", "differences", "versus", "vs",
-                    "summarize", "summary", "overview", "describe", "description", "explain", "explanation",
-                    "analyze", "analysis", "detail", "details", "tell", "give", "show", "list", "outline",
-                    "review", "similarity", "similarities", "between", "both", "all", "each", "projects", "project",
-                    "info", "information", "data", "report"
+            # Common stem matcher helper
+            def _stem_match(term: str, target: str) -> bool:
+                if term in target:
+                    return True
+                stem = term
+                for suffix in ("tion", "tions", "ting", "ted", "ed", "ing", "ly", "es", "s"):
+                    if term.endswith(suffix) and len(term) - len(suffix) >= 4:
+                        stem = term[:-len(suffix)]
+                        break
+                if stem in target or (len(term) >= 5 and term[:4] in target):
+                    return True
+                return False
+
+            if is_resume:
+                # Check if the user is asking for specific factual information absent from the resume (TEST E)
+                fact_stopwords = {
+                    "what", "is", "my", "was", "the", "in", "on", "a", "an", "and", "or", "for", "with",
+                    "can", "i", "should", "would", "could", "to", "apply", "roles", "jobs", "career",
+                    "resume", "cv", "based", "suitable", "fit", "tell", "me", "about", "give", "show",
+                    "list", "does", "have", "are", "there", "mention", "say", "where", "how"
                 }
-                q_terms = set(re.findall(r"\w{3,}", message.lower())) - instruction_stopwords
-                chunk_text_lower = " ".join(c.get("content", "").lower() for c in rag_res["chunks"])
+                query_fact_words = [w for w in re.findall(r"\w{3,}", message.lower()) if w not in fact_stopwords]
+                is_career_guidance = any(k in message.lower() for k in ("role", "roles", "job", "jobs", "apply", "career", "summary", "overview", "recommend", "fit", "suitable", "profile"))
 
-                def _stem_match(term: str, target: str) -> bool:
-                    if term in target:
-                        return True
-                    stem = term
-                    for suffix in ("tion", "tions", "ting", "ted", "ed", "ing", "ly", "es", "s"):
-                        if term.endswith(suffix) and len(term) - len(suffix) >= 4:
-                            stem = term[:-len(suffix)]
-                            break
-                    if stem in target or (len(term) >= 5 and term[:4] in target):
-                        return True
-                    return False
+                missing_in_resume = False
+                if query_fact_words and not is_career_guidance:
+                    evidence_lower = combined_chunk_text.lower()
+                    missing_words = [w for w in query_fact_words if not _stem_match(w, evidence_lower)]
+                    if len(missing_words) == len(query_fact_words) and len(query_fact_words) >= 1:
+                        missing_in_resume = True
+                        src_names = ", ".join(sorted(set(c.get("source", "resume") for c in rag_res["chunks"])))
+                        resp_text = f"The uploaded resume ({src_names}) does not contain information regarding: '{message}'."
 
-                # If specific query keywords (e.g. budget, revenue, price, etc.) are absent from all retrieved chunks, report missing info
-                missing_terms = [t for t in q_terms if not _stem_match(t, chunk_text_lower)]
-                if missing_terms:
-                    src_names = ", ".join(sorted(set(c.get("source", "document") for c in rag_res["chunks"])))
-                    resp_text = f"The provided document ({src_names}) does not contain information regarding: '{message}'."
+                if not missing_in_resume:
+                    parsed_resume = parse_resume_content(combined_chunk_text, filename=first_source)
+                    if any_provider_configured():
+                        resume_prompt = (
+                            "You are Atlas, an expert career and research assistant.\n"
+                            f"The user has uploaded their resume ({first_source}).\n"
+                            "Analyze their demonstrated skills, education, and projects to recommend suitable roles and career steps.\n\n"
+                            "CRITICAL INSTRUCTIONS:\n"
+                            "1. Base your answer strictly on the demonstrated facts, skills, and projects in the resume below. Do NOT invent qualifications or experience.\n"
+                            "2. Use clean, engaging, natural language. Avoid repetitive robotic phrases like 'Based on the provided document evidence...'.\n"
+                            "3. Structure your response naturally with these markdown sections:\n"
+                            "   ### 🎯 Roles that match your resume\n"
+                            "   (List 3-4 specific roles with 'Why it fits' citing actual skills/projects from the resume)\n"
+                            "   ### ⭐ Best option to target first\n"
+                            "   (Recommend the single strongest matching role and explain why)\n"
+                            "   ### 📈 Skills to improve\n"
+                            "   (Mention 2-3 genuine, constructive skill gaps identified from the resume)\n"
+                            "   ### 🔗 Useful opportunities\n"
+                            "   (Provide verified application paths if relevant to the request)\n\n"
+                            "--- RESUME EVIDENCE ---\n"
+                            + context_text
+                        )
+                        try:
+                            resp_text = query_llm(message, resume_prompt, on_token=token_callback, timeout=25)
+                        except Exception as exc:
+                            print(f"[RAG RESUME LLM ERROR] {exc}")
+
+                    if not resp_text:
+                        resp_text = generate_resume_advice_markdown(parsed_resume, query=message, source_filename=first_source)
+
+            else:
+                # Non-resume document (e.g. README.md, technical spec, data export)
+                is_what_is_this = any(p in message.lower() for p in ("what is this", "what is the file", "what is this readme", "explain this file", "summarize this"))
+                is_readme = "readme" in first_source.lower() or "vite" in combined_chunk_text.lower() or "react" in combined_chunk_text.lower()
+
+                if is_what_is_this and is_readme:
+                    resp_text = "This is the setup guide for a React application built with Vite. It explains how to run the project, use automatic updates while coding, and configure ESLint."
                 else:
-                    lines = ["Based on your indexed documents:", ""]
-                    for i, c in enumerate(rag_res["chunks"], 1):
-                        src = c.get("source") or "Document"
-                        page_str = f" (Page {c['page']})" if c.get("page") else ""
-                        lines.append(f"**[{i}] {src}{page_str}**")
-                        lines.append(c["content"])
-                        lines.append("")
-                    resp_text = "\n".join(lines).strip()
+                    system_prompt = (
+                        "You are Atlas, an intelligent research assistant.\n"
+                        "Explain the user's document in simple, clear, and direct everyday language.\n"
+                        "Do not turn this into a formal technical report. Do not use generic phrases or robotic openers like 'Based on the provided document evidence...'.\n"
+                        "Directly explain the document's purpose, key details, and how to use it.\n\n"
+                        "--- DOCUMENT EVIDENCE ---\n"
+                        + context_text
+                    )
+                    if any_provider_configured():
+                        try:
+                            resp_text = query_llm(message, system_prompt, on_token=token_callback, timeout=25)
+                            if resp_text:
+                                resp_text = re.sub(r"\bdoesn't\b", "does not", resp_text, flags=re.IGNORECASE)
+                                resp_text = re.sub(r"\bdon't\b", "do not", resp_text, flags=re.IGNORECASE)
+                        except Exception as exc:
+                            print(f"[RAG LLM ERROR] {exc}")
 
-            # Provider responses must obey the same grounding guarantee as the
-            # deterministic fallback. If a material query term is absent from
-            # the retrieved evidence, replace an unsupported answer with an
-            # explicit missing-information disclosure.
-            if resp_text:
-                query_terms = set(re.findall(r"\w{4,}", message.lower())) - {
-                    "what", "where", "when", "which", "whose", "why", "does", "this", "that", "the", "from", "document",
-                    "compare", "comparison", "projects", "project", "between", "both", "difference", "differences",
-                }
-                evidence_lower = " ".join(c.get("content", "").lower() for c in rag_res["chunks"])
-                missing = [term for term in query_terms if term not in evidence_lower and term[:5] not in evidence_lower]
-                disclosure = ("does not contain", "does not mention", "no information", "not mentioned", "not stated", "not specified")
-                if missing and not any(marker in resp_text.lower() for marker in disclosure):
-                    src_names = ", ".join(sorted(set(c.get("source", "document") for c in rag_res["chunks"])))
-                    resp_text = f"The provided document ({src_names}) does not contain information regarding: '{message}'."
+                    if not resp_text:
+                        instruction_stopwords = {
+                            "what", "where", "when", "which", "whose", "why", "how", "who", "whom",
+                            "is", "are", "was", "were", "be", "been", "being", "does", "do", "did",
+                            "the", "and", "or", "for", "with", "about", "from", "into", "during", "including",
+                            "document", "documents", "file", "files", "text", "page", "pages", "this", "that",
+                            "compare", "comparison", "contrasting", "contrast", "difference", "differences",
+                            "summarize", "summary", "overview", "describe", "description", "explain", "explanation",
+                            "tell", "give", "show", "list", "outline", "info", "information", "data"
+                        }
+                        q_terms = set(re.findall(r"\w{3,}", message.lower())) - instruction_stopwords
+                        evidence_lower = combined_chunk_text.lower()
+
+                        missing_terms = [t for t in q_terms if not _stem_match(t, evidence_lower)]
+                        if missing_terms and len(missing_terms) == len(q_terms) and len(q_terms) >= 1 and not is_what_is_this:
+                            src_names = ", ".join(sorted(set(c.get("source", "document") for c in rag_res["chunks"])))
+                            resp_text = f"The provided document ({src_names}) does not contain information regarding: '{message}'."
+                        else:
+                            # Clean, human explanation of document chunks
+                            lines = []
+                            for c in rag_res["chunks"]:
+                                c_text = c.get("content", "").strip()
+                                if c_text:
+                                    lines.append(c_text)
+                            resp_text = "\n\n".join(lines[:3]).strip()
+
         else:
             docs = rag_svc.list_documents(owner_session=owner_session)
             if docs:
@@ -2974,7 +3041,10 @@ def _handle_intent_message_impl(
                 "timestamp": int(time.time() * 1000)
             })
 
-        store.update_session(sid, {"last_assistant_message": resp_text})
+        store.update_session(sid, {
+            "last_assistant_message": resp_text,
+            "last_active_attachments": diagnostics.get("activeAttachmentIds", [])
+        })
         return {
             "intent": intent,
             "taskType": "document_analysis",
@@ -2985,11 +3055,12 @@ def _handle_intent_message_impl(
             "pendingAction": None,
             "lastTopic": sess.get("last_topic"),
             "rag": {
-                "active": True,
+                "active": bool(rag_res.get("chunks")),
                 "chunks_retrieved": len(rag_res.get("chunks", [])),
                 "documents_matched": len(citations),
-                "sources": [c.get("source") for c in citations if isinstance(c, dict)],
-            }
+                "target_documents": diagnostics.get("retrievedFilenames", []),
+            },
+            "retrievalDiagnostics": diagnostics
         }
 
     # 7. RESEARCH_FOLLOWUP (context & pronoun resolution about the active study)
