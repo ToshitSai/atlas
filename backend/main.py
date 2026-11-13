@@ -1675,9 +1675,12 @@ async def chat_stream_endpoint(payload: dict, request: Request):
             try:
                 event = await asyncio.wait_for(asyncio.to_thread(event_queue.get), timeout=15)
             except asyncio.TimeoutError:
-                if await request.is_disconnected():
-                    cancel_event.set()
-                    break
+                try:
+                    if await request.is_disconnected():
+                        cancel_event.set()
+                        break
+                except Exception:
+                    pass
                 yield f": keep-alive {int(time.time() * 1000)}\n\n"
                 continue
             if event is None:
