@@ -477,8 +477,8 @@ def _search_duckduckgo_lite(query: str, limit: int = 5) -> List[SearchResult]:
                 continue
             seen_urls.add(clean_url)
 
-            title = a_tag.get_text(strip=True)
-            snippet = snippet_tags[i].get_text(strip=True) if i < len(snippet_tags) else ""
+            title = re.sub(r"\s+", " ", a_tag.get_text(separator=" ", strip=True)).strip()
+            snippet = re.sub(r"\s+", " ", snippet_tags[i].get_text(separator=" ", strip=True)).strip() if i < len(snippet_tags) else ""
             netloc = urllib.parse.urlparse(clean_url).netloc
 
             results.append(SearchResult(
@@ -669,7 +669,7 @@ def classify_search_intent(query: str, explicit_mode: str = "auto") -> Tuple[boo
 def clean_search_snippet(snippet: str) -> str:
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(snippet or "", "html.parser")
-    clean = soup.get_text()
+    clean = soup.get_text(separator=" ", strip=True)
     clean = re.sub(r"\s+", " ", clean).strip()
     return clean
 

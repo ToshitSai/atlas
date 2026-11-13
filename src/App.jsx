@@ -328,6 +328,7 @@ function WorkspaceApp({ onSignOut }) {
       id: turnId, question: queryText, answer: '', sources: [], confidence: null,
       mode: deepCheck ? 'deep' : 'normal', isLoading: true, attachments,
       activities: [],
+      activityTier: deepCheck ? 'full' : 'none',
     }]);
 
     // Determine initial routing intention
@@ -469,10 +470,13 @@ function WorkspaceApp({ onSignOut }) {
       } else {
         // Simple Question / Normal Answer Path — stream real answer tokens so
         // text renders incrementally instead of a skeleton followed by the whole
-        // answer at once. The final frame carries the authoritative,
-        // post-processed response, which reconciles any raw-token drift.
+        // answer at once.
         let streamed = '';
         const onChatActivity = (activity) => {
+          if (!activity || typeof activity !== 'object') return;
+          const actLabel = String(activity.label || activity.detail || '');
+          if (actLabel.toLowerCase().includes('not checked against sources')) return;
+
           setConversationTurns((prev) => prev.map((turn) => {
             if (turn.id !== turnId) return turn;
             const currentActs = Array.isArray(turn.activities) ? [...turn.activities] : [];
@@ -481,14 +485,18 @@ function WorkspaceApp({ onSignOut }) {
             const actItem = {
               id: eventKey,
               stage: activity.stage,
-              label: activity.label || activity.detail || 'Working…',
+              label: activity.label || activity.detail || (activity.stage ? `Processing ${activity.stage}` : 'Processing…'),
               detail: activity.detail || activity.label || '',
               status: activity.status === 'completed' ? 'completed' : activity.status === 'failed' ? 'failed' : 'running',
               timestamp: activity.timestamp || Date.now(),
             };
             if (existingIdx >= 0) currentActs[existingIdx] = { ...currentActs[existingIdx], ...actItem };
             else currentActs.push(actItem);
-            return { ...turn, activities: currentActs };
+            return {
+              ...turn,
+              activities: currentActs,
+              activityTier: turn.activityTier === 'none' && currentActs.length > 0 ? 'compact' : (turn.activityTier || 'compact')
+            };
           }));
         };
 
@@ -497,7 +505,7 @@ function WorkspaceApp({ onSignOut }) {
             streamed += delta;
             console.debug('[Atlas raw stream chunk]', delta);
             setNormalAnswer((prev) => prev + delta);
-            setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, answer: `${turn.answer || ''}${delta}` } : turn));
+            setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, answer: streamed } : turn));
           },
           onActivity: onChatActivity,
           conversationHistory: priorHistory,
@@ -511,22 +519,42 @@ function WorkspaceApp({ onSignOut }) {
         setSessionState('COMPLETE');
         console.debug('[Atlas raw stream final]', res.response || streamed || '');
         setNormalAnswer(res.response || streamed || 'No response returned.');
-        setResponseConfidence(res.confidence || null);
-        setConfidenceChecking(true);
-        checkAnswerConfidence(res.response || streamed || '', res.sources || [], queryText).then((checked) => {
-          const confidence = checked?.confidence;
-          if (!confidence) return;
-          setResponseConfidence(confidence);
-          setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, confidence } : turn));
-          saveLocalConversation({ ...newHistoryEntry, updatedAt: new Date().toISOString(), messages: [{ role: 'user', content: queryText }, { role: 'assistant', content: res.response || streamed || '', sources: res.sources || [], confidence }] }).catch(() => {});
-        }).catch((error) => console.warn('[confidence check failed]', error.message)).finally(() => setConfidenceChecking(false));
+        const finalConfidence = (res.sources && res.sources.length > 0 && res.confidence) ? res.confidence : null;
+        setResponseConfidence(finalConfidence);
+
+        if (res.sources && res.sources.length > 0) {
+          setConfidenceChecking(true);
+          checkAnswerConfidence(res.response || streamed || '', res.sources, queryText).then((checked) => {
+            const confidence = checked?.confidence;
+            if (!confidence || String(confidence?.overall?.level || '').toLowerCase().includes('not checked')) return;
+            setResponseConfidence(confidence);
+            setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, confidence } : turn));
+          }).catch((error) => console.warn('[confidence check failed]', error.message)).finally(() => setConfidenceChecking(false));
+        }
+
         saveLocalConversation({ ...newHistoryEntry, updatedAt: new Date().toISOString(), messages: [
           { role: 'user', content: queryText, created_at: new Date().toISOString() },
-          { role: 'assistant', content: res.response || streamed || '', sources: res.sources || [], confidence: res.confidence || null, created_at: new Date().toISOString() },
+          { role: 'assistant', content: res.response || streamed || '', sources: res.sources || [], confidence: finalConfidence, created_at: new Date().toISOString() },
         ] }).catch(() => {});
-        setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
-          ? { ...turn, answer: res.response || streamed || 'No response returned.', sources: res.sources || [], confidence: res.confidence || null, fallbackNotice: res.fallbackNotice || null, isLoading: false }
-          : turn));
+
+        setConversationTurns((prev) => prev.map((turn) => {
+          if (turn.id !== turnId) return turn;
+          const finalizedActs = (turn.activities || []).map((act) => ({
+            ...act,
+            status: act.status === 'running' ? 'completed' : act.status,
+          })).filter((act) => !String(act.label || '').toLowerCase().includes('not checked'));
+          return {
+            ...turn,
+            answer: res.response || streamed || 'No response returned.',
+            sources: res.sources || [],
+            confidence: finalConfidence,
+            fallbackNotice: res.fallbackNotice || null,
+            activities: finalizedActs,
+            activityTier: res.activityTier || (res.sources?.length ? 'compact' : 'none'),
+            taskCategory: res.taskCategory || 'GENERAL_KNOWLEDGE',
+            isLoading: false,
+          };
+        }));
         setIsBuiltInExplanation(res.action === 'NONE' || !sysSettings.apiKeySet);
 
         if (res.citationPolicy === 'required' && res.sources) {

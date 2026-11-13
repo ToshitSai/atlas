@@ -805,33 +805,28 @@ function ConversationThread({
           </div>
 
           {/* ASSISTANT MESSAGE ROW */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-            <div
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '8px',
-                backgroundColor: TOKENS.colors.yellow,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: TOKENS.colors.ink,
-                flexShrink: 0,
-                marginTop: '4px'
-              }}
-            >
-              <IconAtom size={16} style={{ color: TOKENS.colors.ink }} />
-            </div>
-
+          <div className="atlas-assistant-message-row" style={{ display: 'flex', alignItems: 'flex-start', width: '100%' }}>
             <div style={{ flex: 1, color: TOKENS.colors.body, fontSize: '15.5px', lineHeight: 1.7, minWidth: 0 }}>
-              {/* OPERATIONAL ACTIVITY TIMELINE */}
-              {(turn.isLoading || (turn.activities && turn.activities.length > 0)) && (
-                <ActivityTimeline
-                  activities={turn.activities || []}
-                  isLoading={Boolean(turn.isLoading)}
-                  mode={turn.mode || (turn.isDeepResearch ? 'deep' : 'normal')}
-                />
-              )}
+              {/* OPERATIONAL ACTIVITY TIMELINE (Intelligent 3-Tier Routing) */}
+              {(() => {
+                const isDeep = Boolean(turn.isDeepResearch || turn.mode === 'deep' || turn.activityTier === 'full');
+                const hasActivities = Boolean(turn.activities && turn.activities.length > 0);
+                const isCompact = Boolean(turn.activityTier === 'compact' || (!isDeep && hasActivities && turn.activityTier !== 'none'));
+                const isHidden = turn.activityTier === 'none' || (!isDeep && !isCompact);
+
+                if (isHidden) return null;
+
+                const tier = isDeep ? 'full' : 'compact';
+
+                return (
+                  <ActivityTimeline
+                    activities={turn.activities || []}
+                    isLoading={Boolean(turn.isLoading)}
+                    mode={isDeep ? 'deep' : 'normal'}
+                    tier={tier}
+                  />
+                );
+              })()}
 
               {/* STREAMING / ANSWER CONTENT */}
               {turn.isLoading && !turn.answer ? (

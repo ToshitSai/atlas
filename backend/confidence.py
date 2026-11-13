@@ -107,26 +107,36 @@ def assess_confidence(question: str, result: Dict[str, Any]) -> Dict[str, Any] |
     sources = [s for s in (result.get("sources") or []) if isinstance(s, dict)]
     # Confidence is modality-specific: mathematics and code are checked by
     # deterministic verifiers, while current/research claims use evidence.
-    math_check = result.get("math_check") or result.get("mathVerification")
+    if not sources and not math_check:
+        return None
+
     if intent in {"MATHEMATICS", "CALCULATION"} and math_check:
         passed = math_check.get("status") == "passed"
         pct = 90 if passed else 20
         return {"overall": {"score": pct / 100, "percentage": pct,
                              "level": "High" if passed else "Low", "band": "high" if passed else "low"},
+                "verification_status": "completed",
                 "basis": ["Verified with numerical calculation." if passed else "Numerical verification failed."],
                 "verification": [math_check], "evidence": {"sources_used": 0, "tool_verified": passed, "experiment_ids": []},
                 "components": {"math_verification": 1.0 if passed else 0.0}, "caps": [] if passed else [{"reason": "math_verification_failed", "maximum": 20}],
                 "claims": []}
-    if intent in {"MATHEMATICS", "CALCULATION"} and not sources:
-        return {"overall": {"level": "Not checked against sources"},
-                "basis": ["This mathematical answer needs a numerical verification pass."],
-                "verification": [], "evidence": {"sources_used": 0, "tool_verified": False, "experiment_ids": []},
-                "claims": [], "unknown": "No mathematical verifier result was provided."}
+
+    if not sources:
+        return None
+
     score = calculate_evidence_score(sources, result.get("claims"), result.get("verification"), bool(_DATASET.search(question)), bool(result.get("experimentIds")))
-    level = score["level"] if score else ("Not checked against sources" if not sources else "Not checked against sources")
-    confidence = {"overall": {"level": level}, "basis": ["Calculated from source coverage, quality, agreement, verification, and relevance/recency."] if score else ["This answer has not been checked against retrieved sources."], "verification": [], "evidence": {"sources_used": len(sources), "tool_verified": bool(result.get("verification", {}).get("available")), "experiment_ids": result.get("experimentIds") or []}, "claims": result.get("claims") or []}
-    if score:
-        confidence["overall"].update({"score": score["score"] / 100, "percentage": score["percentage"], "band": level.lower()})
-        confidence["components"], confidence["caps"] = score["components"], score["caps"]
-    else: confidence["unknown"] = "Claim verification was not run because this answer had no retrieved source evidence."
+    if not score:
+        return None
+
+    level = score["level"]
+    confidence = {
+        "overall": {"level": level, "score": score["score"] / 100, "percentage": score["percentage"], "band": level.lower()},
+        "verification_status": "completed",
+        "basis": ["Calculated from source coverage, quality, agreement, verification, and relevance/recency."],
+        "verification": [],
+        "evidence": {"sources_used": len(sources), "tool_verified": bool(result.get("verification", {}).get("available")), "experiment_ids": result.get("experimentIds") or []},
+        "claims": result.get("claims") or [],
+        "components": score.get("components"),
+        "caps": score.get("caps")
+    }
     return confidence

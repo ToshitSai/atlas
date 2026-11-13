@@ -15,13 +15,13 @@ export default function ProgressiveMarkdown({ content = '', streaming = false, o
   const targetRef = useRef(safeContent);
   useEffect(() => {
     targetRef.current = safeContent;
-    if (instant) {
+    if (instant || !streaming) {
       visibleRef.current = safeContent;
       queueRef.current = '';
       setVisible(safeContent);
       return undefined;
     }
-    if (safeContent.length < visibleRef.current.length) {
+    if (!safeContent.startsWith(visibleRef.current)) {
       queueRef.current = '';
       visibleRef.current = safeContent;
       setVisible(safeContent);

@@ -801,7 +801,6 @@ def _stream_gemini(prompt: str, system_prompt: Optional[str], on_token: Callable
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
         req = urllib.request.Request(url, data=data_bytes, headers=headers)
         collected = []
-        last_len = 0
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 for line in resp:
@@ -812,10 +811,8 @@ def _stream_gemini(prompt: str, system_prompt: Optional[str], on_token: Callable
                     try:
                         chunk = json.loads(data_str)
                         parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                        text_acc = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
-                        if len(text_acc) > last_len:
-                            delta = text_acc[last_len:]
-                            last_len = len(text_acc)
+                        delta = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                        if delta:
                             collected.append(delta)
                             on_token(delta)
                     except Exception:
@@ -916,21 +913,33 @@ def query_llm_stream(
             ordered.append(name)
     stream_funcs = [available[name][1] for name in ordered]
 
+    emitted = False
+    def stream_callback(delta: str):
+        nonlocal emitted
+        if delta:
+            emitted = True
+            on_token(delta)
+
     for fn in stream_funcs:
         try:
-            res = fn(prompt, system_prompt, on_token, timeout, max_tokens)
+            res = fn(prompt, system_prompt, stream_callback, timeout, max_tokens)
             if res and res.strip():
                 _trace_succeeded()
                 return res.strip()
+            if emitted and res:
+                return res.strip()
         except Exception as err:
             print(f"[LLM STREAM WARNING] {fn.__name__} failed: {err}")
+            if emitted:
+                return None
 
-
-    # Fallback to non-streaming query_llm if all stream functions fail
-    fallback = query_llm(prompt, system_prompt, provider=provider, role=role, timeout=timeout, max_tokens=max_tokens)
-    if fallback and isinstance(fallback, str) and on_token:
-        on_token(fallback)
-    return fallback if isinstance(fallback, str) else None
+    # Fallback to non-streaming query_llm only if no tokens reached the client yet
+    if not emitted:
+        fallback = query_llm(prompt, system_prompt, provider=provider, role=role, timeout=timeout, max_tokens=max_tokens)
+        if fallback and isinstance(fallback, str) and on_token:
+            on_token(fallback)
+        return fallback if isinstance(fallback, str) else None
+    return None
 
 
 def query_llm(

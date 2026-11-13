@@ -2,30 +2,77 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /**
- * Transparent AI Activity Timeline.
- * Communicates what Atlas is genuinely doing without exposing private chain-of-thought.
+ * Intelligent AI Activity Timeline.
+ * Supports Tier 0 (hidden), Tier 1 (compact indicator), and Tier 2 (full expandable research timeline).
+ * Never displays misleading confidence labels or stale "Working..." states.
  */
 export default function ActivityTimeline({
   activities = [],
   isLoading = false,
   mode = 'normal', // 'normal' | 'deep'
+  tier = 'full',   // 'none' | 'compact' | 'full'
 }) {
   const [isExpanded, setIsExpanded] = useState(isLoading);
 
-  if (!activities || activities.length === 0) {
-    if (!isLoading) return null;
+  // Sanitize and filter activities: remove unverified confidence & stale placeholders
+  const validActivities = (activities || []).filter((act) => {
+    if (!act || typeof act !== 'object') return false;
+    const label = String(act.label || '').toLowerCase();
+    if (label.includes('not checked against sources') || label.includes('not checked')) return false;
+    if (!isLoading && label === 'working…' && !act.detail) return false;
+    return true;
+  });
+
+  // Tier 0: Direct answers have no activity display
+  if (tier === 'none' || mode === 'hidden') return null;
+
+  // Tier 1: Compact single-line indicator for targeted tool/retrieval operations
+  if (tier === 'compact') {
+    if (!isLoading) {
+      const lastDone = validActivities.filter((a) => a.status === 'completed').pop();
+      if (!lastDone) return null;
+      return (
+        <div className="my-1.5 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+          <svg className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span className="truncate">{typeof lastDone.label === 'string' ? lastDone.label : 'Operation completed'}</span>
+        </div>
+      );
+    }
+
+    const active = validActivities.find((a) => a.status === 'running') || validActivities[validActivities.length - 1];
+    const text = active?.label || 'Processing…';
     return (
-      <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-[var(--surface-alt)] text-xs text-[var(--text-secondary)] border border-[var(--border-subtle)] my-2 w-fit">
-        <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent-yellow)] animate-pulse" />
-        <span>Thinking…</span>
+      <div className="my-2 flex items-center gap-2 py-1.5 px-3 rounded-lg bg-[var(--surface-alt)] text-xs text-[var(--text-secondary)] border border-[var(--border-subtle)] w-fit">
+        <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent-amber)] animate-pulse flex-shrink-0" />
+        <span className="font-medium text-[var(--text-main)] truncate max-w-xs">{text}</span>
+        {active?.detail && active.detail !== text && (
+          <span className="text-[var(--text-muted)] truncate max-w-sm hidden sm:inline">— {active.detail}</span>
+        )}
       </div>
     );
   }
 
-  // Identify latest or active step
-  const activeStep = activities.find((a) => a.status === 'running') || activities[activities.length - 1];
-  const completedCount = activities.filter((a) => a.status === 'completed').length;
-  const isAllComplete = !isLoading && activities.every((a) => a.status === 'completed');
+  // Tier 2: Full Deep Research Activity Timeline
+  if (validActivities.length === 0) {
+    if (!isLoading) return null;
+    return (
+      <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-[var(--surface-alt)] text-xs text-[var(--text-secondary)] border border-[var(--border-subtle)] my-2 w-fit">
+        <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent-yellow)] animate-pulse flex-shrink-0" />
+        <span>Synthesizing research…</span>
+      </div>
+    );
+  }
+
+  // Identify latest or active step (when !isLoading, all running steps are treated as completed)
+  const activeStep = isLoading
+    ? (validActivities.find((a) => a.status === 'running') || validActivities[validActivities.length - 1])
+    : validActivities[validActivities.length - 1];
+  const completedCount = isLoading
+    ? validActivities.filter((a) => a.status === 'completed').length
+    : validActivities.length;
+  const isAllComplete = !isLoading;
 
   return (
     <div className="my-2.5 w-full max-w-xl">
@@ -35,22 +82,20 @@ export default function ActivityTimeline({
         onClick={() => setIsExpanded((prev) => !prev)}
         className="group flex items-center justify-between w-full max-w-md py-1.5 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-alt)] hover:bg-[var(--surface-hover)] transition-all text-xs"
         aria-expanded={isExpanded}
-        aria-label="Toggle agent activity details"
+        aria-label="Toggle research activity details"
       >
         <div className="flex items-center gap-2 min-w-0">
           {isLoading ? (
             <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent-yellow)] animate-ping flex-shrink-0" />
-          ) : isAllComplete ? (
+          ) : (
             <svg className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <polyline points="20 6 9 17 4 12" />
             </svg>
-          ) : (
-            <span className="inline-block h-2 w-2 rounded-full bg-[var(--text-muted)] flex-shrink-0" />
           )}
 
           <span className="font-medium text-[var(--text-main)] truncate">
             {isLoading
-              ? (typeof activeStep?.label === 'string' ? activeStep.label : (activeStep?.label ? JSON.stringify(activeStep.label) : 'Processing…'))
+              ? (typeof activeStep?.label === 'string' && activeStep.label !== 'Working…' ? activeStep.label : 'Processing research…')
               : `${completedCount} operational step${completedCount === 1 ? '' : 's'} completed`}
           </span>
 
@@ -86,10 +131,12 @@ export default function ActivityTimeline({
             className="overflow-hidden"
           >
             <div className="mt-2 pl-3 py-2 pr-2 border-l-2 border-[var(--border-subtle)] space-y-2.5 text-xs">
-              {activities.map((act, idx) => {
-                const isRunning = act.status === 'running';
+              {validActivities.map((act, idx) => {
+                const isRunning = isLoading && act.status === 'running';
                 const isFailed = act.status === 'failed';
-                const isComplete = act.status === 'completed';
+                const labelText = typeof act.label === 'string' ? act.label : JSON.stringify(act.label || '');
+                // Sanitize label so "Working…" never appears after completion
+                const displayLabel = !isLoading && labelText === 'Working…' ? (act.detail || 'Step completed') : labelText;
 
                 return (
                   <div key={act.id || idx} className="flex items-start gap-2.5">
@@ -113,7 +160,7 @@ export default function ActivityTimeline({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className={`font-medium ${isRunning ? 'text-[var(--text-main)] font-semibold' : isFailed ? 'text-rose-500' : 'text-[var(--text-body)]'}`}>
-                          {typeof act.label === 'string' ? act.label : JSON.stringify(act.label || '')}
+                          {displayLabel}
                         </span>
                         {act.timestamp && (
                           <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">

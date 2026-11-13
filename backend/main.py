@@ -670,6 +670,55 @@ def update_settings(payload: dict):
     st["llmEffectiveProvider"] = llm_mod.effective_provider_label(st.get("llmProvider", ""))
     return {"status": "ok", "settings": st}
 
+
+def determine_task_category(intent: str, routing_decision: dict, message: str, attachments: list = None) -> tuple:
+    """Classifies user queries into 8 intelligent task categories and determines activity visibility tier:
+      A. SIMPLE_CONVERSATION    -> tier 'none'
+      B. GENERAL_KNOWLEDGE      -> tier 'none'
+      C. COMPLEX_REASONING      -> tier 'compact' (if tools/calc) or 'none' (direct reasoning)
+      D. DOCUMENT_ANALYSIS      -> tier 'compact'
+      E. LIVE_WEB_SEARCH        -> tier 'compact'
+      F. DEEP_RESEARCH          -> tier 'full'
+      G. TOOL_EXECUTION         -> tier 'compact'
+      H. MULTIMODAL_ANALYSIS    -> tier 'compact'
+    """
+    route_mode = str(routing_decision.get("mode") or "").lower() if isinstance(routing_decision, dict) else ""
+    intent_upper = str(intent or "").upper()
+    msg_clean = str(message or "").strip().lower()
+
+    if intent_upper in ("MULTIMODAL_IMAGE_ANALYSIS", "IMAGE_ANALYSIS") or (
+        attachments and any(isinstance(a, dict) and (a.get("is_image") or str(a.get("type", "")).startswith("image/")) for a in attachments)
+    ):
+        return ("MULTIMODAL_ANALYSIS", "compact")
+
+    if intent_upper in ("DOCUMENT_ANALYSIS", "DATA_ANALYSIS", "DOCUMENT_SUMMARY", "FILE_ANALYSIS") or (attachments and len(attachments) > 0):
+        return ("DOCUMENT_ANALYSIS", "compact")
+
+    if route_mode == "deep_research" or intent_upper in ("DEEP_RESEARCH", "RESEARCH_START", "AI_SCIENTIST", "RESEARCH_FOLLOWUP", "RESEARCH_CONTROL"):
+        return ("DEEP_RESEARCH", "full")
+
+    if route_mode == "web_search" or intent_upper in ("WEB_SEARCH", "CURRENT_INFORMATION", "ENTITY_INFORMATION", "NEWS", "SEARCH"):
+        return ("LIVE_WEB_SEARCH", "compact")
+
+    # Time-sensitive indicators requesting live external facts
+    if (
+        re.search(r"\b(today|latest|recent|news|current|announcement|internships?|papers?|arxiv)\b", msg_clean)
+        and re.search(r"\b(what|who|where|how|search|find|news|developments|happened|give me)\b", msg_clean)
+    ):
+        return ("LIVE_WEB_SEARCH", "compact")
+
+    if intent_upper in ("MATHEMATICS", "CALCULATION", "WEATHER", "TOOL_EXECUTION", "CODE_EXECUTION"):
+        return ("TOOL_EXECUTION", "compact")
+
+    if intent_upper in ("REASONING", "COMPLEX_REASONING") or re.search(r"\b(compare|contrast|difference between|why might|architectural failure|solve step by step)\b", msg_clean):
+        return ("COMPLEX_REASONING", "none")
+
+    if intent_upper in ("CASUAL_CHAT", "SIMPLE_CONVERSATION", "PROJECT_IDENTITY") or re.match(r"^(hi|hello|hey|howdy|greetings|good\s+(morning|afternoon|evening|day)|how are you|who are you|what is atlas|what can you do|thank you|thanks|bye|goodbye)[\s!.,?]*$", msg_clean):
+        return ("SIMPLE_CONVERSATION", "none")
+
+    return ("GENERAL_KNOWLEDGE", "none")
+
+
 @app.post("/api/chat")
 async def chat_endpoint(payload: dict, request: Request, activity_callback=None, token_callback=None, cancel_check=None):
     """
@@ -741,6 +790,24 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     llm_mod.set_selected_provider(saved_settings.get("llmProvider", ""))
     llm_mod.begin_engine_trace()
 
+    chat_files = payload.get("files") if isinstance(payload.get("files"), list) else None
+    chat_attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
+    if chat_files and not chat_attachments:
+        chat_attachments = chat_files
+
+    current_activity_tier = "none"
+
+    def filtered_activity_callback(event):
+        if not activity_callback or not isinstance(event, dict):
+            return
+        nonlocal current_activity_tier
+        if current_activity_tier == "none":
+            return
+        label = str(event.get("label") or event.get("detail") or "")
+        if "not checked against sources" in label.lower():
+            return
+        activity_callback(event)
+
     # Open the live step trace for this request. Real flows (deep research,
     # dataset discovery) record actual work into it as it happens; a plain
     # answer records nothing and therefore renders no activity panel at all.
@@ -755,8 +822,8 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         else:
             live_trace_record = live_trace.emit(event.stage, event.status, event.label, event.detail)
             step = live_trace_record
-        if activity_callback:
-            activity_callback(step_trace.event_to_activity(step, request_id))
+        if filtered_activity_callback:
+            filtered_activity_callback(step_trace.event_to_activity(step, request_id))
         return step
 
     # Research mode resolution (directive §2): explicit request field wins,
@@ -775,6 +842,14 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
         set_session_mode(conversation_id, mode_msg_mode)
     elif requested_mode:
         set_session_mode(conversation_id, requested_mode)
+
+    init_task_cat, init_act_tier = determine_task_category(
+        intent="",
+        routing_decision={"mode": effective_mode},
+        message=message,
+        attachments=chat_attachments,
+    )
+    current_activity_tier = init_act_tier
     # An explicit in-chat mode switch short-circuits everything else (no LLM
     # call, no accidental project mutation). The response still carries the
     # full correlation contract so the UI can match it to the request.
@@ -929,7 +1004,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
             payload_pending_action=payload_pending_action,
             payload_last_topic=payload_last_topic,
             conversation_history=conversation_history,
-            activity_callback=activity_callback,
+            activity_callback=filtered_activity_callback,
             token_callback=token_callback,
             cancel_check=cancel_check,
             variation_instruction=("Write a fresh formulation. Do not repeat the previous answer's wording or structure:\n" + str(payload.get("previousAnswer") or "")) if payload.get("variation") else "",
@@ -963,23 +1038,79 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # X" as EXPLANATION and invoke the LLM, which risks unsourced facts.  For
     # every routed web lookup, replace that path with the real provider result.
     if routing_decision.get("mode") == "web_search" and weather_result is None and not decomposition.get("mixed"):
+        current_activity_tier = "compact"
         try:
             from backend.web_search import clean_snippet, search_web
             web_query = re.sub(r"^do you know\s+", "", handler_message, flags=re.IGNORECASE).strip()
+            if filtered_activity_callback:
+                filtered_activity_callback({
+                    "id": f"{request_id or 'web'}-search",
+                    "stage": "web_search",
+                    "status": "running",
+                    "label": "Searching the web…",
+                    "detail": f"Query: {web_query}",
+                    "timestamp": int(time.time() * 1000),
+                })
             web_results = search_web(web_query, limit=5)
             if web_results:
-                # Attach auditable metadata used by the evidence scorer.  A
-                # search hit is evidence of retrieval, not a guarantee of
-                # correctness; confidence is therefore capped by the scorer.
+                if filtered_activity_callback:
+                    filtered_activity_callback({
+                        "id": f"{request_id or 'web'}-search",
+                        "stage": "web_search",
+                        "status": "completed",
+                        "label": f"Discovered {len(web_results)} source{'s' if len(web_results) != 1 else ''}",
+                        "detail": f"Sources from {', '.join(set(w.get('publisher') or w.get('source') for w in web_results[:3]))}",
+                        "timestamp": int(time.time() * 1000),
+                    })
                 web_results = [{**item,
                                 "tier": item.get("tier") or "general web",
-                                "relevance_score": item.get("relevance_score", 0.8)}
+                                "relevance_score": item.get("relevance_score", 0.85)}
                                for item in web_results]
-                lines = [f"Here are the most relevant results for **{web_query}**:", ""]
-                for idx, item in enumerate(web_results, 1):
-                    lines.append(f"{idx}. **{item.get('title') or item.get('url')}** — {clean_snippet(item.get('snippet') or '(Open the source for details.)')}")
-                    lines.append(f"   Source: {item.get('url')}")
-                res["response"] = "\n".join(lines)
+
+                evidence_text = "\n\n".join(
+                    f"[{idx}] Source: {item.get('title')}\nURL: {item.get('url')}\nSummary: {clean_snippet(item.get('snippet') or '')}"
+                    for idx, item in enumerate(web_results, 1)
+                )
+
+                synthesis_prompt = (
+                    f"You are Atlas, an intelligent AI research assistant.\n"
+                    f"The user is asking: \"{handler_message}\"\n\n"
+                    f"Here is verified live web evidence retrieved just now:\n{evidence_text}\n\n"
+                    f"Instructions:\n"
+                    f"1. Synthesize a direct, comprehensive, and up-to-date answer in fluent Markdown.\n"
+                    f"2. Cite your sources using inline reference brackets like [1], [2] corresponding to the numbered evidence above.\n"
+                    f"3. Do not simply list the sources or repeat snippets word-for-word; explain the actual facts, developments, and key takeaways clearly.\n"
+                    f"4. If the retrieved evidence does not fully answer certain aspects, state what is verified and what remains unconfirmed."
+                )
+
+                synthesized = None
+                try:
+                    if token_callback:
+                        synthesized = llm_mod.query_llm_stream(
+                            synthesis_prompt,
+                            system_prompt="Answer only from retrieved evidence and verified facts. Cite sources accurately.",
+                            on_token=token_callback,
+                            timeout=30
+                        )
+                    else:
+                        synthesized = llm_mod.query_llm(
+                            synthesis_prompt,
+                            system_prompt="Answer only from retrieved evidence and verified facts. Cite sources accurately.",
+                            timeout=30
+                        )
+                except Exception as synth_err:
+                    print(f"[SEARCH SYNTHESIS ERROR] {synth_err}")
+                    synthesized = None
+
+                if synthesized and synthesized.strip():
+                    res["response"] = synthesized.strip()
+                else:
+                    lines = [f"### Key Findings for **{web_query}**\n"]
+                    for idx, item in enumerate(web_results, 1):
+                        lines.append(f"**[{idx}] [{item.get('title') or item.get('url')}]({item.get('url')})**")
+                        lines.append(f"{clean_snippet(item.get('snippet') or '')}\n")
+                    res["response"] = "\n".join(lines)
+
                 res["sources"] = web_results
                 res["verification"] = {"available": True, "failed": False}
             else:
@@ -1087,6 +1218,8 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
                 lead = f"I'll look for datasets that could help {research_goal.lower().rstrip('.')}.\n\n"
                 search_activity = []
                 def dataset_step(stage, status, label, detail=None):
+                    nonlocal current_activity_tier
+                    current_activity_tier = "full"
                     event = make_activity(request_id, job_id, stage, status, label, detail)
                     # Keep one record per stage in the final persisted trace.
                     # The SSE client receives the same stable id and updates
@@ -1098,8 +1231,8 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
                         search_activity.append(event)
                     else:
                         search_activity[existing] = event
-                    if activity_callback:
-                        activity_callback(event)
+                    if filtered_activity_callback:
+                        filtered_activity_callback(event)
                     return event
 
                 dataset_step("PLANNING", "completed", "Dataset search planned", f"Searching for: {research_goal}")
@@ -1299,25 +1432,34 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     from backend.confidence import assess_confidence
     res["confidence"] = assess_confidence(message, res)
 
-    # Surface the real, evidence-derived confidence as a streamed step too, so a
-    # streaming client sees it at the moment it is computed (not only in the
-    # final frame). It reuses the verification stage the UI already routes; the
-    # label is built from the actual assessed level/percentage, never invented.
-    if activity_callback and isinstance(res.get("confidence"), dict):
+    task_category, activity_tier = determine_task_category(
+        res.get("intent", ""),
+        routing_decision if "routing_decision" in locals() and isinstance(routing_decision, dict) else {"mode": effective_mode},
+        message,
+        chat_attachments,
+    )
+    current_activity_tier = activity_tier
+    res["taskCategory"] = task_category
+    res["activityTier"] = activity_tier
+    if activity_tier == "none":
+        res["activity"] = []
+
+    # Surface the real, evidence-derived confidence as a streamed step too, but ONLY
+    # when genuine evidence sources exist and the activity tier is active.
+    if filtered_activity_callback and activity_tier != "none" and res.get("sources") and isinstance(res.get("confidence"), dict):
         overall = res["confidence"].get("overall") or {}
         level = overall.get("level")
         pct = overall.get("percentage")
-        conf_label = "Confidence assessed"
-        if level:
+        if level and "not checked" not in str(level).lower():
             conf_label = f"Confidence: {str(level).capitalize()}" + (f" ({pct}%)" if pct is not None else "")
-        activity_callback({
-            "id": f"{request_id or 'request'}-confidence",
-            "stage": "verification",
-            "status": "completed",
-            "label": conf_label,
-            "detail": "Calculated from real source coverage, quality, agreement and verification.",
-            "timestamp": int(time.time() * 1000),
-        })
+            filtered_activity_callback({
+                "id": f"{request_id or 'request'}-confidence",
+                "stage": "verification",
+                "status": "completed",
+                "label": conf_label,
+                "detail": "Calculated from real source coverage, quality, agreement and verification.",
+                "timestamp": int(time.time() * 1000),
+            })
 
     # Canonical response contract.  Never fall back to an older answer when a
     # model/provider fails: return an explicit error response instead.

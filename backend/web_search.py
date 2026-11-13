@@ -144,7 +144,7 @@ def _search_scrape_do(query: str, limit: int) -> List[Dict[str, str]]:
     anchors = re.findall(r'<a\b[^>]*class=["\'][^"\']*result__a[^"\']*["\'][^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.S | re.I)
     for href_value, title_value in anchors:
         def _text(value: str) -> str:
-            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", value)).strip()
+            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value)).strip()
         url = urllib.parse.unquote(href_value)
         if "uddg=" in url:
             url = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get("uddg", [url])[0]
