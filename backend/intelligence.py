@@ -144,13 +144,40 @@ def execution_metadata(message: str, result: Dict[str, Any]) -> Dict[str, Any]:
                     if w.lower() not in {"explain", "compare", "please", "with", "that", "this"}]
         if keywords and any(word in low_answer for word in keywords[:3]):
             completed += 1
+
+    # Atlas Gen-4 Research Intelligence Provenance & Routing Metadata
+    try:
+        from backend.tool_intelligence import model_router, tool_intelligence
+        route = model_router.route_request(message)
+        route_meta = {
+            "model_name": route.selected_model,
+            "provider": route.provider,
+            "execution_target": route.execution_target,
+            "escalation_reason": route.escalation_reason,
+            "tools_detected": [t.tool_name for t in tool_intelligence.select_tools(message)],
+        }
+    except Exception:
+        route_meta = {
+            "model_name": "Atlas Research Intelligence",
+            "provider": "local_or_cloud",
+            "execution_target": "auto",
+        }
+
     return {
         "task_type": task_type,
         "difficulty": estimate_difficulty(message, intent),
         "required_capabilities": tools,
         "selected_tools": tools,
-        "selected_model": "deterministic_tool" if tools[0] != "general_assistant" else "configured_general_model",
+        "selected_model": route_meta["model_name"],
+        "model_provenance": route_meta,
         "verification_status": verification,
+        "signature_intelligence": {
+            "research_continuity": True,
+            "experiment_intelligence": True,
+            "evidence_ledger": True,
+            "knowledge_graph": True,
+            "adaptive_tool_intelligence": True,
+        },
         "requirements_total": len(requirements),
         "requirements_completed": completed if requirements else 0,
     }

@@ -1,0 +1,18 @@
+{
+  "generation": 4,
+  "identity": "Atlas Research Intelligence",
+  "total_samples": 375,
+  "train_samples": 338,
+  "eval_samples": 37,
+  "categories": {
+    "research_planning": 10,
+    "scientific_reasoning": 10,
+    "tool_intelligence": 10,
+    "evidence_grounding": 10,
+    "project_continuity": 10,
+    "communication_identity": 10,
+    "foundation_capabilities": 315
+  },
+  "deduplicated_count": 375,
+  "seed": 42
+}

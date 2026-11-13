@@ -2,41 +2,49 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const MODEL_OPTIONS = [
   {
+    id: 'Atlas Research (Gen-4 Local)',
+    modelKey: 'qwen3-1.7b-gen4-qlora',
+    name: 'Atlas Research (Gen-4)',
+    provider: 'Local RTX 5050 GPU',
+    tag: 'Qwen3-1.7B QLoRA',
+    desc: 'Specialized scientific planning, experiment critique & evidence ledger',
+    context: '32k',
+    isLocal: true,
+    badge: 'LOCAL',
+    recommended: true,
+  },
+  {
     id: 'Atlas Large',
     modelKey: 'claude-3-5-sonnet-latest',
-    name: 'Atlas Large',
-    provider: 'Anthropic',
+    name: 'Atlas Large (Frontier)',
+    provider: 'Anthropic Cloud',
     tag: 'Sonnet 3.5',
-    desc: 'Deep reasoning, coding & complex analysis',
+    desc: 'Deep reasoning, coding & massive context synthesis',
     context: '200k',
-    recommended: true,
+    isLocal: false,
+    badge: 'CLOUD',
   },
   {
     id: 'Atlas Balanced',
     modelKey: 'gpt-4o-mini',
-    name: 'Atlas Balanced',
-    provider: 'OpenAI',
+    name: 'Atlas Balanced (Frontier)',
+    provider: 'OpenAI Cloud',
     tag: 'GPT-4o Mini',
-    desc: 'Fast multimodal & general intelligence',
+    desc: 'Fast general intelligence & multimodal queries',
     context: '128k',
+    isLocal: false,
+    badge: 'CLOUD',
   },
   {
     id: 'Atlas Fast',
     modelKey: 'gemini-2.5-flash-lite',
-    name: 'Atlas Fast',
-    provider: 'Google',
+    name: 'Atlas Fast (Frontier)',
+    provider: 'Google Cloud',
     tag: 'Gemini 2.5 Flash',
-    desc: 'Ultra-fast, lowest latency, massive context',
+    desc: 'Ultra-fast, lowest latency, 1M context window',
     context: '1M',
-  },
-  {
-    id: 'Atlas Reasoning',
-    modelKey: 'claude-3-5-sonnet-latest',
-    name: 'Atlas Reasoning',
-    provider: 'Anthropic',
-    tag: 'Scientific',
-    desc: 'Structured hypothesis and literature review',
-    context: '200k',
+    isLocal: false,
+    badge: 'CLOUD',
   },
 ];
 
@@ -60,7 +68,7 @@ export default function ModelSelectorDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  const currentOption = MODEL_OPTIONS.find((m) => m.id === selectedModel) || MODEL_OPTIONS[0];
+  const currentOption = (Array.isArray(MODEL_OPTIONS) && MODEL_OPTIONS.find((m) => m.id === selectedModel)) || MODEL_OPTIONS[0] || {};
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>
@@ -69,13 +77,13 @@ export default function ModelSelectorDropdown({
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen((prev) => !prev)}
-        className="h-[34px] px-2.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--text-body)] flex items-center gap-1.5 transition-colors disabled:opacity-50"
+        className="h-[34px] px-2.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--text-body)] flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Select AI Model"
       >
-        <span className="h-2 w-2 rounded-full bg-[var(--accent-yellow)] flex-shrink-0" />
-        <span className="font-semibold text-[var(--text-main)] truncate max-w-[90px] sm:max-w-[120px]">
+        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${currentOption.isLocal ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+        <span className="font-semibold text-[var(--text-main)] truncate max-w-[120px] sm:max-w-[150px]">
           {currentOption.name}
         </span>
         <svg className="h-3 w-3 text-[var(--text-muted)] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -87,10 +95,11 @@ export default function ModelSelectorDropdown({
       {isOpen && (
         <div
           role="listbox"
-          className="absolute left-0 bottom-full mb-2 w-72 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-xl p-1.5 z-50 text-xs overflow-hidden"
+          className="absolute left-0 bottom-full mb-2 w-80 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-2xl p-1.5 z-50 text-xs overflow-hidden"
         >
-          <div className="px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider border-b border-[var(--border-subtle)]/60 mb-1">
-            Available Models
+          <div className="px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider border-b border-[var(--border-subtle)]/60 mb-1 flex justify-between items-center">
+            <span>Model Provenance & Architecture</span>
+            <span className="text-[10px] text-emerald-400 font-mono">RTX 5050 Ready</span>
           </div>
 
           <div className="space-y-1">
@@ -115,22 +124,22 @@ export default function ModelSelectorDropdown({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <span className="font-semibold text-xs text-[var(--text-main)]">{opt.name}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--surface-hover)] text-[var(--text-secondary)] font-mono">
-                        {opt.provider}
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold font-mono ${
+                        opt.isLocal ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-indigo-500/20 text-indigo-300'
+                      }`}>
+                        {opt.badge}
                       </span>
-                      {opt.recommended && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--accent-yellow)] text-[var(--text-main)] font-bold">
-                          PRO
-                        </span>
-                      )}
                     </div>
                     <p className="text-[11px] text-[var(--text-muted)] line-clamp-1">{opt.desc}</p>
+                    <div className="mt-1 text-[10px] text-[var(--text-secondary)] font-mono">
+                      {opt.provider} · {opt.tag}
+                    </div>
                   </div>
 
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0 pt-0.5">
                     <span className="text-[10px] text-[var(--text-muted)] font-mono">{opt.context}</span>
                     {isSelected && (
-                      <svg className="h-3.5 w-3.5 text-[var(--accent-amber)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg className="h-3.5 w-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}

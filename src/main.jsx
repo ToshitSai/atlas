@@ -19,20 +19,27 @@ class AppErrorBoundary extends React.Component {
 
   handleRetry = () => {
     this.setState({ error: null });
-    window.location.reload();
+    // Force cache-busting hard navigation to evict any stale cached bundle
+    const url = new URL(window.location.href);
+    url.searchParams.set('_t', String(Date.now()));
+    window.location.replace(url.toString());
   };
 
   handleReset = () => {
     try {
-      localStorage.removeItem('atlas-theme');
-      localStorage.removeItem('atlas-sidebar-open');
-      localStorage.removeItem('atlas-model');
-      localStorage.removeItem('atlas-deep-research');
+      localStorage.clear();
       sessionStorage.clear();
+      if (typeof indexedDB !== 'undefined' && indexedDB.databases) {
+        indexedDB.databases().then((dbs) => {
+          (dbs || []).forEach((db) => {
+            if (db?.name) indexedDB.deleteDatabase(db.name);
+          });
+        }).catch(() => {});
+      }
     } catch (e) {
       console.warn('Storage clear warning:', e);
     }
-    window.location.href = '/atlas';
+    window.location.replace('/atlas?clean=' + Date.now());
   };
 
   render() {
