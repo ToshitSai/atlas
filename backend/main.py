@@ -1123,7 +1123,8 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     # intent handler can classify conversational phrasing such as "do you know
     # X" as EXPLANATION and invoke the LLM, which risks unsourced facts.  For
     # every routed web lookup, replace that path with the real provider result.
-    if routing_decision.get("mode") == "web_search" and weather_result is None and not decomposition.get("mixed"):
+    # GEN-3.3.12: Never overwrite deterministic clock utility answers (taskType == 'datetime').
+    if routing_decision.get("mode") == "web_search" and weather_result is None and not decomposition.get("mixed") and res.get("taskType") != "datetime":
         current_activity_tier = "compact"
         try:
             from backend.web_search import clean_snippet, search_web
