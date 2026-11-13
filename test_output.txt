@@ -31,6 +31,6 @@ SEARCH_WEB COUNT: 2
 ========================================
 PROMPT: give me colleges list there in hyderabad
 ROUTE: normal | reason: A direct answer is sufficient for this request.
-INTENT: ENTITY_INFORMATION
+INTENT: WEB_SEARCH
 CURRENT INFO REQ: None
 SEARCH_WEB COUNT: 0

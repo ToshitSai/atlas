@@ -2936,6 +2936,21 @@ def _handle_intent_message_impl(
                         lines.append(c["content"])
                         lines.append("")
                     resp_text = "\n".join(lines).strip()
+
+            # Provider responses must obey the same grounding guarantee as the
+            # deterministic fallback. If a material query term is absent from
+            # the retrieved evidence, replace an unsupported answer with an
+            # explicit missing-information disclosure.
+            if resp_text:
+                query_terms = set(re.findall(r"\w{4,}", message.lower())) - {
+                    "what", "where", "when", "which", "whose", "why", "does", "this", "that", "the", "from", "document"
+                }
+                evidence_lower = " ".join(c.get("content", "").lower() for c in rag_res["chunks"])
+                missing = [term for term in query_terms if term not in evidence_lower and term[:5] not in evidence_lower]
+                disclosure = ("does not contain", "does not mention", "no information", "not mentioned", "not stated", "not specified")
+                if missing and not any(marker in resp_text.lower() for marker in disclosure):
+                    src_names = ", ".join(sorted(set(c.get("source", "document") for c in rag_res["chunks"])))
+                    resp_text = f"The provided document ({src_names}) does not contain information regarding: '{message}'."
         else:
             docs = rag_svc.list_documents(owner_session=owner_session)
             if docs:

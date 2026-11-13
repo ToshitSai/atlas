@@ -5,22 +5,19 @@ const MODEL_OPTIONS = [
     id: 'Atlas Research (Gen-4 Local)',
     modelKey: 'qwen3-1.7b-gen4-qlora',
     name: 'Atlas Research (Gen-4)',
-    provider: 'Local RTX 5050 GPU',
-    tag: 'Qwen3-1.7B QLoRA',
-    desc: 'Specialized scientific planning, experiment critique & evidence ledger',
-    context: '32k',
+    provider: 'Local model',
+    desc: 'Specialized scientific planning and experiment analysis.',
+    contextLabel: 'Compact context',
     isLocal: true,
     badge: 'LOCAL',
-    recommended: true,
   },
   {
     id: 'Atlas Large',
     modelKey: 'claude-sonnet-4-6',
     name: 'Atlas Large (Frontier)',
     provider: 'Anthropic Cloud',
-    tag: 'Sonnet 3.5',
-    desc: 'Deep reasoning, coding & massive context synthesis',
-    context: '200k',
+    desc: 'Advanced reasoning, coding and complex tasks.',
+    contextLabel: 'Extended context',
     isLocal: false,
     badge: 'CLOUD',
   },
@@ -29,9 +26,8 @@ const MODEL_OPTIONS = [
     modelKey: 'gpt-4o-mini',
     name: 'Atlas Balanced (Frontier)',
     provider: 'OpenAI Cloud',
-    tag: 'GPT-4o Mini',
-    desc: 'Fast general intelligence & multimodal queries',
-    context: '128k',
+    desc: 'General-purpose intelligence and multimodal tasks.',
+    contextLabel: 'Long context',
     isLocal: false,
     badge: 'CLOUD',
   },
@@ -40,9 +36,8 @@ const MODEL_OPTIONS = [
     modelKey: 'gemini-2.5-flash-lite',
     name: 'Atlas Fast (Frontier)',
     provider: 'Google Cloud',
-    tag: 'Gemini 2.5 Flash',
-    desc: 'Ultra-fast, lowest latency, 1M context window',
-    context: '1M',
+    desc: 'Fast responses and everyday assistance.',
+    contextLabel: 'Very long context',
     isLocal: false,
     badge: 'CLOUD',
   },
@@ -81,9 +76,9 @@ export default function ModelSelectorDropdown({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Select AI Model"
-        title={`Current model: ${currentOption.name} (${currentOption.provider})`}
+        title={`Current model: ${currentOption.name}`}
       >
-        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${currentOption.isLocal ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-amber-400'}`} />
+        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${currentOption.isLocal ? 'bg-emerald-400' : 'bg-neutral-400'}`} />
         <span className="font-semibold text-[var(--text-main)] truncate max-w-[130px] sm:max-w-[160px]">
           {currentOption.name}
         </span>
@@ -103,11 +98,12 @@ export default function ModelSelectorDropdown({
       {isOpen && (
         <div
           role="listbox"
-          className="absolute left-0 bottom-full mb-2 w-80 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-2xl p-1.5 z-50 text-xs overflow-hidden"
+          aria-label="Available AI models"
+          className="absolute left-0 bottom-full mb-2 w-[340px] max-w-[calc(100vw-32px)] rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-2xl p-2 z-50 text-xs overflow-hidden"
         >
-          <div className="px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider border-b border-[var(--border-subtle)]/60 mb-1 flex justify-between items-center">
-            <span>Model Provenance & Architecture</span>
-            <span className="text-[10px] text-emerald-400 font-mono">RTX 5050 Ready</span>
+          {/* Subtle Clean Header - No Hardware Specs */}
+          <div className="px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-muted)] border-b border-[var(--border-subtle)]/50 mb-1 flex items-center justify-between">
+            <span>Select Model</span>
           </div>
 
           <div className="space-y-1">
@@ -123,34 +119,47 @@ export default function ModelSelectorDropdown({
                     onSelectModel(opt.id);
                     setIsOpen(false);
                   }}
-                  className={`w-full text-left p-2.5 rounded-xl flex items-start justify-between gap-2 transition-colors cursor-pointer ${
+                  className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group border ${
                     isSelected
-                      ? 'bg-[var(--surface-alt)] text-[var(--text-main)] font-medium border border-[var(--border-emphasis)]/50'
-                      : 'hover:bg-[var(--surface-hover)] text-[var(--text-body)]'
+                      ? 'border-[var(--border-subtle)]/80 bg-[var(--surface-hover)]/40 text-[var(--text-main)]'
+                      : 'border-transparent hover:bg-[var(--surface-hover)] text-[var(--text-body)]'
                   }`}
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className="font-semibold text-xs text-[var(--text-main)]">{opt.name}</span>
-                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold font-mono ${
-                        opt.isLocal ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-indigo-500/20 text-indigo-300'
+                  {/* Top Row: Model Name, checkmark, Badge & Context */}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className={`text-[12.5px] tracking-tight ${isSelected ? 'font-semibold text-[var(--text-main)]' : 'font-medium text-[var(--text-main)]'}`}>
+                        {opt.name}
+                      </span>
+                      {isSelected && (
+                        <svg className="h-3.5 w-3.5 text-[var(--text-main)] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0 text-[10.5px]">
+                      <span className={`text-[9.5px] uppercase tracking-wider px-1.5 py-0.5 rounded font-medium ${
+                        opt.isLocal
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'bg-[var(--surface-hover)] text-[var(--text-muted)]'
                       }`}>
                         {opt.badge}
                       </span>
-                    </div>
-                    <p className="text-[11px] text-[var(--text-muted)] line-clamp-1">{opt.desc}</p>
-                    <div className="mt-1 text-[10px] text-[var(--text-secondary)] font-mono">
-                      {opt.provider} · {opt.tag}
+                      <span className="text-[10.5px] text-[var(--text-muted)]">
+                        {opt.contextLabel}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0 pt-0.5">
-                    <span className="text-[10px] text-[var(--text-muted)] font-mono">{opt.context}</span>
-                    {isSelected && (
-                      <svg className="h-3.5 w-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
+                  {/* Natural Model Description */}
+                  <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed mb-1">
+                    {opt.desc}
+                  </p>
+
+                  {/* Provider Info */}
+                  <div className="text-[10px] text-[var(--text-muted)] font-normal">
+                    {opt.provider}
                   </div>
                 </button>
               );
