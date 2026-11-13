@@ -2572,11 +2572,11 @@ def _handle_intent_message_impl(
                 "You are Atlas, an intelligent research assistant. "
                 "Analyze the user's question using ONLY the provided document evidence below.\n"
                 "Answer directly, concisely, and factually based on the text.\n"
-                "Cite the document source and page/section where applicable.\n"
+                "Always cite or name the specific source document file in your answer.\n"
                 "CRITICAL GROUNDING RULES:\n"
                 "1. Base your answer strictly on the facts provided in the document evidence below.\n"
                 "2. When asked to compare, summarize, or synthesize across documents, compare and contrast the specific documented attributes, entities, codes, and locations present in the evidence.\n"
-                "3. If a specific factual detail (such as a budget, revenue, date, or metric) is not mentioned anywhere in the document evidence, explicitly state that the document does not contain that information.\n"
+                "3. If a specific factual detail (such as a budget, revenue, date, or metric) is not mentioned anywhere in the document evidence, explicitly state that the source document does not contain that information.\n"
                 "4. Do NOT invent, assume, or extrapolate facts that are not present in the evidence.\n\n"
                 + context_text
             )

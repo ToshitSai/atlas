@@ -300,6 +300,64 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
       const ext = file.name.split('.').pop().toLowerCase();
       const isImg = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
 
+      // Pre-validation: Check for unsupported videos or legacy binary formats
+      const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv'].includes(ext);
+      const isLegacyOffice = ['doc', 'xls', 'ppt'].includes(ext);
+      const MAX_CLIENT_BYTES = 4.5 * 1024 * 1024; // 4.5 MB Vercel Serverless payload ceiling
+
+      if (isVideo) {
+        setAttachments((prev) => [...prev, {
+          tempId,
+          rawFile: file,
+          id: null,
+          filename: file.name,
+          size: file.size,
+          doc_type: ext,
+          is_image: false,
+          status: 'FAILED',
+          stage: 'extracting',
+          category: 'unsupported_video',
+          error: `Video files (.${ext}) are not supported. Please attach a document or still image.`,
+        }]);
+        continue;
+      }
+
+      if (isLegacyOffice) {
+        const modernExt = ext === 'doc' ? 'docx' : (ext === 'xls' ? 'xlsx' : 'pptx');
+        setAttachments((prev) => [...prev, {
+          tempId,
+          rawFile: file,
+          id: null,
+          filename: file.name,
+          size: file.size,
+          doc_type: ext,
+          is_image: false,
+          status: 'FAILED',
+          stage: 'extracting',
+          category: 'legacy_format',
+          error: `Legacy .${ext} is not supported. Please save as modern .${modernExt} and re-upload.`,
+        }]);
+        continue;
+      }
+
+      if (file.size > MAX_CLIENT_BYTES) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        setAttachments((prev) => [...prev, {
+          tempId,
+          rawFile: file,
+          id: null,
+          filename: file.name,
+          size: file.size,
+          doc_type: ext,
+          is_image: isImg,
+          status: 'FAILED',
+          stage: 'uploading',
+          category: 'oversized_file',
+          error: `File size (${sizeMb} MB) exceeds maximum upload limit of 4.5 MB.`,
+        }]);
+        continue;
+      }
+
       setAttachments((prev) => [...prev, {
         tempId,
         rawFile: file,
@@ -309,18 +367,19 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         doc_type: ext,
         is_image: isImg,
         status: 'UPLOADING',
+        stage: 'uploading',
         error: null,
       }]);
 
       const tExtract = setTimeout(() => {
-        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
-      }, 350);
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING', stage: 'extracting' } : a));
+      }, 400);
       const tIndex = setTimeout(() => {
-        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
-      }, 850);
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING', stage: 'indexing' } : a));
+      }, 950);
       const tStore = setTimeout(() => {
-        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
-      }, 1400);
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING', stage: 'storing' } : a));
+      }, 1600);
 
       try {
         const res = await uploadRagDocument(file, 'chat_attachment');
@@ -331,6 +390,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
               ...a,
               id: res.id,
               status: 'READY',
+              stage: 'ready',
               chunks: res.chunks,
               is_image: res.is_image,
               ocr_text: res.ocr_text,
@@ -342,12 +402,16 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
         }));
       } catch (err) {
         clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+        const stage = err.stage || 'uploading';
+        const errorMsg = err.detail || err.message || 'Upload failed';
         setAttachments((prev) => prev.map((a) => {
           if (a.tempId === tempId) {
             return {
               ...a,
               status: 'FAILED',
-              error: err.message || 'Extraction failed',
+              stage,
+              category: err.category || 'upload_error',
+              error: errorMsg,
             };
           }
           return a;
@@ -360,17 +424,21 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
     const att = attachments.find((a) => a.tempId === tempId);
     if (!att || !att.rawFile) return;
 
-    setAttachments((prev) => prev.map((a) => a.tempId === tempId ? { ...a, status: 'UPLOADING', error: null } : a));
+    const ext = att.filename.split('.').pop().toLowerCase();
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv'].includes(ext)) return;
+    if (['doc', 'xls', 'ppt'].includes(ext)) return;
+
+    setAttachments((prev) => prev.map((a) => a.tempId === tempId ? { ...a, status: 'UPLOADING', stage: 'uploading', error: null } : a));
 
     const tExtract = setTimeout(() => {
-      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
-    }, 350);
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING', stage: 'extracting' } : a));
+    }, 400);
     const tIndex = setTimeout(() => {
-      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
-    }, 850);
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING', stage: 'indexing' } : a));
+    }, 950);
     const tStore = setTimeout(() => {
-      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
-    }, 1400);
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING', stage: 'storing' } : a));
+    }, 1600);
 
     try {
       const res = await uploadRagDocument(att.rawFile, 'chat_attachment');
@@ -381,6 +449,7 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
             ...a,
             id: res.id,
             status: 'READY',
+            stage: 'ready',
             chunks: res.chunks,
             is_image: res.is_image,
             ocr_text: res.ocr_text,
@@ -392,12 +461,16 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
       }));
     } catch (err) {
       clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+      const stage = err.stage || 'uploading';
+      const errorMsg = err.detail || err.message || 'Retry failed';
       setAttachments((prev) => prev.map((a) => {
         if (a.tempId === tempId) {
           return {
             ...a,
             status: 'FAILED',
-            error: err.message || 'Retry failed',
+            stage,
+            category: err.category || 'upload_error',
+            error: errorMsg,
           };
         }
         return a;
@@ -1117,15 +1190,19 @@ export default function AtlasLanding({ onSendMessage, onOpenAuth, onOpenSettings
                     {att.status === 'STORING' && <span style={{ color: '#8B5CF6', fontSize: '11px' }}>Storing…</span>}
                     {att.status === 'READY' && <span style={{ color: '#12B76A', fontSize: '11px', fontWeight: 600 }}>✓ Ready</span>}
                     {att.status === 'FAILED' && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ color: '#F04438', fontSize: '11px', fontWeight: 600 }}>Failed</span>
-                        <button
-                          type="button"
-                          onClick={() => retryAttachment(att.tempId)}
-                          style={{ background: 'none', border: 'none', color: TOKENS.colors.orange, fontSize: '11px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                        >
-                          Retry
-                        </button>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '200px' }} title={att.error}>
+                        <span style={{ color: '#F04438', fontSize: '11px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          Failed{att.stage ? ` (${att.stage})` : ''}: {att.error}
+                        </span>
+                        {att.category !== 'unsupported_video' && att.category !== 'legacy_format' && att.category !== 'oversized_file' && (
+                          <button
+                            type="button"
+                            onClick={() => retryAttachment(att.tempId)}
+                            style={{ background: 'none', border: 'none', color: TOKENS.colors.orange, fontSize: '11px', cursor: 'pointer', textDecoration: 'underline', padding: 0, flexShrink: 0 }}
+                          >
+                            Retry
+                          </button>
+                        )}
                       </span>
                     )}
                     <button

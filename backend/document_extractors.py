@@ -529,6 +529,20 @@ def extract_document_or_image(
             f"Please save or export your file as modern .{clean_ext}x (.{target_modern}) and upload again."
         )
 
+    # Explicit rejection for video formats
+    VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v"}
+    is_video_magic = (
+        (len(content) >= 12 and (content[4:8] == b"ftyp" or content[:12].startswith(b"\x00\x00\x00\x18ftyp") or content[:12].startswith(b"\x00\x00\x00\x20ftyp")))
+        or content.startswith(b"\x1a\x45\xdf\xa3")  # Matroska / WebM
+        or (content.startswith(b"RIFF") and len(content) > 12 and content[8:12] == b"AVI ")
+    )
+    if ext in VIDEO_EXTENSIONS or is_video_magic:
+        video_name = ext.lstrip(".") or "video"
+        raise ValueError(
+            f"Video format (.{video_name}) is not supported for document analysis or RAG. "
+            "Please upload documents (PDF, DOCX, XLSX, PPTX, TXT) or still images (PNG, JPG, WEBP)."
+        )
+
     if ext not in ALL_SUPPORTED_EXTENSIONS:
         raise ValueError(
             f"Unsupported file format '{ext}'. "

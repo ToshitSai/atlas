@@ -46,7 +46,8 @@ BUILD_TIME = os.environ.get("ATLAS_BUILD_TIME") or datetime.now(timezone.utc).is
 # ---------------------------------------------------------------------------
 SESSION_COOKIE = "atlas_sid"
 SESSION_MAX_AGE = 60 * 60 * 24 * 365      # 1 year
-MAX_REQUEST_BYTES = 1_000_000             # 1 MB body cap
+MAX_REQUEST_BYTES = 1_000_000             # 1 MB body cap for JSON chat/commands
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024       # 50 MB body cap for file uploads
 MAX_MESSAGE_CHARS = 8000                  # per-message cap (enforced in chat)
 
 # Basic per-IP rate limiting for the public chat endpoints. In-memory, so on a
@@ -92,10 +93,26 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Request-size guard (cheap Content-Length check before reading the body).
+        # Request-size guard: 1MB for normal JSON calls, 50MB for file upload routes.
+        is_upload = (
+            path in ("/api/files", "/api/documents", "/api/files/analyze")
+            or path.startswith("/api/files")
+            or path.startswith("/api/documents")
+        )
+        max_bytes = MAX_UPLOAD_BYTES if (is_upload and request.method == "POST") else MAX_REQUEST_BYTES
         content_length = request.headers.get("content-length")
-        if content_length and content_length.isdigit() and int(content_length) > MAX_REQUEST_BYTES:
-            return JSONResponse(status_code=413, content={"detail": "Request body is too large."})
+        if content_length and content_length.isdigit() and int(content_length) > max_bytes:
+            max_mb = max_bytes // (1024 * 1024)
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "detail": f"Request payload exceeds maximum allowed size ({max_mb} MB).",
+                    "error": f"Request payload exceeds maximum allowed size ({max_mb} MB).",
+                    "category": "oversized_file",
+                    "stage": "uploading",
+                    "max_bytes": max_bytes,
+                }
+            )
 
         # Anonymous session id: reuse the cookie or valid client header when present, else mint a new one.
         sid = (
@@ -1719,10 +1736,41 @@ async def upload_rag_file(
             "persistent": doc_info.get("persistent", False),
         }
     except ValueError as val_err:
-        raise HTTPException(status_code=400, detail=str(val_err))
+        err_msg = str(val_err)
+        category = "unsupported_format" if ("format" in err_msg.lower() or "legacy" in err_msg.lower() or "video" in err_msg.lower()) else (
+            "oversized_file" if ("size" in err_msg.lower() or "exceeds" in err_msg.lower()) else (
+                "empty_file" if "empty" in err_msg.lower() else "extraction_failed"
+            )
+        )
+        stage = "uploading" if category == "oversized_file" else "extracting"
+        status_code = 413 if category == "oversized_file" else 400
+        return JSONResponse(
+            status_code=status_code,
+            content={"detail": err_msg, "error": err_msg, "category": category, "stage": stage}
+        )
     except Exception as exc:
-        print(f"[RAG UPLOAD ERROR] {type(exc).__name__}: {str(exc)[:240]}")
-        raise HTTPException(status_code=500, detail=f"Document indexing failed: {exc}") from exc
+        exc_name = type(exc).__name__
+        exc_str = str(exc)
+        print(f"[RAG UPLOAD ERROR] {exc_name}: {exc_str[:240]}")
+        if "database" in exc_str.lower() or "postgres" in exc_str.lower() or "connection" in exc_str.lower() or "psycopg" in exc_name.lower():
+            category = "database_unavailable"
+            stage = "indexing"
+            detail = "Database connection unavailable for persistent document indexing."
+            status_code = 503
+        elif "blob" in exc_str.lower() or "storage" in exc_str.lower():
+            category = "storage_failed"
+            stage = "storing"
+            detail = "Object storage write failed while persisting original document."
+            status_code = 502
+        else:
+            category = "indexing_failed"
+            stage = "indexing"
+            detail = f"Document processing failed: {exc_str[:120]}"
+            status_code = 500
+        return JSONResponse(
+            status_code=status_code,
+            content={"detail": detail, "error": detail, "category": category, "stage": stage}
+        )
 
 
 @app.get("/api/files/{file_id}/download")

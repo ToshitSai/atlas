@@ -178,6 +178,64 @@ export default function QuestionComposer({
       const ext = file.name.split('.').pop().toLowerCase();
       const isImg = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
 
+      // Pre-validation: Check for unsupported videos or legacy binary formats
+      const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv'].includes(ext);
+      const isLegacyOffice = ['doc', 'xls', 'ppt'].includes(ext);
+      const MAX_CLIENT_BYTES = 4.5 * 1024 * 1024; // 4.5 MB Vercel Serverless payload ceiling
+
+      if (isVideo) {
+        setAttachments((prev) => [...prev, {
+          tempId,
+          rawFile: file,
+          id: null,
+          filename: file.name,
+          size: file.size,
+          doc_type: ext,
+          is_image: false,
+          status: 'FAILED',
+          stage: 'extracting',
+          category: 'unsupported_video',
+          error: `Video files (.${ext}) are not supported. Please attach a document or still image.`,
+        }]);
+        continue;
+      }
+
+      if (isLegacyOffice) {
+        const modernExt = ext === 'doc' ? 'docx' : (ext === 'xls' ? 'xlsx' : 'pptx');
+        setAttachments((prev) => [...prev, {
+          tempId,
+          rawFile: file,
+          id: null,
+          filename: file.name,
+          size: file.size,
+          doc_type: ext,
+          is_image: false,
+          status: 'FAILED',
+          stage: 'extracting',
+          category: 'legacy_format',
+          error: `Legacy .${ext} is not supported. Please save as modern .${modernExt} and re-upload.`,
+        }]);
+        continue;
+      }
+
+      if (file.size > MAX_CLIENT_BYTES) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        setAttachments((prev) => [...prev, {
+          tempId,
+          rawFile: file,
+          id: null,
+          filename: file.name,
+          size: file.size,
+          doc_type: ext,
+          is_image: isImg,
+          status: 'FAILED',
+          stage: 'uploading',
+          category: 'oversized_file',
+          error: `File size (${sizeMb} MB) exceeds maximum upload limit of 4.5 MB.`,
+        }]);
+        continue;
+      }
+
       const newAttachment = {
         tempId,
         rawFile: file,
@@ -187,21 +245,22 @@ export default function QuestionComposer({
         doc_type: ext,
         is_image: isImg,
         status: 'UPLOADING',
+        stage: 'uploading',
         error: null,
       };
 
       setAttachments((prev) => [...prev, newAttachment]);
 
-      // Lifecycle status timers: UPLOADING -> EXTRACTING -> INDEXING -> STORING
+      // Lifecycle status progression: UPLOADING -> EXTRACTING -> INDEXING -> STORING -> READY
       const tExtract = setTimeout(() => {
-        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
-      }, 350);
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING', stage: 'extracting' } : a));
+      }, 400);
       const tIndex = setTimeout(() => {
-        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
-      }, 850);
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING', stage: 'indexing' } : a));
+      }, 950);
       const tStore = setTimeout(() => {
-        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
-      }, 1400);
+        setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING', stage: 'storing' } : a));
+      }, 1600);
 
       try {
         // Upload as chat_attachment workflow
@@ -213,6 +272,7 @@ export default function QuestionComposer({
               ...a,
               id: res.id,
               status: 'READY',
+              stage: 'ready',
               chunks: res.chunks,
               is_image: res.is_image,
               ocr_text: res.ocr_text,
@@ -224,12 +284,16 @@ export default function QuestionComposer({
         }));
       } catch (err) {
         clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+        const stage = err.stage || 'uploading';
+        const errorMsg = err.detail || err.message || 'Upload failed';
         setAttachments((prev) => prev.map((a) => {
           if (a.tempId === tempId) {
             return {
               ...a,
               status: 'FAILED',
-              error: err.message || 'Extraction failed',
+              stage,
+              category: err.category || 'upload_error',
+              error: errorMsg,
             };
           }
           return a;
@@ -242,17 +306,21 @@ export default function QuestionComposer({
     const att = attachments.find((a) => a.tempId === tempId);
     if (!att || !att.rawFile) return;
 
-    setAttachments((prev) => prev.map((a) => a.tempId === tempId ? { ...a, status: 'UPLOADING', error: null } : a));
+    const ext = att.filename.split('.').pop().toLowerCase();
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv'].includes(ext)) return;
+    if (['doc', 'xls', 'ppt'].includes(ext)) return;
+
+    setAttachments((prev) => prev.map((a) => a.tempId === tempId ? { ...a, status: 'UPLOADING', stage: 'uploading', error: null } : a));
 
     const tExtract = setTimeout(() => {
-      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING' } : a));
-    }, 350);
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'UPLOADING' ? { ...a, status: 'EXTRACTING', stage: 'extracting' } : a));
+    }, 400);
     const tIndex = setTimeout(() => {
-      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING' } : a));
-    }, 850);
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'EXTRACTING' ? { ...a, status: 'INDEXING', stage: 'indexing' } : a));
+    }, 950);
     const tStore = setTimeout(() => {
-      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING' } : a));
-    }, 1400);
+      setAttachments((prev) => prev.map((a) => a.tempId === tempId && a.status === 'INDEXING' ? { ...a, status: 'STORING', stage: 'storing' } : a));
+    }, 1600);
 
     try {
       const res = await uploadRagDocument(att.rawFile, 'chat_attachment');
@@ -263,6 +331,7 @@ export default function QuestionComposer({
             ...a,
             id: res.id,
             status: 'READY',
+            stage: 'ready',
             chunks: res.chunks,
             is_image: res.is_image,
             ocr_text: res.ocr_text,
@@ -274,12 +343,16 @@ export default function QuestionComposer({
       }));
     } catch (err) {
       clearTimeout(tExtract); clearTimeout(tIndex); clearTimeout(tStore);
+      const stage = err.stage || 'uploading';
+      const errorMsg = err.detail || err.message || 'Retry failed';
       setAttachments((prev) => prev.map((a) => {
         if (a.tempId === tempId) {
           return {
             ...a,
             status: 'FAILED',
-            error: err.message || 'Retry failed',
+            stage,
+            category: err.category || 'upload_error',
+            error: errorMsg,
           };
         }
         return a;
@@ -420,15 +493,19 @@ export default function QuestionComposer({
                 <span className="text-[10px] text-emerald-500 font-bold" title="Ready for analysis">✓ Ready</span>
               )}
               {att.status === 'FAILED' && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-red-500 font-semibold" title={att.error}>Failed</span>
-                  <button
-                    type="button"
-                    onClick={() => retryAttachment(att.tempId)}
-                    className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold cursor-pointer"
-                  >
-                    Retry
-                  </button>
+                <div className="flex items-center gap-1.5 max-w-[210px]" title={att.error}>
+                  <span className="text-[10px] text-red-500 font-semibold truncate">
+                    Failed{att.stage ? ` (${att.stage})` : ''}: {att.error}
+                  </span>
+                  {att.category !== 'unsupported_video' && att.category !== 'legacy_format' && att.category !== 'oversized_file' && (
+                    <button
+                      type="button"
+                      onClick={() => retryAttachment(att.tempId)}
+                      className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold shrink-0 cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  )}
                 </div>
               )}
 

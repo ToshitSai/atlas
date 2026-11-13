@@ -43,7 +43,12 @@ async function safeFetchJson(url, options = {}) {
 
     if (!res.ok) {
       const msg = data.error || data.detail || data.message || `Server error (${res.status})`;
-      throw new Error(msg);
+      const err = new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      err.status = res.status;
+      err.category = data.category || (res.status === 413 ? 'oversized_file' : 'server_error');
+      err.stage = data.stage || (res.status === 413 ? 'uploading' : 'processing');
+      err.detail = data.detail || msg;
+      throw err;
     }
 
     return data;
