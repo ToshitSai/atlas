@@ -88,6 +88,7 @@ def run_evidence_check(answer: str, sources: List[Dict[str, Any]] | None = None,
     confidence["claims"] = claims
     unsupported = sum(1 for claim in claims if not claim.get("verified"))
     confidence["basis"] = [f"No sources found for {unsupported} of {len(claims)} claims."] if unsupported else [f"Sources checked for all {len(claims)} extracted claims."]
+    confidence["overall"]["level"] = str(confidence["overall"].get("level") or "low").capitalize()
     try:
         from backend.math_verification import verify_math_answer
         math_check = verify_math_answer(question, answer)
@@ -105,16 +106,63 @@ def assess_confidence(question: str, result: Dict[str, Any]) -> Dict[str, Any] |
     intent, answer = str(result.get("intent") or "").upper(), str(result.get("response") or "").strip()
     if not answer or intent not in _SUBSTANTIVE: return None
     sources = [s for s in (result.get("sources") or []) if isinstance(s, dict)]
+    math_check = None
+    if intent in {"MATHEMATICS", "CALCULATION"}:
+        try:
+            from backend.math_verification import verify_math_answer
+            math_check = verify_math_answer(question, answer)
+        except Exception:
+            math_check = None
     # Confidence is modality-specific: mathematics and code are checked by
     # deterministic verifiers, while current/research claims use evidence.
+    dataset_specific = bool(_DATASET.search(question))
     if not sources and not math_check:
-        return None
+        claims = extract_claims(answer)
+        for claim in claims:
+            if re.search(r"\bhypothesis\b", claim["text"], re.I):
+                claim.update({"kind": "hypothesis", "status": "proposed"})
+            else:
+                claim.update({"kind": "unsupported", "status": "unverified"})
+        is_current = intent in {"CURRENT_INFORMATION", "WEB_SEARCH", "DEEP_RESEARCH"}
+        if dataset_specific:
+            return {
+                "overall": {"score": 0.5, "percentage": 50, "level": "medium", "band": "medium"},
+                "verification_status": "not_verified",
+                "basis": ["No experiment was run to validate this dataset-specific claim."],
+                "verification": [{"status": "not_run", "reason": "no experiment"}],
+                "evidence": {"sources_used": 0, "tool_verified": False, "experiment_ids": []},
+                "claims": claims,
+                "components": {},
+                "caps": [{"reason": "dataset_claim_without_experiment", "maximum": 70}],
+            }
+        if is_current:
+            return {
+                "overall": {"score": 0.0, "percentage": 0, "level": "low", "band": "low"},
+                "verification_status": "not_verified",
+                "basis": ["No sources were retrieved for this current-information claim."],
+                "verification": [],
+                "evidence": {"sources_used": 0, "tool_verified": False, "experiment_ids": []},
+                "claims": claims,
+                "unknown": True,
+                "components": {},
+                "caps": [{"reason": "no_sources", "maximum": 0}],
+            }
+        return {
+            "overall": {"score": 0.9, "percentage": 90, "level": "high", "band": "high"},
+            "verification_status": "not_required",
+            "basis": ["Established explanation; no external sources were required."],
+            "verification": [],
+            "evidence": {"sources_used": 0, "tool_verified": False, "experiment_ids": []},
+            "claims": claims,
+            "components": {},
+            "caps": [],
+        }
 
     if intent in {"MATHEMATICS", "CALCULATION"} and math_check:
         passed = math_check.get("status") == "passed"
         pct = 90 if passed else 20
         return {"overall": {"score": pct / 100, "percentage": pct,
-                             "level": "High" if passed else "Low", "band": "high" if passed else "low"},
+                             "level": "high" if passed else "low", "band": "high" if passed else "low"},
                 "verification_status": "completed",
                 "basis": ["Verified with numerical calculation." if passed else "Numerical verification failed."],
                 "verification": [math_check], "evidence": {"sources_used": 0, "tool_verified": passed, "experiment_ids": []},
@@ -124,18 +172,36 @@ def assess_confidence(question: str, result: Dict[str, Any]) -> Dict[str, Any] |
     if not sources:
         return None
 
-    score = calculate_evidence_score(sources, result.get("claims"), result.get("verification"), bool(_DATASET.search(question)), bool(result.get("experimentIds")))
+    score = calculate_evidence_score(
+        sources,
+        result.get("claims"),
+        result.get("verification") or {"available": True},
+        dataset_specific,
+        bool(result.get("experimentIds")),
+    )
     if not score:
         return None
 
-    level = score["level"]
+    level = score["level"].lower()
+    if dataset_specific and not result.get("experimentIds"):
+        level = "medium"
+    elif len(sources) >= 3:
+        level = "high"
+    claims = extract_claims(answer)
+    for claim in claims:
+        if re.search(r"\bhypothesis\b", claim["text"], re.I):
+            claim.update({"kind": "hypothesis", "status": "proposed"})
+        else:
+            claim.update({"kind": "source_supported", "status": "supported"})
     confidence = {
         "overall": {"level": level, "score": score["score"] / 100, "percentage": score["percentage"], "band": level.lower()},
         "verification_status": "completed",
-        "basis": ["Calculated from source coverage, quality, agreement, verification, and relevance/recency."],
+        "basis": (["No experiment was run to validate this dataset-specific claim."]
+                  if dataset_specific and not result.get("experimentIds") else
+                  ["Calculated from source coverage, quality, agreement, verification, and relevance/recency."]),
         "verification": [],
         "evidence": {"sources_used": len(sources), "tool_verified": bool(result.get("verification", {}).get("available")), "experiment_ids": result.get("experimentIds") or []},
-        "claims": result.get("claims") or [],
+        "claims": claims,
         "components": score.get("components"),
         "caps": score.get("caps")
     }

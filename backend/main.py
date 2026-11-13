@@ -16,6 +16,9 @@ import secrets
 import collections
 import re
 import hashlib
+import hmac
+import base64
+import binascii
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -46,6 +49,11 @@ BUILD_TIME = os.environ.get("ATLAS_BUILD_TIME") or datetime.now(timezone.utc).is
 # ---------------------------------------------------------------------------
 SESSION_COOKIE = "atlas_sid"
 SESSION_MAX_AGE = 60 * 60 * 24 * 365      # 1 year
+_configured_session_secret = os.environ.get("SESSION_SIGNING_SECRET")
+if os.environ.get("VERCEL_ENV") == "production" and not _configured_session_secret:
+    raise RuntimeError("SESSION_SIGNING_SECRET must be configured in production")
+SESSION_SIGNING_SECRET = (_configured_session_secret.encode("utf-8")
+                          if _configured_session_secret else secrets.token_bytes(32))
 MAX_REQUEST_BYTES = 1_000_000             # 1 MB body cap for JSON chat/commands
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024       # 50 MB body cap for file uploads
 MAX_MESSAGE_CHARS = 8000                  # per-message cap (enforced in chat)
@@ -78,8 +86,33 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _valid_sid(sid: str) -> bool:
-    return bool(sid) and len(sid) <= 64 and all(c.isalnum() or c in "-_" for c in sid)
+def _session_token(sid: str, expires_at: int) -> str:
+    payload = f"{sid}.{expires_at}".encode("ascii")
+    encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode("ascii")
+    signature = hmac.new(SESSION_SIGNING_SECRET, encoded.encode("ascii"), hashlib.sha256).digest()
+    sig = base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
+    return f"{encoded}.{sig}"
+
+
+def _read_session(token: str) -> Optional[str]:
+    try:
+        encoded, supplied_sig = token.split(".", 1)
+        expected_sig = hmac.new(SESSION_SIGNING_SECRET, encoded.encode("ascii"), hashlib.sha256).digest()
+        padded = supplied_sig + "=" * (-len(supplied_sig) % 4)
+        if not hmac.compare_digest(base64.urlsafe_b64decode(padded), expected_sig):
+            return None
+        payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode("ascii")
+        sid, expires_at = payload.rsplit(".", 1)
+        if int(expires_at) <= int(time.time()) or not re.fullmatch(r"[0-9a-f]{32}", sid):
+            return None
+        return sid
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error):
+        return None
+
+
+def _new_session() -> tuple[str, str]:
+    sid = secrets.token_hex(16)
+    return sid, _session_token(sid, int(time.time()) + SESSION_MAX_AGE)
 
 
 class AnonymousSessionMiddleware(BaseHTTPMiddleware):
@@ -114,16 +147,14 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
                 }
             )
 
-        # Anonymous session id: reuse the cookie or valid client header when present, else mint a new one.
-        sid = (
-            request.cookies.get(SESSION_COOKIE, "")
-            or request.cookies.get("atlas_anon_session", "")
-            or request.headers.get("x-anonymous-id", "")
-            or request.headers.get("x-session-id", "")
-        )
-        new_cookie = not _valid_sid(sid)
+        # Only server-issued, signed cookies establish identity. Client-provided
+        # identity headers are intentionally ignored to prevent impersonation.
+        supplied_token = request.cookies.get(SESSION_COOKIE, "") or request.cookies.get("atlas_anon_session", "")
+        sid = _read_session(supplied_token)
+        new_cookie = sid is None
+        session_token = supplied_token
         if new_cookie:
-            sid = secrets.token_hex(16)  # 128-bit unguessable id
+            sid, session_token = _new_session()
         request.state.anon_id = sid
 
         # Per-IP rate limit on the public chat endpoints only.
@@ -152,11 +183,11 @@ class AnonymousSessionMiddleware(BaseHTTPMiddleware):
         if new_cookie or not (request.cookies.get(SESSION_COOKIE) or request.cookies.get("atlas_anon_session")):
             is_secure = os.environ.get("VERCEL_ENV") == "production" or request.url.scheme == "https"
             response.set_cookie(
-                SESSION_COOKIE, sid,
+                SESSION_COOKIE, session_token,
                 max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=is_secure, path="/",
             )
             response.set_cookie(
-                "atlas_anon_session", sid,
+                "atlas_anon_session", session_token,
                 max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=is_secure, path="/",
             )
         return response
@@ -408,6 +439,13 @@ def health_check(request: Request, deep: int = 0, models: int = 0):
         "weather": {"provider": "open-meteo", "configured": True, "requiresKey": False},
         "build": {"commit": BUILD_COMMIT, "builtAt": BUILD_TIME},
     }
+    if not deep and not models:
+        return {
+            "status": result["status"],
+            "api": True,
+            "database": database_ready,
+            "storage": bool(fs_status.get("storage_connected")),
+        }
     if deep or models:
         token = os.environ.get("HEALTH_TOKEN")
         supplied = request.headers.get("x-health-token") if request else None
@@ -1441,7 +1479,7 @@ async def chat_endpoint(payload: dict, request: Request, activity_callback=None,
     current_activity_tier = activity_tier
     res["taskCategory"] = task_category
     res["activityTier"] = activity_tier
-    if activity_tier == "none":
+    if activity_tier == "none" and not res.get("activity"):
         res["activity"] = []
 
     # Surface the real, evidence-derived confidence as a streamed step too, but ONLY

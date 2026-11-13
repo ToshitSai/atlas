@@ -1158,6 +1158,10 @@ def classify_intent(
             return "MATHEMATICS"
     except Exception:
         pass
+    # Keep unsolved quantitative word problems on the honest mathematics path
+    # instead of routing them to entity/search disambiguation.
+    if re.search(r"\b(?:travels?|mph|miles?|hours?|distance|rate|speed)\b", msg_clean, re.I) and re.search(r"\d", msg_clean):
+        return "MATHEMATICS"
 
     # 2.6 CURRENT_INFORMATION — single-fact time-sensitive questions ("Who won
     #     IPL 2026?", "Who is the current CEO of X?", "What is the latest NVIDIA
@@ -2337,7 +2341,7 @@ def _handle_intent_message_impl(
             else:
                 # The strict evaluators declined (e.g. a word problem): fall back to
                 # the general answer path rather than inventing a number.
-                resp_text = _general_answer(message, extract_topic(message))
+                resp_text = _honest_unknown(message)
         store.update_session(sid, {"last_assistant_message": resp_text})
         return {
             "intent": "MATHEMATICS",
@@ -2470,8 +2474,8 @@ def _handle_intent_message_impl(
                 resp_text = "\n".join(lines).strip()
         else:
             resp_text = (
-                f"I searched the web for \"{query}\", but couldn't find reliable results right now. "
-                "Please try a more specific name or check search provider configuration."
+                f"I searched the web for \"{query}\", but couldn't find a reliable result right now. "
+                "Please try a more specific name."
             )
 
         if activity_callback:

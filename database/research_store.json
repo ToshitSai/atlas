@@ -3131,6 +3131,74 @@
         "last_intent": "EXPLANATION",
         "turns_seen": 1
       }
+    },
+    "test-session-337": {
+      "session_id": "test-session-337",
+      "last_user_message": "Compare the visual design of these two assets",
+      "last_assistant_message": "### Image 1 \u2014 chico.png\nAnalysis of Chico character sheet.\n\n### Image 2 \u2014 logo.png\nAnalysis of logo design.\n\n### Overall\nVisual comparison between character and logo.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "image analysis"
+        ],
+        "last_task_type": "multimodal_vision",
+        "last_intent": "MULTIMODAL_IMAGE_ANALYSIS",
+        "turns_seen": 2
+      }
+    },
+    "test-session-search": {
+      "session_id": "test-session-search",
+      "last_user_message": "Search for the latest research papers published today on transformers",
+      "last_assistant_message": "Synthesis of latest transformers research.",
+      "last_topic": "the latest research papers published today on transformers",
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "the latest research papers published today on transformers"
+        ],
+        "last_task_type": "web_search",
+        "last_intent": "WEB_SEARCH",
+        "turns_seen": 2
+      }
+    },
+    "test-session-gen339-cert": {
+      "session_id": "test-session-gen339-cert",
+      "last_user_message": "how to get this certificate like which course should i do give me direct link for it",
+      "last_assistant_message": "To earn these certificates, complete the official free courses offered by **Anthropic** through **Claude Academy**.\n\n### \ud83c\udf93 Courses to Complete\n\n1. **AI Fluency for Educators**\n   - **Provider:** Anthropic (Claude Academy)\n   - **What you will learn:** Practical frameworks for integrating Claude and generative AI into instructional design, lesson planning, student engagement, and educational policies.\n   - **Cost:** 100% Free\n   - **Certificate Availability:** Verified Certificate of Completion & Digital Badge upon finishing all modules and knowledge checks.\n   - **Direct Enrollment Link:** [Enroll in AI Fluency for Educators (Claude Academy)](https://academy.claude.com/courses/ai-fluency-for-educators) *(also available via [Anthropic Skilljar](https://anthropic.skilljar.com/ai-fluency-for-educators))*\n\n2. **AI Fluency: Framework & Foundations** *(covers AI Capabilities & Limitations)*\n   - **Provider:** Anthropic (Claude Academy)\n   - **What you will learn:** Core concepts of large language models, prompt engineering, model alignment, understanding Claude's capabilities and safety boundaries.\n   - **Cost:** 100% Free\n   - **Certificate Availability:** Verified Certificate of Completion & Digital Badge upon scoring 80%+ on the course check.\n   - **Direct Enrollment Link:** [Enroll in AI Fluency: Framework & Foundations](https://academy.claude.com/courses/ai-fluency-framework-foundations) *(also available via [Anthropic Skilljar](https://anthropic.skilljar.com/ai-fluency-framework-foundations))*\n\n### \u2705 How to Get the Certificates\n\n1. **Sign Up:** Go to [Claude Academy](https://academy.claude.com/) and register using your email or Google account.\n2. **Enroll:** Click the direct enrollment links above to access each course syllabus.\n3. **Complete Interactive Modules:** Watch the video lessons, review instructional guides, and try hands-on prompting exercises (estimated 1\u20132 hours per course).\n4. **Pass the Assessments:** Complete the quiz checks at the end of each module.\n5. **Claim Your Certificate:** Download your high-resolution verified PDF certificate and claim your digital badge to share on LinkedIn or in your portfolio.\n\n### \ud83d\udca1 My Recommendation\n\nTake **AI Fluency: Framework & Foundations** first. It establishes foundational prompting techniques, model behaviors, and limitation guardrails. Once complete, take **AI Fluency for Educators** to apply those principles directly to teaching, curriculum design, and classroom workflows.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "certificate course discovery"
+        ],
+        "last_task_type": "multimodal_vision",
+        "last_intent": "MULTIMODAL_IMAGE_ANALYSIS",
+        "turns_seen": 2
+      }
+    },
+    "test-session-gen339-compare": {
+      "session_id": "test-session-gen339-compare",
+      "last_user_message": "Compare the visual layouts and diagrams in these two images",
+      "last_assistant_message": "### Image 1 \u2014 system_arch.png\nBlock diagram depicting client-server architecture.\n\n### Image 2 \u2014 data_pipeline.png\nFlowchart depicting streaming ETL pipeline.\n\n### Overall\nBoth diagrams illustrate modular microservices.",
+      "last_topic": null,
+      "pending_action": null,
+      "active_project_id": null,
+      "messages": [],
+      "conversation_summary": {
+        "topics": [
+          "image analysis"
+        ],
+        "last_task_type": "multimodal_vision",
+        "last_intent": "MULTIMODAL_IMAGE_ANALYSIS",
+        "turns_seen": 2
+      }
     }
   },
   "settings": {

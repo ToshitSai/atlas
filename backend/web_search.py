@@ -264,7 +264,7 @@ def _search_duckduckgo(query: str, limit: int) -> List[Dict[str, str]]:
 
 # Preference order: keyed, higher-quality providers first; keyless fallback last.
 # Looked up by name at call time so tests (and future overrides) can patch them.
-_PROVIDER_NAMES = ("serpapi", "tavily", "duckduckgo_live", "scrape_do", "duckduckgo", "openalex")
+_PROVIDER_NAMES = ("serpapi", "tavily", "serper", "brave", "scrape_do", "duckduckgo")
 
 def _search_duckduckgo_live(query: str, limit: int) -> List[Dict[str, str]]:
     """Atlas Gen-3 live search adapter using multi-provider and DDG Lite/HTML transport."""
@@ -304,11 +304,18 @@ def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
     if not query:
         return []
     now = time.time()
-    cache_key = re.sub(r"\s+", " ", query.lower()).strip()
-    cached = _SEARCH_CACHE.get(cache_key)
-    if cached and cached[0] > now:
-        return list(cached[1])[:limit]
-    provider_names = _PROVIDER_NAMES
+    selected_provider = os.environ.get("SEARCH_PROVIDER", "auto").strip().lower()
+    explicit_aliases = {"duckduckgo": "duckduckgo", "ddg": "duckduckgo", "brave": "brave", "serper": "serper", "tavily": "tavily", "serpapi": "serpapi", "scrape.do": "scrape_do", "scrape_do": "scrape_do", "openalex": "openalex"}
+    if selected_provider == "auto":
+        provider_names = _PROVIDER_NAMES
+    elif selected_provider in explicit_aliases:
+        provider_names = (explicit_aliases[selected_provider],)
+    else:
+        return []
+    cache_key = f"{selected_provider}:" + re.sub(r"\s+", " ", query.lower()).strip()
+    # Search results are intentionally not served from a cross-request cache
+    # here: provider selection and authorization are request-scoped, and a
+    # stale result can violate the explicit-provider contract.
     # One focused retry with progressively broader terms prevents a transient
     # zero-result response from becoming an unrelated answer.
     variants = [query]
@@ -333,6 +340,5 @@ def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
             results = []
         results = [r for r in results if (r.get("url") or r.get("snippet")) and result_matches_query(active_query, r)]
         if results:
-            _SEARCH_CACHE[cache_key] = (time.time() + 600, results[:limit])
             return results[:limit]
     return []

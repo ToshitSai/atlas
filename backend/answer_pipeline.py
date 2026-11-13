@@ -84,7 +84,7 @@ def validate_response(
     # regression; reject it rather than silently displaying stale content.
     # Exclude short fallbacks, greetings, and system messages to avoid false positives.
     if text in previous and normalize_question(question) not in previous:
-        if len(text) > 150 and not text.startswith(("I'm Atlas", "Hello", "Here are", "I couldn't", "A sensible first step", "Understood")):
+        if not text.startswith(("I'm Atlas", "Hello", "Here are", "I couldn't", "A sensible first step", "Understood")):
             raise ValueError("Model returned a stale previous response")
     return {
         "answer": text,

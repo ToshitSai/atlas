@@ -292,14 +292,7 @@ def test_group_d_database_diagnostics_and_health_endpoints(client):
     assert res_h.status_code == 200
     h_data = res_h.json()
     assert h_data["api"] is True
-    assert "databaseDetails" in h_data
-    assert "embeddings" in h_data
-    assert "rag" in h_data
-    assert h_data["rag"]["codeAvailable"] is True
-    assert h_data["rag"]["ingestionOperational"] is True
-    assert h_data["rag"]["retrievalOperational"] is True
-    assert "semanticAvailable" in h_data["rag"]
-    assert "persistentStorage" in h_data["rag"]
+    assert set(h_data) <= {"status", "api", "database", "storage"}
 
     # 2. /api/ready
     res_r = client.get("/api/ready")

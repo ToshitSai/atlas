@@ -16,10 +16,21 @@ def test_anonymous_session_cookie():
     assert res.status_code == 200
     cookies = res.cookies
     assert "atlas_sid" in cookies
-    # Verify hex token
+    # The cookie is an opaque signed token, not a client-usable raw owner id.
     sid = cookies["atlas_sid"]
-    assert len(sid) == 32
-    assert all(c in "0123456789abcdef" for c in sid.lower())
+    assert len(sid) > 32
+    assert sid.count(".") == 1
+    assert all(c.isalnum() or c in "-_." for c in sid)
+
+
+def test_tampered_session_cookie_is_rotated():
+    user = TestClient(app)
+    original = user.get("/api/health").cookies["atlas_sid"]
+    tampered = original[:-1] + ("A" if original[-1] != "A" else "B")
+    forged = TestClient(app, cookies={"atlas_sid": tampered})
+    response = forged.get("/api/health")
+    assert response.status_code == 200
+    assert response.cookies.get("atlas_sid") != tampered
 
 
 def test_path_traversal_sanitization():
@@ -57,8 +68,7 @@ def test_cross_session_document_isolation():
 
     # User 2 attempts to delete User 1's document -> forbidden / not found
     del_res = client2.delete(f"/api/documents/{doc_id}")
-    assert del_res.status_code == 200
-    assert del_res.json()["success"] is False
+    assert del_res.status_code == 403
 
     # Document still exists for User 1
     docs1 = client1.get("/api/documents").json()["documents"]

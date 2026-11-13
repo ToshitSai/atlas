@@ -49,7 +49,7 @@ const MODEL_OPTIONS = [
 ];
 
 export default function ModelSelectorDropdown({
-  selectedModel = 'Atlas Large',
+  selectedModel = 'Atlas Research (Gen-4 Local)',
   onSelectModel,
   disabled = false,
 }) {
@@ -68,25 +68,33 @@ export default function ModelSelectorDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  const currentOption = (Array.isArray(MODEL_OPTIONS) && MODEL_OPTIONS.find((m) => m.id === selectedModel)) || MODEL_OPTIONS[0] || {};
+  const currentOption = (Array.isArray(MODEL_OPTIONS) && MODEL_OPTIONS.find((m) => m.id === selectedModel || m.name === selectedModel)) || MODEL_OPTIONS[0] || {};
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>
-      {/* Trigger Button */}
+      {/* Trigger Button: ● Atlas Research (Gen-4) ▾ */}
       <button
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen((prev) => !prev)}
-        className="h-[34px] px-2.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--text-body)] flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+        className="atlas-model-trigger h-[32px] px-2.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--text-body)] flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-sm select-none"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Select AI Model"
+        title={`Current model: ${currentOption.name} (${currentOption.provider})`}
       >
-        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${currentOption.isLocal ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-        <span className="font-semibold text-[var(--text-main)] truncate max-w-[120px] sm:max-w-[150px]">
+        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${currentOption.isLocal ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-amber-400'}`} />
+        <span className="font-semibold text-[var(--text-main)] truncate max-w-[130px] sm:max-w-[160px]">
           {currentOption.name}
         </span>
-        <svg className="h-3 w-3 text-[var(--text-muted)] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          className="h-3 w-3 text-[var(--text-muted)] flex-shrink-0 transition-transform duration-200"
+          style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        >
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>

@@ -332,7 +332,12 @@ function WorkspaceApp({ onSignOut }) {
     const attachments = Array.isArray(actualOptions.attachments) ? actualOptions.attachments : [];
     let selectedModelName = actualOptions.model;
     if (!selectedModelName) {
-      try { selectedModelName = localStorage.getItem('atlas-model') || 'Atlas Large'; } catch { selectedModelName = 'Atlas Large'; }
+      try {
+        const saved = localStorage.getItem('atlas-model');
+        selectedModelName = (saved && saved !== 'Atlas Large') ? saved : 'Atlas Research (Gen-4 Local)';
+      } catch {
+        selectedModelName = 'Atlas Research (Gen-4 Local)';
+      }
     }
     const sourceTurns = Array.isArray(actualOptions.historyOverride) ? actualOptions.historyOverride : conversationTurns;
     const priorHistory = sourceTurns.flatMap((turn) => [

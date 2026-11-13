@@ -27,14 +27,15 @@ class FileStore:
         self._blob_urls: dict[str, str] = {}
 
         # 1. Check Private Vercel Blob first (P0 for Gen-3.3.4)
+        local_override = bool(config.get("root"))
         private_token = (
             config.get("private_blob_token")
-            or os.environ.get("PRIVATE_READ_WRITE_TOKEN")
+            or ("" if local_override else os.environ.get("PRIVATE_READ_WRITE_TOKEN"))
             or ""
         ).strip()
         public_token = (
             config.get("blob_token")
-            or os.environ.get("BLOB_READ_WRITE_TOKEN")
+            or ("" if local_override else os.environ.get("BLOB_READ_WRITE_TOKEN"))
             or ""
         ).strip()
 
@@ -62,7 +63,7 @@ class FileStore:
         # 2. Check S3-compatible storage
         if self.backend_kind == "local":
             storage_url = (config.get("storage_url")
-                           or os.environ.get("STORAGE_URL") or "").strip()
+                           or ("" if local_override else os.environ.get("STORAGE_URL")) or "").strip()
             bucket = (config.get("storage_bucket")
                       or os.environ.get("STORAGE_BUCKET") or "").strip()
             if storage_url and bucket:

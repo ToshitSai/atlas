@@ -3,6 +3,14 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
 
+// Automated clean-session recovery if URL requests clean reset
+try {
+  if (typeof window !== 'undefined' && window.location.search.includes('clean=')) {
+    localStorage.clear();
+    sessionStorage.clear();
+  }
+} catch (e) {}
+
 class AppErrorBoundary extends React.Component {
   constructor(props) {
     super(props);

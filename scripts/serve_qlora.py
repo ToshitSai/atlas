@@ -72,17 +72,10 @@ def resolve_model_path(model_identifier: str) -> str:
     return model_identifier
 
 
-def find_latest_adapter() -> Optional[Path]:
-    """Find the most recently updated adapter in training_artifacts."""
-    artifacts_dir = ROOT / "training_artifacts"
-    if not artifacts_dir.exists():
-        return None
-    configs = list(artifacts_dir.glob("**/adapter_config.json"))
-    if not configs:
-        return None
-    # Sort by modification time
-    configs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return configs[0].parent
+def configured_adapter_path() -> Optional[Path]:
+    """Resolve only an explicitly configured adapter; never infer by mtime."""
+    configured = os.environ.get("ATLAS_ADAPTER_PATH") or os.environ.get("LOCAL_QWEN_ADAPTER")
+    return Path(configured) if configured else None
 
 
 def init_engine(
@@ -96,7 +89,9 @@ def init_engine(
     from peft import PeftModel
 
     # Determine adapter path
-    resolved_adapter = Path(adapter_dir) if adapter_dir else find_latest_adapter()
+    resolved_adapter = Path(adapter_dir) if adapter_dir else configured_adapter_path()
+    if resolved_adapter and not (resolved_adapter / "adapter_config.json").exists():
+        raise RuntimeError(f"Configured adapter is missing adapter_config.json: {resolved_adapter}")
 
     # Determine base model
     if model_name:
@@ -156,8 +151,8 @@ def init_engine(
 def startup_event():
     # Only initialize if not already loaded (e.g. via direct script invocation)
     if model is None:
-        env_model = os.environ.get("LOCAL_QWEN_MODEL")
-        env_adapter = os.environ.get("LOCAL_QWEN_ADAPTER")
+        env_model = os.environ.get("ATLAS_BASE_MODEL") or os.environ.get("LOCAL_QWEN_MODEL")
+        env_adapter = os.environ.get("ATLAS_ADAPTER_PATH") or os.environ.get("LOCAL_QWEN_ADAPTER")
         init_engine(model_name=env_model, adapter_dir=env_adapter)
 
 

@@ -121,7 +121,7 @@ def extract_pdf(content: bytes, filename: str) -> List[Dict[str, Any]]:
                     print(f"[PDF SCANNED OCR ERROR] Page {p_num}: {ocr_err}")
 
         if not pages:
-            raise ValueError("PDF contains no selectable text layer and no extractable scanned page images; please upload a readable PDF or clear image.")
+            raise ValueError("PDF contains no selectable text layer; OCR is unavailable and no extractable scanned page images were found. Please upload a readable PDF or clear image.")
 
     return pages
 

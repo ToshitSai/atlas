@@ -115,7 +115,13 @@ export default function AtlasLanding({
     try { return localStorage.getItem('atlas-deep-research') === '1'; } catch { return false; }
   });
   const [selectedModel, setSelectedModel] = useState(() => {
-    try { return localStorage.getItem('atlas-model') || 'Atlas Large'; } catch { return 'Atlas Large'; }
+    try {
+      const saved = localStorage.getItem('atlas-model');
+      if (saved && saved !== 'Atlas Large') return saved;
+      return 'Atlas Research (Gen-4 Local)';
+    } catch {
+      return 'Atlas Research (Gen-4 Local)';
+    }
   });
   const [attachments, setAttachments] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -610,70 +616,79 @@ export default function AtlasLanding({
               }}
             />
 
-            {/* Action Bar: Attach + Model Selector + Deep Research + Stop/Send */}
-            <div className="atlas-composer-controls" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', flexShrink: 0, position: 'relative' }}>
-              {/* Attach Button */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isPending}
-                style={{
-                  height: '34px',
-                  padding: '0 11px',
-                  borderRadius: '999px',
-                  border: `1px solid ${TOKENS.colors.line}`,
-                  backgroundColor: 'transparent',
-                  fontSize: '12.5px',
-                  fontWeight: 500,
-                  color: TOKENS.colors.body,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  cursor: isPending ? 'not-allowed' : 'pointer',
-                  opacity: isPending ? 0.5 : 1
-                }}
-                title="Attach documents or images"
-                aria-label="Attach file"
-              >
-                <IconPlus size={13} style={{ color: TOKENS.colors.muted }} />
-                <span>Attach</span>
-              </button>
+            {/* Action Bar: [ + ] [ ● Atlas Research (Gen-4) ▾ ] [ ✧ Deep Research ] ... [ Send/Stop ] */}
+            <div className="atlas-composer-controls" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', flexShrink: 0, position: 'relative' }}>
+              <div className="atlas-composer-actions-left" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap' }}>
+                {/* 1. Attachment Button: circular/softly rounded, plus icon only, tooltip "Attach files" */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isPending}
+                  className="atlas-attach-btn"
+                  title="Attach files"
+                  aria-label="Attach files"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    minWidth: '32px',
+                    minHeight: '32px',
+                    borderRadius: '50%',
+                    border: `1px solid ${TOKENS.colors.line}`,
+                    backgroundColor: 'var(--surface, transparent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: isPending ? 'not-allowed' : 'pointer',
+                    opacity: isPending ? 0.5 : 1,
+                    transition: 'all 0.15s ease',
+                    flexShrink: 0,
+                    padding: 0,
+                    color: 'var(--text-body, #c0c2cb)',
+                  }}
+                >
+                  <IconPlus size={16} style={{ color: 'inherit' }} />
+                </button>
 
-              {/* Model Selector Dropdown with Provider & Context Badges */}
-              <ModelSelectorDropdown
-                selectedModel={selectedModel}
-                onSelectModel={setSelectedModel}
-                disabled={isPending}
-              />
+                {/* 2. Model Selector Dropdown: [ ● Atlas Research (Gen-4) ▾ ] */}
+                <ModelSelectorDropdown
+                  selectedModel={selectedModel}
+                  onSelectModel={setSelectedModel}
+                  disabled={isPending}
+                />
 
-              {/* Deep Research Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setIsDeepResearch(!isDeepResearch)}
-                aria-label="Deep research"
-                aria-pressed={isDeepResearch}
-                title="Deep research mode: multi-step planning, evidence extraction & synthesis"
-                disabled={isPending}
-                style={{
-                  height: '34px',
-                  borderRadius: '999px',
-                  padding: '0 11px',
-                  border: `1px solid ${isDeepResearch ? TOKENS.colors.amberBorder : TOKENS.colors.line}`,
-                  backgroundColor: isDeepResearch ? TOKENS.colors.amberChip : 'transparent',
-                  color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.body,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  cursor: isPending ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.15s ease',
-                  opacity: isPending ? 0.5 : 1
-                }}
-              >
-                <IconMicroscope size={13} style={{ color: isDeepResearch ? TOKENS.colors.amber : TOKENS.colors.body }} />
-                <span className="atlas-research-label" style={{ fontSize: '12px', fontWeight: 500 }}>Deep research</span>
-              </button>
+                {/* 3. Deep Research Toggle Button: [ ✧ Deep Research ] */}
+                <button
+                  type="button"
+                  onClick={() => setIsDeepResearch(!isDeepResearch)}
+                  aria-label="Deep Research"
+                  aria-pressed={isDeepResearch}
+                  title={isDeepResearch ? "Deep Research active (multi-step evidence synthesis)" : "Enable Deep Research"}
+                  disabled={isPending}
+                  className={`atlas-deep-research-btn ${isDeepResearch ? 'active' : ''}`}
+                  style={{
+                    height: '32px',
+                    borderRadius: '999px',
+                    padding: '0 11px',
+                    border: `1px solid ${isDeepResearch ? 'rgba(245, 158, 11, 0.45)' : TOKENS.colors.line}`,
+                    backgroundColor: isDeepResearch ? 'rgba(245, 158, 11, 0.12)' : 'var(--surface, transparent)',
+                    color: isDeepResearch ? '#fbbf24' : 'var(--text-body, #c0c2cb)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    cursor: isPending ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                    opacity: isPending ? 0.5 : 1,
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    flexShrink: 0,
+                  }}
+                >
+                  <span style={{ fontSize: '13px', lineHeight: 1, color: isDeepResearch ? '#fbbf24' : 'var(--text-muted, #8b8d96)' }}>✧</span>
+                  <span className="atlas-research-label">Deep Research</span>
+                </button>
+              </div>
 
-              {/* Action Button: Stop Generation when pending, Send when idle */}
+              {/* Right: Send / Stop Button */}
               {isPending ? (
                 <motion.button
                   type="button"
@@ -682,23 +697,26 @@ export default function AtlasLanding({
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   style={{
-                    width: '36px',
-                    height: '36px',
+                    width: '32px',
+                    height: '32px',
+                    minWidth: '32px',
+                    minHeight: '32px',
                     borderRadius: '50%',
                     backgroundColor: 'var(--surface-alt)',
-                    border: `1.5px solid ${TOKENS.colors.line}`,
+                    border: `1px solid ${TOKENS.colors.line}`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: TOKENS.colors.ink,
                     cursor: 'pointer',
                     flexShrink: 0,
-                    marginLeft: 'auto'
+                    marginLeft: 'auto',
+                    padding: 0,
                   }}
                   title="Stop generating"
                   aria-label="Stop generating"
                 >
-                  <span style={{ width: '12px', height: '12px', backgroundColor: 'var(--accent-orange, #f97316)', borderRadius: '2px' }} />
+                  <span style={{ width: '10px', height: '10px', backgroundColor: 'var(--accent-orange, #f97316)', borderRadius: '2px' }} />
                 </motion.button>
               ) : (
                 <motion.button
@@ -709,8 +727,10 @@ export default function AtlasLanding({
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   style={{
-                    width: '36px',
-                    height: '36px',
+                    width: '32px',
+                    height: '32px',
+                    minWidth: '32px',
+                    minHeight: '32px',
                     borderRadius: '50%',
                     backgroundColor: TOKENS.colors.ink,
                     border: 'none',
@@ -721,12 +741,13 @@ export default function AtlasLanding({
                     cursor: inputText.trim() || attachments.filter((a) => a.status === 'READY').length > 0 ? 'pointer' : 'default',
                     opacity: inputText.trim() || attachments.filter((a) => a.status === 'READY').length > 0 ? 1 : 0.35,
                     flexShrink: 0,
-                    marginLeft: 'auto'
+                    marginLeft: 'auto',
+                    padding: 0,
                   }}
-                  title="Send message"
-                  aria-label="Send message"
+                  title="Send (Enter)"
+                  aria-label="Send"
                 >
-                  <IconPaperPlane2 size={16} style={{ color: 'var(--surface)' }} />
+                  <IconArrowUp size={16} />
                 </motion.button>
               )}
             </div>
