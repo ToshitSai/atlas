@@ -3146,7 +3146,7 @@
         ],
         "last_task_type": "multimodal_vision",
         "last_intent": "MULTIMODAL_IMAGE_ANALYSIS",
-        "turns_seen": 3
+        "turns_seen": 5
       }
     },
     "test-session-search": {
@@ -3163,7 +3163,7 @@
         ],
         "last_task_type": "web_search",
         "last_intent": "WEB_SEARCH",
-        "turns_seen": 3
+        "turns_seen": 5
       }
     },
     "test-session-gen339-cert": {
@@ -3180,7 +3180,7 @@
         ],
         "last_task_type": "multimodal_vision",
         "last_intent": "MULTIMODAL_IMAGE_ANALYSIS",
-        "turns_seen": 3
+        "turns_seen": 5
       }
     },
     "test-session-gen339-compare": {
@@ -3197,7 +3197,7 @@
         ],
         "last_task_type": "multimodal_vision",
         "last_intent": "MULTIMODAL_IMAGE_ANALYSIS",
-        "turns_seen": 3
+        "turns_seen": 5
       }
     }
   },

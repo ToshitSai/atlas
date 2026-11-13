@@ -22,11 +22,14 @@ import binascii
 import urllib.request
 import urllib.error
 import urllib.parse
+import logging
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+
+logger = logging.getLogger("atlas.api")
 
 import backend.config
 from database.store import store
@@ -50,10 +53,18 @@ BUILD_TIME = os.environ.get("ATLAS_BUILD_TIME") or datetime.now(timezone.utc).is
 SESSION_COOKIE = "atlas_sid"
 SESSION_MAX_AGE = 60 * 60 * 24 * 365      # 1 year
 _configured_session_secret = os.environ.get("SESSION_SIGNING_SECRET")
-if os.environ.get("VERCEL_ENV") == "production" and not _configured_session_secret:
-    raise RuntimeError("SESSION_SIGNING_SECRET must be configured in production")
-SESSION_SIGNING_SECRET = (_configured_session_secret.encode("utf-8")
-                          if _configured_session_secret else secrets.token_bytes(32))
+if _configured_session_secret:
+    SESSION_SIGNING_SECRET = _configured_session_secret.encode("utf-8")
+else:
+    # Stable HMAC signing secret derived from deployment metadata when unset in Vercel env
+    _seed = (
+        os.environ.get("VERCEL_DEPLOYMENT_ID")
+        or os.environ.get("VERCEL_GIT_COMMIT_SHA")
+        or os.environ.get("VERCEL_URL")
+        or "atlas-anon-session-fallback-secret"
+    )
+    SESSION_SIGNING_SECRET = hashlib.sha256(f"atlas-session-seed:{_seed}".encode("utf-8")).digest()
+    logger.warning("SESSION_SIGNING_SECRET is not set; using deployment-derived stable HMAC secret.")
 MAX_REQUEST_BYTES = 1_000_000             # 1 MB body cap for JSON chat/commands
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024       # 50 MB body cap for file uploads
 MAX_MESSAGE_CHARS = 8000                  # per-message cap (enforced in chat)

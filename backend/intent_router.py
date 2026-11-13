@@ -2943,7 +2943,8 @@ def _handle_intent_message_impl(
             # explicit missing-information disclosure.
             if resp_text:
                 query_terms = set(re.findall(r"\w{4,}", message.lower())) - {
-                    "what", "where", "when", "which", "whose", "why", "does", "this", "that", "the", "from", "document"
+                    "what", "where", "when", "which", "whose", "why", "does", "this", "that", "the", "from", "document",
+                    "compare", "comparison", "projects", "project", "between", "both", "difference", "differences",
                 }
                 evidence_lower = " ".join(c.get("content", "").lower() for c in rag_res["chunks"])
                 missing = [term for term in query_terms if term not in evidence_lower and term[:5] not in evidence_lower]

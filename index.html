@@ -20,11 +20,18 @@
     } catch(e) {
       document.documentElement.dataset.theme = 'system';
     }
-    // Evict any legacy service workers that might cache stale JS bundles
+    // Evict any legacy service workers and CacheStorage that might cache stale JS bundles
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for (var reg of registrations) {
           reg.unregister();
+        }
+      }).catch(function() {});
+    }
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      caches.keys().then(function(names) {
+        for (var name of names) {
+          caches.delete(name);
         }
       }).catch(function() {});
     }
