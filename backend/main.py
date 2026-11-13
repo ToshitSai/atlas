@@ -1626,6 +1626,9 @@ async def chat_stream_endpoint(payload: dict, request: Request):
             try:
                 event = await asyncio.wait_for(asyncio.to_thread(event_queue.get), timeout=15)
             except asyncio.TimeoutError:
+                if await request.is_disconnected():
+                    cancel_event.set()
+                    break
                 yield f": keep-alive {int(time.time() * 1000)}\n\n"
                 continue
             if event is None:
@@ -1635,13 +1638,10 @@ async def chat_stream_endpoint(payload: dict, request: Request):
             else:
                 public = structured_activity(event)
                 yield f"event: {public['eventType']}\ndata: {json.dumps(public)}\n\n"
-            if await request.is_disconnected():
-                # Tell the worker to stop real backend work at its next stage
-                # boundary, then stop streaming to a client that is gone.
-                cancel_event.set()
-                break
 
-        if result_box.get("error"):
+        await asyncio.to_thread(worker.join, 5.0)
+
+        if result_box.get("error") and not result_box.get("token_streamed"):
             yield f"event: error\ndata: {json.dumps({'error': result_box['error'], 'timestamp': int(time.time() * 1000)})}\n\n"
         else:
             result = result_box.get("result") or {}

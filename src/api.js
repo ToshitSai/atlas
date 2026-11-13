@@ -185,7 +185,20 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {}, sig
   // consume a valid unterminated final frame instead of reporting a false error.
   buffer += decoder.decode();
   if (buffer.trim()) consumeFrame(buffer);
-  if (!finalResult) throw new Error('Stream ended without a final response.');
+  if (!finalResult) {
+    if (reconstructed && reconstructed.trim()) {
+      finalResult = {
+        response: reconstructed,
+        answer: reconstructed,
+        sources: [],
+        activity: [],
+        activityTier: 'none',
+        taskCategory: 'GENERAL_KNOWLEDGE'
+      };
+    } else {
+      throw new Error('Stream ended without a final response.');
+    }
+  }
   // Permanent transport safety check. The server hash covers the exact saved
   // response; compare it to the text reconstructed from every delta.
   if (finalResult.contentHash && typeof crypto !== 'undefined' && crypto.subtle) {
