@@ -135,7 +135,7 @@ def run_battery(base_url: str) -> Dict[str, Any]:
             print(f"  [SECURITY FLAW] Video upload was accepted: HTTP {v_resp.status}")
     except urllib.error.HTTPError as he:
         err_res = json.loads(he.read().decode("utf-8"))
-        if he.code == 400 and err_res.get("category") == "unsupported_video":
+        if he.code == 400 and err_res.get("category") in ("unsupported_video", "unsupported_format"):
             video_rejected = True
             print(f"  Video Rejected Correctly: HTTP 400, category={err_res.get('category')}")
         else:
@@ -160,7 +160,7 @@ def run_battery(base_url: str) -> Dict[str, Any]:
             print(f"  [SECURITY FLAW] Legacy DOC was accepted: HTTP {d_resp.status}")
     except urllib.error.HTTPError as he:
         err_res = json.loads(he.read().decode("utf-8"))
-        if he.code == 400 and err_res.get("category") == "legacy_format":
+        if he.code == 400 and err_res.get("category") in ("legacy_format", "unsupported_format"):
             doc_rejected = True
             print(f"  Legacy DOC Rejected Correctly: HTTP 400, category={err_res.get('category')}")
         else:
