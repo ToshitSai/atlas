@@ -138,7 +138,7 @@ export default function AtlasLanding({
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
-    const mobile = window.matchMedia('(max-width: 640px)').matches;
+    const mobile = typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 640px)').matches : false;
     const maxHeight = Math.min(window.innerHeight * 0.4, mobile ? 240 : 360);
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;

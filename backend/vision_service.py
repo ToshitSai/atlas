@@ -271,8 +271,22 @@ class VisionService:
             })
 
         is_multi = len(prepared_images) > 1
+        is_actionable = bool(re.search(
+            r'\b(course|certificate|cert|link|enroll|how to (get|do|take)|where (can|to)|cost|price|register|fix|error|solve|recommend)\b',
+            question or "",
+            re.IGNORECASE
+        ))
 
-        if is_multi:
+        if is_actionable:
+            instructions = (
+                f"You are Atlas AI, an intelligent multimodal assistant. The user has uploaded {len(prepared_images)} image(s) and asked:\n\n"
+                f"\"{question}\"\n\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. Read and extract all visible text, titles, course names, organizations, certifications, dates, and key identifiers from each image.\n"
+                "2. Directly answer the user's specific request using the extracted information.\n"
+                "3. Provide clear, structured, actionable guidance with course details, provider information, and direct enrollment steps."
+            )
+        elif is_multi:
             instructions = (
                 f"You are Atlas AI, an advanced multimodal research assistant. The user has uploaded {len(prepared_images)} images and asked:\n\n"
                 f"\"{question}\"\n\n"

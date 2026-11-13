@@ -170,7 +170,7 @@ async function streamChat(body, { onActivity = () => {}, onToken = () => {}, sig
     const data = JSON.parse(raw);
     if (kind === 'activity' || ['plan','search_start','search_result','read_source','source_checked','synthesizing','verifying','progress'].includes(kind)) onActivity(data);
     else if (kind === 'token' || kind === 'answer_delta') { if (data.text) { reconstructed += data.text; onToken(data.text); } }
-    else if (kind === 'sources') onActivity({ ...data, stage: 'sources', status: 'completed', eventType: kind });
+    else if (kind === 'sources') onActivity({ ...data, stage: 'sources', label: 'Sources retrieved', status: 'completed', eventType: kind });
     else if (kind === 'final') finalResult = data;
     else if (kind === 'error') throw new Error(data.error || 'Stream failed');
   };

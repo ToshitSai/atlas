@@ -34,7 +34,22 @@ function mergeConversationHistory(items) {
   (Array.isArray(items) ? items : []).forEach((item) => {
     const id = item?.conversationId || item?.id;
     if (!id || byId.has(id)) return;
-    byId.set(id, { ...item, id, conversationId: id });
+    const rawTitle = typeof item.title === 'string'
+      ? item.title
+      : (typeof item.question === 'string'
+          ? item.question
+          : (typeof item.title === 'object' && item.title?.main ? item.title.main : 'Conversation'));
+    const rawQuestion = typeof item.question === 'string'
+      ? item.question
+      : rawTitle;
+    byId.set(id, {
+      ...item,
+      id,
+      conversationId: id,
+      title: rawTitle,
+      question: rawQuestion,
+      timestamp: typeof item.timestamp === 'string' ? item.timestamp : (item.updatedAt || item.createdAt || 'Recent'),
+    });
   });
   return [...byId.values()].sort((a, b) => String(b.updatedAt || b.timestamp || '').localeCompare(String(a.updatedAt || a.timestamp || '')));
 }
@@ -280,27 +295,46 @@ function WorkspaceApp({ onSignOut }) {
 
   // Main Question Submission Handler
   const handleSendQuestion = async (queryText, onSuccess, options = {}) => {
-    if (!queryText.trim() || sendingRef.current) return;
-    sendingRef.current = true;
+    // Gracefully handle calling with (queryText, options)
+    let actualSuccess = typeof onSuccess === 'function' ? onSuccess : undefined;
+    let actualOptions = options || {};
+    if (onSuccess && typeof onSuccess === 'object' && (!options || Object.keys(options).length === 0)) {
+      actualOptions = onSuccess;
+      actualSuccess = undefined;
+    }
 
-    setUserQuestion(queryText);
+    const rawQuery = typeof queryText === 'string'
+      ? queryText
+      : (queryText && typeof queryText === 'object'
+          ? (typeof queryText.question === 'string'
+              ? queryText.question
+              : (typeof queryText.query === 'string'
+                  ? queryText.query
+                  : (typeof queryText.text === 'string' ? queryText.text : '')))
+          : String(queryText || ''));
+
+    if (!rawQuery.trim() || sendingRef.current) return;
+    sendingRef.current = true;
+    const cleanQuery = rawQuery.trim();
+
+    setUserQuestion(cleanQuery);
     setIsPending(true);
     requestControllerRef.current?.abort();
     const requestController = new AbortController();
     requestControllerRef.current = requestController;
     setErrorFeedback(null);
     setActiveNav('research');
-    const isCasual = isCasualGreeting(queryText);
-    const deepCheck = !isCasual && (typeof options.deepResearch === 'boolean' ? options.deepResearch : isLikelyDeepResearch(queryText));
+    const isCasual = isCasualGreeting(cleanQuery);
+    const deepCheck = !isCasual && (typeof actualOptions.deepResearch === 'boolean' ? actualOptions.deepResearch : isLikelyDeepResearch(cleanQuery));
     const turnId = `${conversationId}:${Date.now()}`;
     const requestId = createConversationId();
     const messageId = turnId;
-    const attachments = Array.isArray(options.attachments) ? options.attachments : [];
-    let selectedModelName = options.model;
+    const attachments = Array.isArray(actualOptions.attachments) ? actualOptions.attachments : [];
+    let selectedModelName = actualOptions.model;
     if (!selectedModelName) {
       try { selectedModelName = localStorage.getItem('atlas-model') || 'Atlas Large'; } catch { selectedModelName = 'Atlas Large'; }
     }
-    const sourceTurns = Array.isArray(options.historyOverride) ? options.historyOverride : conversationTurns;
+    const sourceTurns = Array.isArray(actualOptions.historyOverride) ? actualOptions.historyOverride : conversationTurns;
     const priorHistory = sourceTurns.flatMap((turn) => [
       { role: 'user', content: turn.question },
       ...(turn.answer ? [{ role: 'assistant', content: turn.answer }] : []),
@@ -322,10 +356,12 @@ function WorkspaceApp({ onSignOut }) {
     // The chat request is the authoritative connectivity check; failures are
     // surfaced by the request error handler below.
 
-    if (onSuccess) onSuccess();
+    if (actualSuccess) {
+      try { actualSuccess(); } catch (e) { console.warn('onSuccess callback error:', e); }
+    }
 
     setConversationTurns((prev) => [...prev, {
-      id: turnId, question: queryText, answer: '', sources: [], confidence: null,
+      id: turnId, question: cleanQuery, answer: '', sources: [], confidence: null,
       mode: deepCheck ? 'deep' : 'normal', isLoading: true, attachments,
       activities: [],
       activityTier: deepCheck ? 'full' : 'none',
@@ -340,12 +376,13 @@ function WorkspaceApp({ onSignOut }) {
     const newHistoryEntry = {
       id: conversationId,
       conversationId,
-      question: queryText,
+      question: cleanQuery,
+      title: cleanQuery.slice(0, 80),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isDeep: deepCheck,
     };
     setHistoryItems((prev) => mergeConversationHistory([newHistoryEntry, ...prev]));
-    saveLocalConversation({ ...newHistoryEntry, messages: [{ role: 'user', content: queryText, created_at: new Date().toISOString() }] }).catch(() => {});
+    saveLocalConversation({ ...newHistoryEntry, messages: [{ role: 'user', content: cleanQuery, created_at: new Date().toISOString() }] }).catch(() => {});
 
     // The timeline starts in a queued state.  A synthetic "running" stage
     // here used to remain stuck while later backend stages completed.  Only
@@ -465,7 +502,9 @@ function WorkspaceApp({ onSignOut }) {
             setActiveProject(res.project);
           }
 
-          if (onSuccess) onSuccess();
+          if (actualSuccess) {
+            try { actualSuccess(); } catch (e) { console.warn('onSuccess callback error:', e); }
+          }
         }
       } else {
         // Simple Question / Normal Answer Path — stream real answer tokens so
@@ -485,7 +524,7 @@ function WorkspaceApp({ onSignOut }) {
             const actItem = {
               id: eventKey,
               stage: activity.stage,
-              label: activity.label || activity.detail || (activity.stage ? `Processing ${activity.stage}` : 'Processing…'),
+              label: activity.label || activity.detail || (activity.stage === 'sources' ? 'Sources retrieved' : (activity.stage ? `Processing ${activity.stage}` : 'Processing…')),
               detail: activity.detail || activity.label || '',
               status: activity.status === 'completed' ? 'completed' : activity.status === 'failed' ? 'failed' : 'running',
               timestamp: activity.timestamp || Date.now(),
@@ -500,7 +539,7 @@ function WorkspaceApp({ onSignOut }) {
           }));
         };
 
-        const res = await sendChatStream(queryText, activeProject?.id, conversationId, {
+        const res = await sendChatStream(cleanQuery, activeProject?.id, conversationId, {
           onToken: (delta) => {
             streamed += delta;
             console.debug('[Atlas raw stream chunk]', delta);
@@ -511,8 +550,8 @@ function WorkspaceApp({ onSignOut }) {
           conversationHistory: priorHistory,
           correlation: { requestId, messageId, ...(selectedModelName ? { model: selectedModelName } : {}) },
           signal: requestController.signal,
-          variation: Boolean(options.variation),
-          previousAnswer: options.previousAnswer || '',
+          variation: Boolean(actualOptions.variation),
+          previousAnswer: actualOptions.previousAnswer || '',
           attachments,
         });
 
@@ -524,7 +563,7 @@ function WorkspaceApp({ onSignOut }) {
 
         if (res.sources && res.sources.length > 0) {
           setConfidenceChecking(true);
-          checkAnswerConfidence(res.response || streamed || '', res.sources, queryText).then((checked) => {
+          checkAnswerConfidence(res.response || streamed || '', res.sources, cleanQuery).then((checked) => {
             const confidence = checked?.confidence;
             if (!confidence || String(confidence?.overall?.level || '').toLowerCase().includes('not checked')) return;
             setResponseConfidence(confidence);
@@ -533,7 +572,7 @@ function WorkspaceApp({ onSignOut }) {
         }
 
         saveLocalConversation({ ...newHistoryEntry, updatedAt: new Date().toISOString(), messages: [
-          { role: 'user', content: queryText, created_at: new Date().toISOString() },
+          { role: 'user', content: cleanQuery, created_at: new Date().toISOString() },
           { role: 'assistant', content: res.response || streamed || '', sources: res.sources || [], confidence: finalConfidence, created_at: new Date().toISOString() },
         ] }).catch(() => {});
 
@@ -561,7 +600,9 @@ function WorkspaceApp({ onSignOut }) {
           setNormalSources(res.sources);
         }
 
-        if (onSuccess) onSuccess();
+        if (actualSuccess) {
+          try { actualSuccess(); } catch (e) { console.warn('onSuccess callback error:', e); }
+        }
       }
     } catch (err) {
       if (err?.name === 'AbortError' || requestController.signal.aborted) {
@@ -569,11 +610,27 @@ function WorkspaceApp({ onSignOut }) {
         setErrorFeedback('Stopped');
         return;
       }
-      setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
-        ? { ...turn, isLoading: false, error: err.message }
-        : turn));
-      setSessionState('FAILED');
-      setErrorFeedback(err?.name === 'TypeError' ? 'Connection lost' : `Submission failed: ${err.message}`);
+      // If streamed content was already captured, do not spoil a valid answer with an error banner
+      setConversationTurns((prev) => prev.map((turn) => {
+        if (turn.id !== turnId) return turn;
+        if (turn.answer && turn.answer.trim().length > 0) {
+          return { ...turn, isLoading: false };
+        }
+        return {
+          ...turn,
+          isLoading: false,
+          error: typeof err?.message === 'string' ? err.message : 'Error generating response'
+        };
+      }));
+      setSessionState((prev) => {
+        const hasText = conversationTurns.some((t) => t.id === turnId && t.answer && t.answer.trim().length > 0);
+        return hasText ? 'COMPLETE' : 'FAILED';
+      });
+      setErrorFeedback((prev) => {
+        const hasText = conversationTurns.some((t) => t.id === turnId && t.answer && t.answer.trim().length > 0);
+        if (hasText) return null;
+        return err?.name === 'TypeError' ? 'Connection lost' : `Submission failed: ${err.message || 'Unknown error'}`;
+      });
     } finally {
       setIsPending(false);
       if (requestControllerRef.current === requestController) requestControllerRef.current = null;
@@ -840,7 +897,7 @@ function WorkspaceApp({ onSignOut }) {
                       onEditMessage={handleEditMessage}
                         isLoading={isPending && !normalAnswer}
                         turns={conversationTurns}
-                        onRetry={(question) => handleSendQuestion(question, { deepResearch: false })}
+                        onRetry={(question) => handleSendQuestion(question, undefined, { deepResearch: false })}
                         onEdit={handleEditMessage}
                         onRegenerate={handleRegenerate}
                       />

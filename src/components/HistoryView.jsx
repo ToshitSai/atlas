@@ -56,15 +56,17 @@ export default function HistoryView({
             >
               <div className="flex items-center justify-between text-xs font-sans">
                 <span className="font-semibold text-[#E8E5DF] truncate max-w-[80%] font-sans">
-                  {item.title || item.question || 'Research Session'}
+                  {typeof (item.title || item.question) === 'string'
+                    ? (item.title || item.question)
+                    : (item.title?.main || 'Research Session')}
                 </span>
                 <span className="text-xs font-normal text-[#8A8884] font-sans">
-                  {item.timestamp || 'Recent'}
+                  {typeof item.timestamp === 'string' ? item.timestamp : 'Recent'}
                 </span>
               </div>
               {item.summary && (
                 <p className="text-xs text-[#8A8884] line-clamp-2 font-sans">
-                  {item.summary}
+                  {typeof item.summary === 'string' ? item.summary : JSON.stringify(item.summary)}
                 </p>
               )}
             </button>

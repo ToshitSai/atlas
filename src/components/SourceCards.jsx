@@ -56,8 +56,10 @@ export default function SourceCards({
               {sources.map((src, idx) => {
                 const isImage = Boolean(src.is_image || /\.(png|jpe?g|webp|gif)$/i.test(src.filename || src.title || ''));
                 const isDoc = Boolean(src.is_document || src.page || src.section || src.source_file);
-                const title = src.title || src.filename || src.source || `Source ${idx + 1}`;
-                const domain = src.domain || (src.url ? src.url.replace(/^https?:\/\//, '').split('/')[0] : (isDoc ? 'Document' : isImage ? 'Image' : 'Web'));
+                const rawTitle = src.title || src.filename || src.source || `Source ${idx + 1}`;
+                const title = typeof rawTitle === 'string' ? rawTitle : (typeof rawTitle === 'object' ? (rawTitle.title || rawTitle.name || JSON.stringify(rawTitle)) : String(rawTitle));
+                const rawDomain = src.domain || (typeof src.url === 'string' ? src.url.replace(/^https?:\/\//, '').split('/')[0] : (isDoc ? 'Document' : isImage ? 'Image' : 'Web'));
+                const domain = typeof rawDomain === 'string' ? rawDomain : String(rawDomain || 'Web');
                 const downloadUrl = src.id ? `/api/files/${src.id}/download` : src.url;
 
                 return (

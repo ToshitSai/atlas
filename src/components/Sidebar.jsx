@@ -204,7 +204,11 @@ export default function Sidebar({
                 }}
                 className="w-full text-left px-2.5 py-1.5 rounded-lg text-[12px] text-[var(--text-body)] hover:text-[var(--text-main)] hover:bg-[var(--surface-hover)] truncate transition-colors cursor-pointer flex items-center justify-between"
               >
-                <span className="truncate pr-1">{chat.title || chat.question || 'Untitled chat'}</span>
+                <span className="truncate pr-1">
+                  {typeof (chat.title || chat.question) === 'string'
+                    ? (chat.title || chat.question)
+                    : (chat.title?.main || 'Untitled chat')}
+                </span>
               </button>
             ))}
           </div>

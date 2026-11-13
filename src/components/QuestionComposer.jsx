@@ -427,7 +427,7 @@ export default function QuestionComposer({
       {/* Feedback alerts if disconnected, failed, or speech error */}
       {errorFeedback ? (
         <div className="text-xs font-sans text-[var(--text-failure)] px-3 pb-0.5 flex items-center justify-between gap-2">
-          {errorFeedback}
+          {typeof errorFeedback === 'string' ? errorFeedback : (errorFeedback?.detail || errorFeedback?.message || JSON.stringify(errorFeedback))}
           {onRetry && (
             <button type="button" onClick={onRetry} className="text-[var(--text-secondary)] underline underline-offset-2">
               Retry

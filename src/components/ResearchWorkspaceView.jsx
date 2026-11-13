@@ -40,7 +40,7 @@ export default function ResearchWorkspaceView({
       {priorTurns.map((turn) => (
         <React.Fragment key={turn.id}>
           <div className="ml-auto max-w-[92%] sm:max-w-[80%] flex justify-end gap-2.5">
-            <div className="bg-[var(--surface-alt)] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[var(--text-body)] leading-relaxed break-words">{turn.question}</div>
+            <div className="bg-[var(--surface-alt)] rounded-2xl rounded-tr-md px-4 py-3 text-sm text-[var(--text-body)] leading-relaxed break-words">{typeof turn.question === 'string' ? turn.question : JSON.stringify(turn.question || '')}</div>
             <div className="mt-0.5 w-7 h-7 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] text-[10px] font-mono text-[var(--text-muted)] flex items-center justify-center shrink-0">Y</div>
           </div>
           {turn.answer && <div className="flex items-start pl-1 pb-2 border-b border-[#303030]/70">
@@ -53,7 +53,7 @@ export default function ResearchWorkspaceView({
       <div className="ml-auto max-w-[92%] sm:max-w-[80%] flex justify-end gap-2.5 font-sans">
         <div className="bg-[var(--surface-alt)] rounded-2xl rounded-tr-md px-4 py-3 sm:px-4 sm:py-3">
           <p className="text-base sm:text-lg font-semibold text-[var(--text-body)] font-sans leading-relaxed break-words overflow-wrap-anywhere">
-          {userQuestion}
+          {typeof userQuestion === 'string' ? userQuestion : JSON.stringify(userQuestion || '')}
           </p>
         </div>
         <div className="mt-0.5 w-7 h-7 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] text-[10px] font-mono text-[var(--text-muted)] flex items-center justify-center shrink-0" aria-label="You">Y</div>
@@ -168,7 +168,7 @@ export default function ResearchWorkspaceView({
               {/* Safe error details if applicable */}
               {currentExperiment.errorDetail && (
                 <div className="p-3 rounded-lg bg-[#F87171]/10 border border-[#F87171]/30 text-xs font-sans text-[#F87171] break-words">
-                  Error: {currentExperiment.errorDetail}
+                  Error: {typeof currentExperiment.errorDetail === 'string' ? currentExperiment.errorDetail : JSON.stringify(currentExperiment.errorDetail)}
                 </div>
               )}
             </div>
