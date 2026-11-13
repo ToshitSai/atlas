@@ -132,7 +132,7 @@ _TASK_CAPABILITY_LABEL: Dict[str, str] = {
 #  latency_tier[1=fastest], cost_tier[1=cheapest], reasoning_tier[3=strongest],
 #  coding_tier, capabilities, strengths)
 _PROVIDER_PROFILES: List[Tuple[str, str, str, int, int, int, int, int, List[str], List[str]]] = [
-    ("anthropic", "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest", 200000, 2, 3, 3, 3,
+    ("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-4-6", 200000, 2, 3, 3, 3,
      [CAP_GENERAL, CAP_CODING, CAP_REASONING, CAP_MATH, CAP_WRITING, CAP_SUMMARIZATION,
       CAP_LONG_CONTEXT, CAP_TOOLS],
      ["strongest coding & reasoning", "long-form writing", "200k context"]),

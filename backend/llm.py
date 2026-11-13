@@ -270,7 +270,7 @@ def call_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeout
             "anthropic-version": "2023-06-01"
         }
 
-        model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-3-5-sonnet-latest"
+        model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-6"
         effective_max_tokens = max_tokens or int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096"))
 
         payload = {
@@ -528,7 +528,7 @@ def stream_anthropic_api(prompt: str, system_prompt: Optional[str] = None, timeo
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-3-5-sonnet-latest"
+    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-6"
     chunks: List[str] = []
     try:
         url = "https://api.anthropic.com/v1/messages"
@@ -832,7 +832,7 @@ def _stream_anthropic(prompt: str, system_prompt: Optional[str], on_token: Calla
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-3-5-sonnet-latest"
+    model = (os.environ.get("ANTHROPIC_MODEL") or "").strip() or "claude-sonnet-4-6"
     url = "https://api.anthropic.com/v1/messages"
     headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
     payload = {"model": model, "max_tokens": max_tokens or 4096, "messages": [{"role": "user", "content": prompt}], "stream": True}

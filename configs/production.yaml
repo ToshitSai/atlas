@@ -6,7 +6,7 @@ system:
 
 llm:
   default_provider: "anthropic"
-  default_model: "claude-3-5-sonnet-20241022"
+  default_model: "claude-sonnet-4-6"
   fallback_model: "gpt-4o"
   temperature: 0.5
   max_tokens: 4096

@@ -220,6 +220,12 @@ def test_snapshot_shape():
     assert "api_key" not in repr(snap).lower()
 
 
+def test_anthropic_registry_uses_active_messages_api_model(monkeypatch):
+    entry = next(item for item in mr.build_registry() if item["provider"] == "anthropic")
+    assert entry["model"] == "claude-sonnet-4-6"
+    assert "claude-3-5-sonnet" not in entry["model"]
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = failed = 0

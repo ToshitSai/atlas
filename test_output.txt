@@ -7,8 +7,8 @@ SEARCH_WEB COUNT: 0
 ========================================
 PROMPT: weather status today
 ROUTE: web_search | reason: This asks for a current fact or quick live lookup.
-INTENT: WEB_SEARCH
-CURRENT INFO REQ: None
+INTENT: CURRENT_INFORMATION
+CURRENT INFO REQ: CurrentInfoRequest(question='weather status today', entity='weather status', aspect='latest', year=None, query='latest weather status')
 SEARCH_WEB COUNT: 0
 ========================================
 PROMPT: trees
@@ -31,6 +31,6 @@ SEARCH_WEB COUNT: 2
 ========================================
 PROMPT: give me colleges list there in hyderabad
 ROUTE: normal | reason: A direct answer is sufficient for this request.
-INTENT: CURRENT_INFORMATION
+INTENT: ENTITY_INFORMATION
 CURRENT INFO REQ: None
 SEARCH_WEB COUNT: 0

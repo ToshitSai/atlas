@@ -418,7 +418,7 @@ class VisionService:
                 })
             content_list_anthropic.append({"type": "text", "text": prompt})
             payload = {
-                "model": os.environ.get("ANTHROPIC_VISION_MODEL", "claude-3-5-sonnet-20241022"),
+                "model": os.environ.get("ANTHROPIC_VISION_MODEL", "claude-sonnet-4-6"),
                 "max_tokens": 2048,
                 "messages": [{"role": "user", "content": content_list_anthropic}]
             }

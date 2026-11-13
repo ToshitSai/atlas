@@ -15,7 +15,7 @@ const MODEL_OPTIONS = [
   },
   {
     id: 'Atlas Large',
-    modelKey: 'claude-3-5-sonnet-latest',
+    modelKey: 'claude-sonnet-4-6',
     name: 'Atlas Large (Frontier)',
     provider: 'Anthropic Cloud',
     tag: 'Sonnet 3.5',
