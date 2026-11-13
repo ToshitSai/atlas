@@ -915,6 +915,32 @@ def _official_site_answer(site: tuple) -> str:
     display = url.removeprefix("https://").removeprefix("www.")
     return f"The official URL for {name} is [{display}]({url}). {description}"
 
+
+def load_image_bytes(doc_id: str, filename: str, owner_session: str) -> Optional[bytes]:
+    """Retrieve original binary content of an image from durable FileStore or local disk."""
+    try:
+        from database.file_store import get_file_store
+        from backend.rag_service import safe_filename
+        fs = get_file_store()
+        safe_owner = safe_filename(owner_session or "anonymous")
+        safe_fn = safe_filename(filename or "image.png")
+        storage_key = f"documents/{safe_owner}/{doc_id}_{safe_fn}"
+        content = fs.get(storage_key)
+        if not content:
+            content = fs.get(f"documents/{safe_owner}/{doc_id}")
+        if not content:
+            base_dir = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            storage_dir = os.path.join(base_dir, "data", "storage", safe_owner)
+            if os.path.exists(storage_dir):
+                for f in os.listdir(storage_dir):
+                    if f.startswith(f"{doc_id}_"):
+                        with open(os.path.join(storage_dir, f), "rb") as fl:
+                            return fl.read()
+        return content
+    except Exception as e:
+        print(f"[LOAD IMAGE BYTES WARNING] {e}")
+        return None
+
 # --------------------------------------------------------------------------- #
 # Safe arithmetic calculator. Uses an AST whitelist (never eval) so only numeric
 # + - * / // % ** expressions can be computed. Returns a formatted string for a
@@ -1785,10 +1811,37 @@ def _handle_intent_message_impl(
         explicit_search = intent == "WEB_SEARCH" or any(s in msg_clean for s in ["search the web", "search online", "latest news on"])
 
         if not (is_greeting or is_pure_math or is_control or explicit_search):
-            doc_triggered = any(t in msg_clean for t in _DOCUMENT_TRIGGERS)
-            rag_probe = rag_svc.retrieve_context(message, owner_session=owner, limit=4, rag_mode="auto")
-            if rag_probe.get("chunks") or doc_triggered or (attachments and len(attachments) > 0):
-                intent = "DOCUMENT_ANALYSIS"
+            # Check for multimodal image attachments
+            image_candidates = []
+            if attachments:
+                for att in attachments:
+                    fn = str(att.get("filename") or "")
+                    ext = os.path.splitext(fn.lower())[1]
+                    if att.get("is_image") or ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                        image_candidates.append(att)
+            if not image_candidates and user_has_docs:
+                try:
+                    for d in rag_svc.list_documents(owner_session=owner):
+                        ext = os.path.splitext(d.get("filename", "").lower())[1]
+                        if d.get("doc_type") == "image" or ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                            image_candidates.append(d)
+                except Exception:
+                    pass
+
+            msg_lower = message.lower()
+            visual_intent = any(w in msg_lower for w in [
+                "image", "images", "picture", "pictures", "photo", "photos",
+                "character sheet", "logo", "look like", "shown in", "depict",
+                "visual", "colors", "appearance", "wearing", "illustration", "diagram", "chart"
+            ])
+
+            if image_candidates and (visual_intent or (attachments and len(image_candidates) == len(attachments))):
+                intent = "MULTIMODAL_IMAGE_ANALYSIS"
+            else:
+                doc_triggered = any(t in msg_clean for t in _DOCUMENT_TRIGGERS)
+                rag_probe = rag_svc.retrieve_context(message, owner_session=owner, limit=4, rag_mode="auto")
+                if rag_probe.get("chunks") or doc_triggered or (attachments and len(attachments) > 0):
+                    intent = "DOCUMENT_ANALYSIS"
 
     # The classification fallback already spent LLM budget without a match;
     # remember that so the answer path below does not burn the remaining
@@ -2341,33 +2394,101 @@ def _handle_intent_message_impl(
             r"latest( news| version| versions| features| updates| releases| developments| advancements)?( about| on| for| in)?|"
             r"what(?:'s| is) the (latest|newest|current)( news| version| versions| features| updates| developments)?( about| on| for| in)?)\s+",
             "", msg_clean, flags=re.IGNORECASE).strip() or msg_clean
+
+        if activity_callback:
+            activity_callback({
+                "id": f"{sid}-ws-plan", "requestId": sid, "stage": "planning", "status": "completed",
+                "label": "Preparing search queries", "detail": f"Formulating query for: '{query}'",
+                "timestamp": int(time.time() * 1000)
+            })
+            activity_callback({
+                "id": f"{sid}-ws-exec", "requestId": sid, "stage": "web_search", "status": "running",
+                "label": "Searching the web", "detail": "Querying live search provider...",
+                "timestamp": int(time.time() * 1000)
+            })
+
         try:
             from backend.web_search import clean_snippet, search_web
             results = search_web(query, limit=5)
         except Exception as ws_err:
             print(f"[WEB SEARCH WARNING]: {ws_err}")
             results = []
+
+        formatted_sources = []
+        for r in results:
+            url_str = r.get("url") or ""
+            domain_str = url_str.split("//")[-1].split("/")[0].replace("www.", "") if "//" in url_str else "web"
+            formatted_sources.append({
+                "title": r.get("title") or domain_str,
+                "url": url_str,
+                "domain": domain_str,
+                "snippet": clean_snippet(r.get("snippet") or ""),
+                "date": r.get("date") or r.get("published_date") or None
+            })
+
+        if activity_callback:
+            activity_callback({
+                "id": f"{sid}-ws-src", "requestId": sid, "stage": "source_reading", "status": "completed",
+                "label": "Reviewing sources", "detail": f"Discovered {len(formatted_sources)} search source(s)",
+                "timestamp": int(time.time() * 1000)
+            })
+
         if results:
-            # Keep source mechanics internal. Consumer-facing answers state
-            # what was found, never which credentials or fallback provider are
-            # configured in this deployment.
-            lines = [f"Here are the most relevant results for **{query}**:", ""]
-            for i, r in enumerate(results, 1):
-                snippet = clean_snippet(r.get("snippet") or "(Open the source for details.)")
-                lines.append(f"{i}. **{r.get('title') or r.get('url')}** — {snippet}")
-                lines.append(f"   Source: {r.get('url')}")
-            resp_text = "\n".join(lines)
+            if activity_callback:
+                activity_callback({
+                    "id": f"{sid}-ws-synth", "requestId": sid, "stage": "synthesis", "status": "running",
+                    "label": "Preparing answer", "detail": "Synthesizing answer from web findings",
+                    "timestamp": int(time.time() * 1000)
+                })
+
+            synth_prompt = (
+                f"You are Atlas, an intelligent AI research assistant.\n"
+                f"User question: {message}\n\n"
+                f"Live Web Search findings for '{query}':\n"
+            )
+            for i, r in enumerate(formatted_sources, 1):
+                synth_prompt += f"[{i}] {r['title']} ({r['domain']}): {r['snippet']}\nURL: {r['url']}\n\n"
+            synth_prompt += (
+                "Instructions:\n"
+                "1. Synthesize a direct, clear, factual answer to the user's question using the search results.\n"
+                "2. Use clean inline citations like `[1]` or name the source domain when citing key facts.\n"
+                "3. Do not invent facts, metrics, or URLs that are not in the search results."
+            )
+
+            resp_text = None
+            if any_provider_configured():
+                try:
+                    resp_text = query_llm(message, synth_prompt, on_token=token_callback, timeout=25)
+                except Exception as exc:
+                    print(f"[WEB SEARCH LLM ERROR] {exc}")
+
+            if not resp_text:
+                lines = [f"Here are the most relevant findings for **{query}**:\n"]
+                for i, r in enumerate(formatted_sources, 1):
+                    lines.append(f"{i}. **{r['title']}** — {r['snippet']}")
+                    lines.append(f"   Source: [{r['domain']}]({r['url']})\n")
+                resp_text = "\n".join(lines).strip()
         else:
             resp_text = (
-                f"I couldn't find a reliable result for \"{query}\" right now. "
-                "Try a more specific name or URL."
+                f"I searched the web for \"{query}\", but couldn't find reliable results right now. "
+                "Please try a more specific name or check search provider configuration."
             )
+
+        if activity_callback:
+            activity_callback({
+                "id": f"{sid}-ws-done", "requestId": sid, "stage": "synthesis", "status": "completed",
+                "label": "Search completed", "detail": f"Synthesized answer with {len(formatted_sources)} source(s)",
+                "timestamp": int(time.time() * 1000)
+            })
+
         store.update_session(sid, {"last_assistant_message": resp_text, "last_topic": query.lower()[:80]})
         return {
             "intent": intent,
             "taskType": "web_search",
             "response": resp_text,
             "action": "NONE",
+            "sources": formatted_sources,
+            "citations": formatted_sources,
             "projectId": active_project_id,
             "pendingAction": None,
             "lastTopic": query.lower()[:80]
@@ -2558,13 +2679,118 @@ def _handle_intent_message_impl(
             "lastTopic": sess.get("last_topic")
         }
 
+    # 5b. MULTIMODAL_IMAGE_ANALYSIS — direct visual understanding across one or more images
+    elif intent == "MULTIMODAL_IMAGE_ANALYSIS":
+        store.clear_pending_action(sid)
+        owner_session = owner if owner else (sid.split(":")[0] if ":" in sid else sid)
+        from backend.vision_service import vision_service, get_image_mime
+        from backend.rag_service import service as rag_svc
+
+        # Identify image attachments
+        target_imgs = []
+        if attachments:
+            for att in attachments:
+                fn = str(att.get("filename") or "")
+                ext = os.path.splitext(fn.lower())[1]
+                if att.get("is_image") or ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                    target_imgs.append(att)
+        if not target_imgs and user_has_docs:
+            try:
+                for d in rag_svc.list_documents(owner_session=owner_session):
+                    ext = os.path.splitext(d.get("filename", "").lower())[1]
+                    if d.get("doc_type") == "image" or ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                        target_imgs.append(d)
+            except Exception:
+                pass
+
+        loaded_images = []
+        for img in target_imgs:
+            doc_id = str(img.get("id") or img.get("document_id") or "")
+            fn = str(img.get("filename") or img.get("title") or "image.png")
+            content = load_image_bytes(doc_id, fn, owner_session)
+            if content:
+                loaded_images.append({
+                    "id": doc_id,
+                    "filename": fn,
+                    "content": content,
+                    "mime_type": img.get("mime_type") or get_image_mime(fn, content)
+                })
+
+        resp_text = None
+        if loaded_images and vision_service.is_available():
+            if activity_callback:
+                activity_callback({
+                    "id": f"{sid}-vis-inspect", "requestId": sid, "stage": "source_reading", "status": "running",
+                    "label": "Inspecting attached image(s)",
+                    "detail": f"Loading visual content for {len(loaded_images)} image(s)...",
+                    "timestamp": int(time.time() * 1000)
+                })
+
+            resp_text = vision_service.answer_multiple_images(
+                question=message,
+                images=loaded_images,
+                on_token=token_callback
+            )
+
+            if activity_callback:
+                activity_callback({
+                    "id": f"{sid}-vis-done", "requestId": sid, "stage": "synthesis", "status": "completed",
+                    "label": "Visual analysis complete",
+                    "detail": f"Completed visual understanding for {len(loaded_images)} image(s)",
+                    "timestamp": int(time.time() * 1000)
+                })
+
+        if resp_text:
+            image_citations = []
+            for img in loaded_images:
+                image_citations.append({
+                    "title": img["filename"],
+                    "url": f"/api/files/{img['id']}/download",
+                    "domain": "Image Attachment",
+                    "is_image": True,
+                    "id": img["id"],
+                    "filename": img["filename"],
+                    "snippet": f"Visual evidence analyzed from attached image {img['filename']}."
+                })
+            store.update_session(sid, {"last_assistant_message": resp_text})
+            return {
+                "intent": intent,
+                "taskType": "multimodal_vision",
+                "response": resp_text,
+                "action": "NONE",
+                "sources": image_citations,
+                "citations": image_citations,
+                "projectId": active_project_id,
+                "pendingAction": None,
+                "lastTopic": "image analysis"
+            }
+
+        # Fall through to DOCUMENT_ANALYSIS if direct vision processing was unavailable
+        intent = "DOCUMENT_ANALYSIS"
+
     # 6. DOCUMENT_ANALYSIS — full production RAG retrieval with citations
-    elif intent == "DOCUMENT_ANALYSIS":
+    if intent == "DOCUMENT_ANALYSIS":
         store.clear_pending_action(sid)
         owner_session = owner if owner else (sid.split(":")[0] if ":" in sid else sid)
         from backend.rag_service import service as rag_svc
+
+        if activity_callback:
+            activity_callback({
+                "id": f"{sid}-doc-check", "requestId": sid, "stage": "source_reading", "status": "running",
+                "label": "Checking uploaded documents", "detail": "Searching indexed sections...",
+                "timestamp": int(time.time() * 1000)
+            })
+
         rag_res = rag_svc.retrieve_context(message, owner_session=owner_session, limit=4, rag_mode="on")
         citations = rag_res.get("citations", [])
+
+        if activity_callback:
+            chunk_cnt = len(rag_res.get("chunks") or [])
+            activity_callback({
+                "id": f"{sid}-doc-retrieve", "requestId": sid, "stage": "synthesis", "status": "running",
+                "label": "Retrieving relevant sections", "detail": f"Retrieved {chunk_cnt} relevant chunk(s)",
+                "timestamp": int(time.time() * 1000)
+            })
 
         if rag_res.get("chunks"):
             context_text = rag_res.get("context_text", "")
@@ -2642,6 +2868,13 @@ def _handle_intent_message_impl(
                     "You can upload PDF, DOCX, TXT, CSV, JSON, Markdown, or source code files using the upload button, "
                     "and I will index them for semantic search and document analysis."
                 )
+
+        if activity_callback:
+            activity_callback({
+                "id": f"{sid}-doc-done", "requestId": sid, "stage": "synthesis", "status": "completed",
+                "label": "Preparing document-grounded answer", "detail": "Answer grounded in document evidence",
+                "timestamp": int(time.time() * 1000)
+            })
 
         store.update_session(sid, {"last_assistant_message": resp_text})
         return {

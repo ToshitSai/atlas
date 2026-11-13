@@ -327,6 +327,7 @@ function WorkspaceApp({ onSignOut }) {
     setConversationTurns((prev) => [...prev, {
       id: turnId, question: queryText, answer: '', sources: [], confidence: null,
       mode: deepCheck ? 'deep' : 'normal', isLoading: true, attachments,
+      activities: [],
     }]);
 
     // Determine initial routing intention
@@ -359,6 +360,23 @@ function WorkspaceApp({ onSignOut }) {
         
         const onActivity = (activity) => {
           const idx = STAGE_NAME_MAP[activity.stage] || 2;
+          setConversationTurns((prev) => prev.map((turn) => {
+            if (turn.id !== turnId) return turn;
+            const currentActs = Array.isArray(turn.activities) ? [...turn.activities] : [];
+            const eventKey = activity.id || `${activity.stage || 'res'}-${currentActs.length}`;
+            const existingIdx = currentActs.findIndex((a) => a.id === eventKey || a.stage === activity.stage);
+            const actItem = {
+              id: eventKey,
+              stage: activity.stage,
+              label: activity.label || activity.detail || 'Researching…',
+              detail: activity.detail || activity.label || '',
+              status: activity.status === 'completed' ? 'completed' : activity.status === 'failed' ? 'failed' : 'running',
+              timestamp: activity.timestamp || Date.now(),
+            };
+            if (existingIdx >= 0) currentActs[existingIdx] = { ...currentActs[existingIdx], ...actItem };
+            else currentActs.push(actItem);
+            return { ...turn, activities: currentActs };
+          }));
           setStageEvents((prev) => {
             const updated = [...prev];
             const eventKey = activity.id || `${activity.stage || idx}`;
@@ -454,6 +472,26 @@ function WorkspaceApp({ onSignOut }) {
         // answer at once. The final frame carries the authoritative,
         // post-processed response, which reconciles any raw-token drift.
         let streamed = '';
+        const onChatActivity = (activity) => {
+          setConversationTurns((prev) => prev.map((turn) => {
+            if (turn.id !== turnId) return turn;
+            const currentActs = Array.isArray(turn.activities) ? [...turn.activities] : [];
+            const eventKey = activity.id || `${activity.stage || 'chat'}-${currentActs.length}`;
+            const existingIdx = currentActs.findIndex((a) => a.id === eventKey || a.stage === activity.stage);
+            const actItem = {
+              id: eventKey,
+              stage: activity.stage,
+              label: activity.label || activity.detail || 'Working…',
+              detail: activity.detail || activity.label || '',
+              status: activity.status === 'completed' ? 'completed' : activity.status === 'failed' ? 'failed' : 'running',
+              timestamp: activity.timestamp || Date.now(),
+            };
+            if (existingIdx >= 0) currentActs[existingIdx] = { ...currentActs[existingIdx], ...actItem };
+            else currentActs.push(actItem);
+            return { ...turn, activities: currentActs };
+          }));
+        };
+
         const res = await sendChatStream(queryText, activeProject?.id, conversationId, {
           onToken: (delta) => {
             streamed += delta;
@@ -461,6 +499,7 @@ function WorkspaceApp({ onSignOut }) {
             setNormalAnswer((prev) => prev + delta);
             setConversationTurns((prev) => prev.map((turn) => turn.id === turnId ? { ...turn, answer: `${turn.answer || ''}${delta}` } : turn));
           },
+          onActivity: onChatActivity,
           conversationHistory: priorHistory,
           correlation: { requestId, messageId, ...(selectedModelName ? { model: selectedModelName } : {}) },
           signal: requestController.signal,
@@ -674,6 +713,7 @@ function WorkspaceApp({ onSignOut }) {
           <AtlasLanding
             greeting={greeting}
             onSendMessage={handleSendQuestion}
+            onStop={handleStopRequest}
             conversationTurns={conversationTurns}
             isPending={isPending}
             onNewChat={handleNewQuestion}

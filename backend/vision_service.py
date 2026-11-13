@@ -218,28 +218,102 @@ class VisionService:
         question: str,
         content: bytes,
         filename: str,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        on_token: Optional[Any] = None
     ) -> Optional[str]:
         """Directly query a multimodal model about an uploaded image (Workflow A: chat attachment)."""
-        mime_type = get_image_mime(filename, content)
-        b64_data = base64.b64encode(content).decode("utf-8")
-
-        prompt = (
-            f"The user has attached an image ({filename}) and asked the following question:\n\n"
-            f"User Question: {question}\n\n"
-            "Answer the question directly, factually, and concisely using ONLY the visual and textual evidence in the image.\n"
-            "If the requested information is not present or visible in the image, state that clearly."
+        return self.answer_multiple_images(
+            question=question,
+            images=[{"filename": filename, "content": content, "mime_type": get_image_mime(filename, content)}],
+            system_prompt=system_prompt,
+            on_token=on_token
         )
-        return self._call_multimodal(prompt, b64_data, mime_type, timeout=35)
 
-    def _call_multimodal(
+    def answer_multiple_images(
+        self,
+        question: str,
+        images: List[Dict[str, Any]],
+        system_prompt: Optional[str] = None,
+        on_token: Optional[Any] = None
+    ) -> Optional[str]:
+        """Directly query a multimodal vision model about one or more uploaded images.
+
+        Enforces structured multi-image format:
+        ### Image 1 — [Subject/Filename]
+        ### Image 2 — [Subject/Filename]
+        ### Overall
+        """
+        if not images:
+            return None
+
+        # Prepare normalized image entries
+        prepared_images = []
+        for idx, img in enumerate(images, 1):
+            if isinstance(img, (tuple, list)):
+                fn = str(img[0]) if len(img) > 0 and img[0] else f"image_{idx}.png"
+                raw = img[1] if len(img) > 1 else b""
+                mime = str(img[2]) if len(img) > 2 and img[2] else get_image_mime(fn, raw)
+            elif isinstance(img, dict):
+                fn = str(img.get("filename") or f"image_{idx}.png")
+                raw = img.get("content") or img.get("bytes") or b""
+                mime = str(img.get("mime_type") or get_image_mime(fn, raw))
+            else:
+                fn = f"image_{idx}.png"
+                raw = img
+                mime = get_image_mime(fn, raw)
+            b64 = base64.b64encode(raw).decode("utf-8") if isinstance(raw, bytes) else str(raw)
+            prepared_images.append({
+                "index": idx,
+                "filename": fn,
+                "mime_type": mime,
+                "b64": b64,
+                "size_bytes": len(raw) if isinstance(raw, bytes) else 0
+            })
+
+        is_multi = len(prepared_images) > 1
+
+        if is_multi:
+            instructions = (
+                f"You are Atlas AI, an advanced multimodal research assistant. The user has uploaded {len(prepared_images)} images and asked:\n\n"
+                f"\"{question}\"\n\n"
+                "CRITICAL MULTIMODAL INSTRUCTIONS:\n"
+                "1. Analyze ALL provided images directly from their visual content.\n"
+                "2. Provide your answer structured cleanly with these exact Markdown headings:\n\n"
+            )
+            for img in prepared_images:
+                instructions += f"### Image {img['index']} — {img['filename']}\nDescribe visible subjects, appearance, colors, characters/clothing/features, visible text/labels, layout and design.\n\n"
+            instructions += (
+                "### Overall\nExplain the relationship, comparison, or synthesis between the images.\n\n"
+                "3. Ground all statements strictly in the visible pixels of the provided images. Do not guess or extrapolate details that cannot be verified visually."
+            )
+        else:
+            single = prepared_images[0]
+            instructions = (
+                f"You are Atlas AI, an advanced multimodal assistant. The user has attached the image `{single['filename']}` and asked:\n\n"
+                f"User Question: \"{question}\"\n\n"
+                "Answer directly, factually, and concisely using the visual and textual evidence in the image.\n"
+                "If specific details asked about are not visible in the image, state that clearly."
+            )
+
+        resp = self._call_multimodal_multi(instructions, prepared_images, timeout=40)
+        if resp and on_token:
+            # Stream tokens to callback in smooth increments
+            words = resp.split(" ")
+            for i, word in enumerate(words):
+                token = word if i == 0 else " " + word
+                try:
+                    on_token(token)
+                except Exception:
+                    pass
+        return resp
+
+    def _call_multimodal_multi(
         self,
         prompt: str,
-        b64_data: str,
-        mime_type: str,
-        timeout: int = 30
+        images: List[Dict[str, Any]],
+        timeout: int = 35
     ) -> Optional[str]:
-        """Invoke configured multimodal vision provider (Gemini -> OpenAI -> Claude)."""
+        """Invoke configured multimodal vision provider (Gemini -> OpenAI -> Claude) with multiple images."""
         # 1. Try Gemini
         gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if gemini_key:
@@ -254,14 +328,16 @@ class VisionService:
             ]
             for model in candidate_models:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+                parts: List[Dict[str, Any]] = [{"text": prompt}]
+                for img in images:
+                    parts.append({
+                        "inline_data": {
+                            "mime_type": img["mime_type"],
+                            "data": img["b64"]
+                        }
+                    })
                 payload = {
-                    "contents": [{
-                        "role": "user",
-                        "parts": [
-                            {"text": prompt},
-                            {"inline_data": {"mime_type": mime_type, "data": b64_data}}
-                        ]
-                    }],
+                    "contents": [{"role": "user", "parts": parts}],
                     "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}
                 }
                 req = urllib.request.Request(
@@ -270,12 +346,12 @@ class VisionService:
                     headers={"Content-Type": "application/json"}
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=min(timeout, 12)) as resp:
+                    with urllib.request.urlopen(req, timeout=min(timeout, 15)) as resp:
                         res = json.loads(resp.read().decode("utf-8"))
                         candidates = res.get("candidates", [])
                         if candidates:
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                            c_parts = candidates[0].get("content", {}).get("parts", [])
+                            text = "".join(p.get("text", "") for p in c_parts if isinstance(p, dict))
                             if text:
                                 return text
                 except urllib.error.HTTPError as http_err:
@@ -283,21 +359,21 @@ class VisionService:
                         continue
                     print(f"[VISION SERVICE] Gemini {model} HTTP {http_err.code}: {http_err.reason}")
                 except Exception as exc:
-                    print(f"[VISION SERVICE] Gemini {model} error: {exc}")
+                    print(f"[VISION SERVICE] Gemini {model} multi-image error: {exc}")
 
         # 2. Try OpenAI
         openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
         if openai_key:
             url = "https://api.openai.com/v1/chat/completions"
+            content_list: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+            for img in images:
+                content_list.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{img['mime_type']};base64,{img['b64']}"}
+                })
             payload = {
                 "model": os.environ.get("OPENAI_VISION_MODEL", "gpt-4o-mini"),
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}}
-                    ]
-                }],
+                "messages": [{"role": "user", "content": content_list}],
                 "max_tokens": 2048,
                 "temperature": 0.1
             }
@@ -314,22 +390,23 @@ class VisionService:
                     res = json.loads(resp.read().decode("utf-8"))
                     return res["choices"][0]["message"]["content"]
             except Exception as exc:
-                print(f"[VISION SERVICE] OpenAI Vision error: {exc}")
+                print(f"[VISION SERVICE] OpenAI Vision multi-image error: {exc}")
 
         # 3. Try Anthropic
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if anthropic_key:
             url = "https://api.anthropic.com/v1/messages"
+            content_list_anthropic: List[Dict[str, Any]] = []
+            for img in images:
+                content_list_anthropic.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": img["mime_type"], "data": img["b64"]}
+                })
+            content_list_anthropic.append({"type": "text", "text": prompt})
             payload = {
                 "model": os.environ.get("ANTHROPIC_VISION_MODEL", "claude-3-5-sonnet-20241022"),
                 "max_tokens": 2048,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": b64_data}},
-                        {"type": "text", "text": prompt}
-                    ]
-                }]
+                "messages": [{"role": "user", "content": content_list_anthropic}]
             }
             req = urllib.request.Request(
                 url,
@@ -345,9 +422,23 @@ class VisionService:
                     res = json.loads(resp.read().decode("utf-8"))
                     return res["content"][0]["text"]
             except Exception as exc:
-                print(f"[VISION SERVICE] Anthropic Vision error: {exc}")
+                print(f"[VISION SERVICE] Anthropic Vision multi-image error: {exc}")
 
         return None
+
+    def _call_multimodal(
+        self,
+        prompt: str,
+        b64_data: str,
+        mime_type: str,
+        timeout: int = 30
+    ) -> Optional[str]:
+        """Invoke configured multimodal vision provider (Gemini -> OpenAI -> Claude) for a single image."""
+        return self._call_multimodal_multi(
+            prompt,
+            [{"mime_type": mime_type, "b64": b64_data, "filename": "image"}],
+            timeout=timeout
+        )
 
 
 vision_service = VisionService()
