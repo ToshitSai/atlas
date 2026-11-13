@@ -92,7 +92,10 @@ export default function SourceCards({
                       {/* Snippet / Excerpt */}
                       {(src.snippet || src.excerpt || src.content) && (
                         <p className="text-[11px] text-[var(--text-secondary)] line-clamp-2 leading-relaxed mb-2">
-                          {src.snippet || src.excerpt || src.content}
+                          {(() => {
+                            const val = src.snippet || src.excerpt || src.content;
+                            return typeof val === 'string' ? val : (typeof val === 'object' ? (val?.text || JSON.stringify(val)) : String(val));
+                          })()}
                         </p>
                       )}
                     </div>

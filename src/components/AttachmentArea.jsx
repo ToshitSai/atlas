@@ -125,9 +125,9 @@ export default function AttachmentArea({
                   </span>
                 )}
                 {att.status === 'FAILED' && (
-                  <span className="text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1" title={att.error}>
+                  <span className="text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1" title={typeof att.error === 'string' ? att.error : JSON.stringify(att.error || '')}>
                     <span className="truncate max-w-[110px]">
-                      Failed{att.stage ? ` (${att.stage})` : ''}
+                      Failed{att.stage ? ` (${typeof att.stage === 'string' ? att.stage : JSON.stringify(att.stage)})` : ''}
                     </span>
                     {att.category !== 'unsupported_video' &&
                       att.category !== 'legacy_format' &&

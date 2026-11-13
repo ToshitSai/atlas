@@ -49,12 +49,14 @@ export default function ActivityTimeline({
           )}
 
           <span className="font-medium text-[var(--text-main)] truncate">
-            {isLoading ? (activeStep?.label || 'Processing…') : `${completedCount} operational step${completedCount === 1 ? '' : 's'} completed`}
+            {isLoading
+              ? (typeof activeStep?.label === 'string' ? activeStep.label : (activeStep?.label ? JSON.stringify(activeStep.label) : 'Processing…'))
+              : `${completedCount} operational step${completedCount === 1 ? '' : 's'} completed`}
           </span>
 
           {activeStep?.detail && isLoading && (
             <span className="text-[var(--text-muted)] truncate hidden sm:inline">
-              — {activeStep.detail}
+              — {typeof activeStep.detail === 'string' ? activeStep.detail : JSON.stringify(activeStep.detail)}
             </span>
           )}
         </div>
@@ -111,7 +113,7 @@ export default function ActivityTimeline({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className={`font-medium ${isRunning ? 'text-[var(--text-main)] font-semibold' : isFailed ? 'text-rose-500' : 'text-[var(--text-body)]'}`}>
-                          {act.label}
+                          {typeof act.label === 'string' ? act.label : JSON.stringify(act.label || '')}
                         </span>
                         {act.timestamp && (
                           <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">
@@ -124,7 +126,7 @@ export default function ActivityTimeline({
 
                       {act.detail && act.detail !== act.label && (
                         <p className="text-[11px] text-[var(--text-muted)] mt-0.5 break-words">
-                          {act.detail}
+                          {typeof act.detail === 'string' ? act.detail : JSON.stringify(act.detail)}
                         </p>
                       )}
                     </div>

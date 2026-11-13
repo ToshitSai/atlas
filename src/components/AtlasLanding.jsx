@@ -105,6 +105,11 @@ export default function AtlasLanding({
   errorFeedback,
   greeting
 }) {
+  const greetingMain = typeof greeting === 'string'
+    ? greeting
+    : (typeof greeting === 'object' && greeting?.main ? greeting.main : 'How can Atlas help you today?');
+  const greetingSub = typeof greeting === 'object' && greeting?.sub ? greeting.sub : null;
+
   const [inputText, setInputText] = useState('');
   const [isDeepResearch, setIsDeepResearch] = useState(() => {
     try { return localStorage.getItem('atlas-deep-research') === '1'; } catch { return false; }
@@ -465,20 +470,36 @@ export default function AtlasLanding({
                     gap: '40px'
                   }}
                 >
-                  <h1
-                    className="atlas-hero-heading"
-                    style={{
-                      fontSize: 'clamp(24px, 5.5vw, 42px)',
-                      fontWeight: 400,
-                      letterSpacing: '-0.02em',
-                      color: 'var(--text-main)',
-                      margin: 0,
-                      padding: '0 16px',
-                      lineHeight: '1.25'
-                    }}
-                  >
-                    {greeting || 'How can Atlas help you today?'}
-                  </h1>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                    <h1
+                      className="atlas-hero-heading"
+                      style={{
+                        fontSize: 'clamp(24px, 5.5vw, 42px)',
+                        fontWeight: 400,
+                        letterSpacing: '-0.02em',
+                        color: 'var(--text-main)',
+                        margin: 0,
+                        padding: '0 16px',
+                        lineHeight: '1.25'
+                      }}
+                    >
+                      {greetingMain}
+                    </h1>
+                    {greetingSub && (
+                      <p
+                        style={{
+                          fontSize: 'clamp(14px, 2.5vw, 16px)',
+                          color: 'var(--text-secondary)',
+                          margin: 0,
+                          padding: '0 16px',
+                          lineHeight: '1.4',
+                          maxWidth: '620px'
+                        }}
+                      >
+                        {greetingSub}
+                      </p>
+                    )}
+                  </div>
                   <div className="atlas-onboarding-prompts" aria-label="Example prompts">
                     {[
                       'Explain a research paper clearly',
@@ -777,9 +798,9 @@ function ConversationThread({
                   overflowWrap: 'anywhere'
                 }}
               >
-                {turn.question}
+                {typeof turn.question === 'string' ? turn.question : JSON.stringify(turn.question || '')}
               </div>
-              <MessageActions text={turn.question || ''} onEdit={(value) => onEditMessage?.(turns.indexOf(turn), value)} />
+              <MessageActions text={typeof turn.question === 'string' ? turn.question : JSON.stringify(turn.question || '')} onEdit={(value) => onEditMessage?.(turns.indexOf(turn), value)} />
             </div>
           </div>
 
@@ -820,7 +841,7 @@ function ConversationThread({
                 </div>
               ) : (
                 <ProgressiveMarkdown
-                  content={turn.answer || ''}
+                  content={typeof turn.answer === 'string' ? turn.answer : JSON.stringify(turn.answer || '')}
                   streaming={Boolean(turn.isLoading)}
                   instant={Boolean(turn.loadedFromHistory)}
                   deliveryPath={turn.loadedFromHistory ? 'loaded from history' : 'new answer'}
@@ -829,14 +850,14 @@ function ConversationThread({
 
               {turn.fallbackNotice && (
                 <div style={{ fontSize: '12px', color: TOKENS.colors.muted, marginTop: '6px', fontStyle: 'italic' }}>
-                  {turn.fallbackNotice}
+                  {typeof turn.fallbackNotice === 'string' ? turn.fallbackNotice : JSON.stringify(turn.fallbackNotice)}
                 </div>
               )}
 
               {turn.error && (
                 <div role="alert" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <div style={{ color: '#B42318', fontSize: '13.5px', background: 'rgba(180, 35, 24, 0.08)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(180, 35, 24, 0.2)' }}>
-                    {turn.error}
+                    {typeof turn.error === 'string' ? turn.error : (turn.error?.detail || turn.error?.message || JSON.stringify(turn.error))}
                   </div>
                   {onRetry && (
                     <button
@@ -870,7 +891,7 @@ function ConversationThread({
               {/* RESPONSE ACTIONS (COPY, RETRY, FEEDBACK, EXPORT) */}
               {!turn.isLoading && turn.answer && (
                 <ResponseActions
-                  text={turn.answer}
+                  text={typeof turn.answer === 'string' ? turn.answer : JSON.stringify(turn.answer)}
                   onRegenerate={onRetry ? () => onRetry(turn.question) : null}
                   hasSources={Boolean(turn.sources?.length || turn.citations?.length)}
                   sourcesCount={turn.sources?.length || turn.citations?.length || 0}
