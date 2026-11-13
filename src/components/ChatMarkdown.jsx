@@ -74,7 +74,7 @@ function CodeBlock({ children, className }) {
   return <div className="my-3 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-inner">
     <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-1.5 text-[11px]">
       <span className="font-mono uppercase tracking-wide text-[var(--text-muted)]">{language}</span>
-      <button type="button" onClick={copy} className="rounded px-2 py-1 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-main)]">Copy</button>
+      <button type="button" onClick={copy} title="Copy code" aria-label="Copy code" className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-main)] flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
     </div>
     <pre className="overflow-x-auto p-3 text-xs leading-relaxed"><code className={`hljs language-${language}`} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
   </div>;
