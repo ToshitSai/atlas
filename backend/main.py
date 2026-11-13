@@ -743,14 +743,9 @@ def determine_task_category(intent: str, routing_decision: dict, message: str, a
     if intent_upper in ("DOCUMENT_ANALYSIS", "DATA_ANALYSIS", "DOCUMENT_SUMMARY", "FILE_ANALYSIS") or (attachments and len(attachments) > 0):
         return ("DOCUMENT_ANALYSIS", "compact")
 
-    if intent_upper in ("TIME_AND_DATE", "DATETIME") or (
-        intent_upper == "EXPLANATION" and (
-            "time" in msg_clean or "date" in msg_clean or "clock" in msg_clean
-        )
-    ):
-        from backend.intent_router import _is_datetime_query
-        if _is_datetime_query(msg_clean):
-            return ("TIME_AND_DATE", "none")
+    from backend.intent_router import _is_datetime_query
+    if intent_upper in ("TIME_AND_DATE", "DATETIME") or _is_datetime_query(msg_clean):
+        return ("TIME_AND_DATE", "none")
 
     if route_mode == "deep_research" or intent_upper in ("DEEP_RESEARCH", "RESEARCH_START", "AI_SCIENTIST", "RESEARCH_FOLLOWUP", "RESEARCH_CONTROL"):
         return ("DEEP_RESEARCH", "full")
