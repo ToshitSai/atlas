@@ -1646,20 +1646,102 @@ def _general_answer(message: str, topic: Optional[str], history_ctx: str = "", o
     return "I couldn't reach the AI service just now. Please try again."
 
 
-# Deterministic clock queries (fixes F8): "what is today's date", "what time is
-# it", "current date". The server has a real clock, so these must never be routed
-# to web search (which returns a Wikipedia "Today (TV programme)" abstract) or to
-# the LLM (which has no clock and would guess).
+# ---------------------------------------------------------------------------
+# Deterministic clock / timezone utility (GEN-3.3.12)
+# ---------------------------------------------------------------------------
+# The server has a real system clock.  Time and timezone queries must NEVER be
+# routed to the LLM (which has no clock and fabricates times) or to the RAG
+# pipeline (which may return stale document content).
+#
+# Pattern coverage:
+#   "time in india now"           "what time is it in India?"
+#   "current indian time"         "today's date in India"
+#   "what day is it today?"       "current time in London"
+#   "time in New York"            "what time is it in Tokyo?"
+#   "Tokyo time"                  "IST time"  "time now"
+# ---------------------------------------------------------------------------
 _DATETIME_QUERY_RE = re.compile(
-    r"(?:what(?:'s|s|\s+is)?\s+(?:today'?s|the\s+)?(?:date|day|time)\b"
+    r"(?:"
+    # Classic English patterns
+    r"what(?:'s|s|\s+is)?\s+(?:today'?s|the\s+)?(?:date|day|time)\b"
     r"|today'?s\s+date\b"
     r"|current\s+(?:date|time|day)\b"
-    r"|what\s+day\s+is\s+it\b"
+    r"|what\s+day\s+is\s+(?:it|today)\b"
     r"|what\s+time\s+is\s+it\b"
     r"|tell\s+me\s+the\s+(?:date|time)\b"
-    r"|do\s+you\s+know\s+the\s+(?:date|time)\b)",
+    r"|do\s+you\s+know\s+the\s+(?:date|time)\b"
+    r"|time\s+now\b"
+    r"|date\s+today\b"
+    r"|day\s+today\b"
+    # Location-relative patterns: "time in India now"
+    r"|\btime\s+in\s+\w[\w\s]{0,30}"
+    r"|\bdate\s+in\s+\w[\w\s]{0,30}"
+    r"|\btime\s+(?:now\s+)?in\s+\w[\w\s]{0,30}"
+    # Reverse: "India time" / "Indian time" / "Tokyo time"
+    r"|\b\w[\w\s]{0,25}\s+time\s+now\b"
+    r"|\b\w[\w\s]{0,25}\s+current\s+time\b"
+    r"|\b(?:indian|ist|gmt|utc|est|pst|cst|jst|aest|cet|bst)\s+time\b"
+    # Timezone-aware queries
+    r"|\btimezone\s+(?:for\s+|in\s+)?\w[\w\s]{0,30}"
+    r"|\bclock\s+in\s+\w[\w\s]{0,30}"
+    r")",
     re.IGNORECASE,
 )
+
+# ---------------------------------------------------------------------------
+# Timezone mapping: location keywords → IANA timezone names
+# ---------------------------------------------------------------------------
+_TIMEZONE_MAP: list[tuple[re.Pattern, str, str]] = [
+    # India
+    (re.compile(r"\b(?:india|indian|ist|kolkata|mumbai|delhi|bangalore|chennai|hyderabad)\b", re.I), "Asia/Kolkata", "India (IST)"),
+    # UK / London
+    (re.compile(r"\b(?:london|uk|united kingdom|england|britain|bst|gmt)\b", re.I), "Europe/London", "London"),
+    # US East
+    (re.compile(r"\b(?:new york|nyc|eastern|est|edt|boston|washington|miami|atlanta)\b", re.I), "America/New_York", "New York (ET)"),
+    # US Central
+    (re.compile(r"\b(?:chicago|central|cst|cdt|dallas|houston|minneapolis)\b", re.I), "America/Chicago", "Chicago (CT)"),
+    # US Mountain
+    (re.compile(r"\b(?:denver|mountain|mst|mdt|phoenix|salt lake)\b", re.I), "America/Denver", "Denver (MT)"),
+    # US Pacific
+    (re.compile(r"\b(?:los angeles|san francisco|seattle|pacific|pst|pdt|california|nevada)\b", re.I), "America/Los_Angeles", "Los Angeles (PT)"),
+    # Japan
+    (re.compile(r"\b(?:japan|japanese|tokyo|osaka|jst)\b", re.I), "Asia/Tokyo", "Tokyo (JST)"),
+    # China
+    (re.compile(r"\b(?:china|chinese|beijing|shanghai|shenzhen|cst)\b", re.I), "Asia/Shanghai", "Beijing (CST)"),
+    # Singapore
+    (re.compile(r"\b(?:singapore|sgt)\b", re.I), "Asia/Singapore", "Singapore (SGT)"),
+    # Australia East
+    (re.compile(r"\b(?:sydney|melbourne|aest|aedt|australia)\b", re.I), "Australia/Sydney", "Sydney (AEST)"),
+    # Germany / Central Europe
+    (re.compile(r"\b(?:germany|berlin|paris|france|cet|cest|amsterdam|madrid|rome|italy)\b", re.I), "Europe/Berlin", "Central Europe (CET)"),
+    # UAE / Dubai
+    (re.compile(r"\b(?:dubai|uae|abu dhabi|gulf)\b", re.I), "Asia/Dubai", "Dubai (GST)"),
+    # Pakistan
+    (re.compile(r"\b(?:pakistan|karachi|lahore|islamabad|pst)\b", re.I), "Asia/Karachi", "Pakistan (PKT)"),
+    # Bangladesh
+    (re.compile(r"\b(?:bangladesh|dhaka|bst)\b", re.I), "Asia/Dhaka", "Bangladesh (BST)"),
+    # Russia Moscow
+    (re.compile(r"\b(?:moscow|russia|msk)\b", re.I), "Europe/Moscow", "Moscow (MSK)"),
+    # Brazil
+    (re.compile(r"\b(?:brazil|sao paulo|brasilia|brt)\b", re.I), "America/Sao_Paulo", "Brazil (BRT)"),
+    # Canada East
+    (re.compile(r"\b(?:toronto|canada|ontario|est)\b", re.I), "America/Toronto", "Toronto (ET)"),
+    # Korea
+    (re.compile(r"\b(?:korea|korean|seoul|kst)\b", re.I), "Asia/Seoul", "Seoul (KST)"),
+    # Hong Kong
+    (re.compile(r"\b(?:hong kong|hkt)\b", re.I), "Asia/Hong_Kong", "Hong Kong (HKT)"),
+]
+
+
+def _extract_timezone(message: str) -> tuple[str, str]:
+    """
+    Extract the best-matching IANA timezone and display label from a message.
+    Returns (iana_zone, label).  Falls back to UTC.
+    """
+    for pattern, iana, label in _TIMEZONE_MAP:
+        if pattern.search(message):
+            return iana, label
+    return "UTC", "UTC"
 
 
 def _is_datetime_query(msg_clean: str) -> bool:
@@ -1776,18 +1858,69 @@ def _handle_intent_message_impl(
     sess = get_session(sid)
     msg_clean = message.strip().lower()
 
-    # Deterministic clock answer (fixes F8). Checked before routing so a date/time
-    # question never becomes a web search or an LLM guess.
+    # ---------------------------------------------------------------------------
+    # GEN-3.3.12: Deterministic clock / timezone answer.
+    # Checked BEFORE intent classification and BEFORE RAG probe.
+    # A time/date query must NEVER be routed to the LLM, RAG, or web search.
+    # The server system clock is authoritative; use it directly.
+    # ---------------------------------------------------------------------------
     if _is_datetime_query(msg_clean):
         import datetime as _dt
-        now = _dt.datetime.now(_dt.timezone.utc)
-        resp_text = f"It's {now.strftime('%A, %d %B %Y')}, {now.strftime('%H:%M')} UTC."
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            ZoneInfo = None  # Python < 3.9 fallback
+
+        iana_zone, tz_label = _extract_timezone(message)
+
+        try:
+            if ZoneInfo is not None:
+                tz = ZoneInfo(iana_zone)
+            else:
+                import pytz
+                tz = pytz.timezone(iana_zone)
+            now = _dt.datetime.now(tz)
+            utc_offset = now.strftime("%z")
+            # Format UTC offset as UTC+05:30
+            if len(utc_offset) >= 5:
+                utc_offset_fmt = f"UTC{utc_offset[0]}{utc_offset[1:3]}:{utc_offset[3:5]}"
+            else:
+                utc_offset_fmt = utc_offset
+            # Cross-platform hour formatting (no %-I / %#I platform-specific codes)
+            hour12 = now.hour % 12 or 12
+            minute = now.strftime("%M")
+            am_pm = "AM" if now.hour < 12 else "PM"
+            time_str = f"{hour12}:{minute} {am_pm}"
+            tz_abbr = now.strftime("%Z")
+            day_name = now.strftime("%A")
+            month_name = now.strftime("%B")
+            day_num = now.day
+            year = now.year
+            date_str = f"{day_name}, {month_name} {day_num}, {year}"
+            resp_text = (
+                f"It's currently {time_str} in {tz_label} ({tz_abbr}, {utc_offset_fmt}), "
+                f"{date_str}."
+            )
+        except Exception as _tz_err:
+            # Absolute fallback: UTC with cross-platform formatting
+            now = _dt.datetime.now(_dt.timezone.utc)
+            hour12 = now.hour % 12 or 12
+            am_pm = "AM" if now.hour < 12 else "PM"
+            resp_text = (
+                f"It's currently {hour12}:{now.strftime('%M')} {am_pm} UTC, "
+                f"{now.strftime('%A, %B')} {now.day}, {now.year}."
+            )
+            print(f"[CLOCK] Timezone conversion error for {iana_zone!r}: {_tz_err}")
+
         store.clear_pending_action(sid)
         store.update_session(sid, {"last_assistant_message": resp_text})
         return {
             "intent": "EXPLANATION",
             "taskType": "datetime",
+            "taskCategory": "TIME_AND_DATE",
+            "activityTier": "none",
             "response": resp_text,
+            "sources": [],
             "action": "NONE",
             "projectId": active_project_id,
             "pendingAction": None,
@@ -1807,7 +1940,13 @@ def _handle_intent_message_impl(
     except Exception as e:
         print(f"[RAG LIST WARNING] {e}")
 
-    if user_has_docs or (attachments and len(attachments) > 0):
+    # GEN-3.3.12: Utility short-circuit — queries about time, real-time clocks, or
+    # other pure utility tasks must NEVER activate RAG, even if the user has uploaded
+    # documents.  Datetime was already handled above; this guard handles edge cases
+    # where the datetime check doesn't catch it but the LLM would still misroute.
+    is_utility = _is_datetime_query(msg_clean) or _is_currency_query(msg_clean)
+
+    if (user_has_docs or (attachments and len(attachments) > 0)) and not is_utility:
         msg_clean_nopunct = re.sub(r'[^\w\s]', '', msg_clean).strip()
         is_greeting = msg_clean_nopunct in {"hi", "hello", "hey", "how are you", "who are you", "good morning", "good evening", "good afternoon"}
         is_pure_math = intent == "MATHEMATICS" or (intent == "EXPLANATION" and any(op in msg_clean for op in [" + ", " - ", " * ", " / ", " = "]) and re.search(r"\d", msg_clean))

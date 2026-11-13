@@ -551,7 +551,10 @@ function WorkspaceApp({ onSignOut }) {
             return {
               ...turn,
               activities: currentActs,
-              activityTier: turn.activityTier === 'none' && currentActs.length > 0 ? 'compact' : (turn.activityTier || 'compact')
+              // GEN-3.3.12: Never promote activityTier during streaming for turns that
+              // the backend explicitly set to 'none' (time/date/utility queries).
+              // The final response at line ~622 will apply the definitive activityTier.
+              activityTier: turn.activityTierLocked ? turn.activityTier : (turn.activityTier === 'none' && currentActs.length > 0 ? 'compact' : (turn.activityTier || 'compact'))
             };
           }));
         };
@@ -574,11 +577,13 @@ function WorkspaceApp({ onSignOut }) {
 
         setSessionState('COMPLETE');
         const finalAnswer = res.response || streamed || 'No response returned.';
-        const finalSources = Array.isArray(res.sources) ? res.sources : [];
+        // GEN-3.3.12: Utility responses (time/date) explicitly send sources:[] — respect that.
+        const isUtility = res.taskCategory === 'TIME_AND_DATE' || res.taskType === 'datetime';
+        const finalSources = isUtility ? [] : (Array.isArray(res.sources) ? res.sources : []);
         console.debug('[Atlas raw stream final]', finalAnswer);
         setNormalAnswer(finalAnswer);
         setNormalSources(finalSources);
-        const finalConfidence = (finalSources.length > 0 && res.confidence) ? res.confidence : null;
+        const finalConfidence = (!isUtility && finalSources.length > 0 && res.confidence) ? res.confidence : null;
         setResponseConfidence(finalConfidence);
         setConversationTurns((prev) => prev.map((turn) => turn.id === turnId
           ? {
@@ -591,7 +596,7 @@ function WorkspaceApp({ onSignOut }) {
             }
           : turn));
 
-        if (res.sources && res.sources.length > 0) {
+        if (!isUtility && res.sources && res.sources.length > 0) {
           setConfidenceChecking(true);
           checkAnswerConfidence(res.response || streamed || '', res.sources, cleanQuery).then((checked) => {
             const confidence = checked?.confidence;
@@ -612,15 +617,25 @@ function WorkspaceApp({ onSignOut }) {
             ...act,
             status: act.status === 'running' ? 'completed' : act.status,
           })).filter((act) => !String(act.label || '').toLowerCase().includes('not checked'));
+          // GEN-3.3.12: Utility responses (TIME_AND_DATE, etc.) explicitly send
+          // activityTier:'none' and sources:[]. Respect that — never show source
+          // indicators or activity panels for deterministic utility answers.
+          const finalTaskCategory = res.taskCategory || 'GENERAL_KNOWLEDGE';
+          const isUtilityResponse = finalTaskCategory === 'TIME_AND_DATE' || res.taskType === 'datetime';
+          const finalActivityTier = isUtilityResponse
+            ? 'none'
+            : (res.activityTier || (res.sources?.length ? 'compact' : 'none'));
+          const finalSrcs = isUtilityResponse ? [] : (res.sources || []);
           return {
             ...turn,
             answer: res.response || streamed || 'No response returned.',
-            sources: res.sources || [],
-            confidence: finalConfidence,
+            sources: finalSrcs,
+            confidence: isUtilityResponse ? null : finalConfidence,
             fallbackNotice: res.fallbackNotice || null,
-            activities: finalizedActs,
-            activityTier: res.activityTier || (res.sources?.length ? 'compact' : 'none'),
-            taskCategory: res.taskCategory || 'GENERAL_KNOWLEDGE',
+            activities: isUtilityResponse ? [] : finalizedActs,
+            activityTier: finalActivityTier,
+            activityTierLocked: true,  // prevent streaming re-upgrade
+            taskCategory: finalTaskCategory,
             isLoading: false,
           };
         }));
