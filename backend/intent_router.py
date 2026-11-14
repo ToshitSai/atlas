@@ -765,7 +765,8 @@ _DOCUMENT_TRIGGERS = (
     "in the presentation", "in the slides", "in slide", "in this spreadsheet",
     "in the spreadsheet", "in the excel", "in the xlsx", "in the sheet", "in the docx",
     "in the word doc", "in the word document", "compare the documents", "compare the files",
-    "compare both files", "what are the differences between", "in the uploaded files",
+    "compare both files", "compare the projects", "compare these", "compare them",
+    "compare both", "what are the differences between", "in the uploaded files",
     "in the attachment", "in this attachment", "attached file", "attached image",
     "product a", "product b", "product c", "orbit", "atlas-2026-942", "vision-8421",
 )
@@ -3145,7 +3146,17 @@ def _handle_intent_message_impl(
                             "summarize", "summary", "overview", "describe", "description", "explain", "explanation",
                             "tell", "give", "show", "list", "outline", "info", "information", "data"
                         }
-                        q_terms = set(re.findall(r"\w{3,}", message.lower())) - instruction_stopwords
+                        # Document filenames / project identifiers that name the context container rather than the attribute queried
+                        container_names = set()
+                        for c in rag_res.get("chunks", []):
+                            src = c.get("source", "")
+                            # Split filename by non-alphanumeric to capture individual words (e.g. "project_orion.txt" -> "project", "orion")
+                            base_name = os.path.splitext(os.path.basename(src))[0]
+                            container_names.update(re.split(r"[^a-zA-Z0-9]+", base_name.lower()))
+                        container_names.update({"project", "initiative", "document", "file"})
+
+                        raw_terms = set(re.findall(r"\w{3,}", message.lower())) - instruction_stopwords
+                        q_terms = raw_terms - container_names if (raw_terms - container_names) else raw_terms
                         evidence_lower = combined_chunk_text.lower()
 
                         missing_terms = [t for t in q_terms if not _stem_match(t, evidence_lower)]
